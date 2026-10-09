@@ -1,0 +1,12 @@
+{
+  "name": "offshore-analyses",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline-first engineering analysis suite for offshore, marine, subsea and offshore renewable-energy structures",
+  "scripts": {
+    "test": "node --test tests/",
+    "serve": "node tools/serve.mjs",
+    "precache": "node tools/precache.mjs"
+  }
+}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Offshore Analyses</title>
+<meta name="description" content="Engineering analysis suite for fixed and floating offshore structures, marine terminals, subsea pipelines, risers, moorings, cables, installation operations, offshore renewables and project economics. Works offline.">
+<meta name="theme-color" content="#0b6e8f">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Offshore Analyses">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<link rel="stylesheet" href="css/app.css">
+<link rel="modulepreload" href="src/app.js">
+<link rel="modulepreload" href="src/ui/shell.js">
+<link rel="modulepreload" href="src/ui/dom.js">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="header">
+  <button class="hbtn menu-btn" id="menu-btn" type="button" aria-label="Open navigation">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <a class="brand" href="#/" aria-label="Offshore Analyses home">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#0b6e8f"/><path d="M22 14h20l6 34H16z" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"/><path d="M20 26h24M18 38h28M22 14l22 24M42 14L20 38" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M6 50c5-5 9-5 13 0s9 5 13 0 9-5 13 0 9 5 13 0" fill="none" stroke="#9fe0f0" stroke-width="3.2" stroke-linecap="round"/></svg>
+    <span>Offshore Analyses</span>
+  </a>
+  <div class="navarrows">
+    <button class="arrow" id="nav-back" type="button" aria-label="Back to the previous page" title="Back (Alt + ←)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <button class="arrow" id="nav-fwd" type="button" aria-label="Forward to the next page" title="Forward (Alt + →)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+  </div>
+  <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
+  <span class="net" id="net" role="status"><i></i><span>Online — live data</span></span>
+  <button class="hbtn" id="install-btn" type="button" title="Install this app on your device for offline use">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"/></svg><span class="lbl">Install</span>
+  </button>
+  <button class="hbtn" id="theme-btn" type="button" aria-label="Switch colour theme" title="Light / dark / follow device">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/></svg>
+  </button>
+</header>
+<div class="layout">
+  <nav class="nav" id="nav" aria-label="Main navigation"></nav>
+  <div class="scrim" id="scrim"></div>
+  <main id="main" tabindex="-1"><div class="empty">Loading…</div></main>
+</div>
+<noscript><p style="padding:24px">Offshore Analyses needs JavaScript to run its calculations.</p></noscript>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

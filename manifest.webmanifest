@@ -1,0 +1,25 @@
+{
+  "name": "Offshore Analyses",
+  "short_name": "Offshore",
+  "description": "Engineering analysis suite for offshore, marine, subsea and offshore renewable-energy structures. Works offline.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "id": "./index.html",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#f3f5f7",
+  "theme_color": "#0b6e8f",
+  "categories": ["productivity", "utilities", "education"],
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Project & site data", "url": "./index.html#/site" },
+    { "name": "Input data portal", "url": "./index.html#/portal" },
+    { "name": "Decision support", "url": "./index.html#/decision" }
+  ]
+}

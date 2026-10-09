@@ -1,0 +1,10 @@
+{
+  "mirrors": [
+    { "url": "https://samuelakosaonyejekwe.github.io/offshoreanalyses/", "host": "GitHub Pages", "note": "primary" },
+    { "url": "https://raw.githack.com/samuelakosaonyejekwe/offshoreanalyses/main/index.html", "host": "raw.githack CDN", "note": "served from the repository, independent of GitHub Pages" }
+  ],
+  "assetBases": [
+    "https://cdn.jsdelivr.net/gh/samuelakosaonyejekwe/offshoreanalyses@main/",
+    "https://raw.githack.com/samuelakosaonyejekwe/offshoreanalyses/main/"
+  ]
+}
