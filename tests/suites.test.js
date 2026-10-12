@@ -60,10 +60,13 @@ for (let n = 1; n <= 17; n++) {
 
     test(`${mod.id}: runs with defaults`, async () => {
       const { values } = defaults(mod);
-      const t0 = Date.now();
+      // Processor time, not wall-clock time: the limit must mean "this module is too heavy", never
+      // "the machine happened to be busy" (a wall-clock limit failed s01-pushover at 8.1 s under load).
+      const c0 = process.cpuUsage();
       const res = await mod.compute(structuredClone(values), ctx);
-      const ms = Date.now() - t0;
-      assert.ok(ms < 8000, `default run took ${ms} ms`);
+      const c = process.cpuUsage(c0);
+      const ms = Math.round((c.user + c.system) / 1000);
+      assert.ok(ms < 8000, `default run used ${ms} ms of processor time`);
       assert.ok(res && Array.isArray(res.kpis) && res.kpis.length, 'no kpis');
       const kk = new Set();
       for (const k of res.kpis) { assert.ok(k.key && !kk.has(k.key), `kpi key ${k.key}`); kk.add(k.key); assert.ok(k.label, 'kpi label'); assert.ok(Number.isFinite(k.value), `kpi ${k.key} = ${k.value}`); if (k.limit != null) assert.ok(['min', 'max'].includes(k.sense), `kpi ${k.key}: sense`); assert.ok(typeof k.explain === 'string' && k.explain.length >= 25, `kpi ${k.key}: explain missing`); }

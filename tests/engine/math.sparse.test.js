@@ -382,9 +382,10 @@ test('SkylineSym performance: 30 000 dof, half-bandwidth 300 (9 million stored c
   }
   const xt = Float64Array.from({ length: n }, () => rnd());
   const b = K.mulVec(xt);
-  const t0 = performance.now();
+  const c0 = process.cpuUsage();
   K.factor();
-  const tf = performance.now() - t0;
+  const cu = process.cpuUsage(c0);
+  const tf = (cu.user + cu.system) / 1000;   // processor time: independent of how busy the machine is
   const x = K.solve(b);
   let e = 0;
   for (let i = 0; i < n; i++) e = Math.max(e, Math.abs(x[i] - xt[i]));
