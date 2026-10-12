@@ -72,7 +72,9 @@ function pileSupport(b, supports, node, piles, material) {
  * @param {number} o.topElevation elevation of the jacket top (work point) above still water [m]
  * @param {number} o.topWidthX leg spacing at the top in x [m] (for 3 legs: side length of the triangle at the top)
  * @param {number} [o.topWidthY=o.topWidthX] leg spacing at the top in y [m] (4 legs)
- * @param {number} [o.batter=8] leg batter 1 horizontal : batter vertical in each battered direction [-] (Infinity = vertical legs)
+ * @param {number} [o.batter=8] leg batter 1 horizontal : batter vertical in each battered direction [-] (Infinity = vertical legs);
+ *   the leg spacing grows by 2·H/batter from top to mudline (for 3 legs this is the growth of the triangle side, so the
+ *   radial batter of each leg is batter·√3/2)
  * @param {number} [o.baseWidthX] leg spacing at the mudline in x [m]; overrides `batter` when given
  * @param {number} [o.baseWidthY] leg spacing at the mudline in y [m]
  * @param {number} [o.bays=4] number of bracing bays
@@ -321,17 +323,21 @@ export function deckGridModel({
  * @param {object} o.deckSection deck beam section
  * @param {{D:number, t:number}} o.pileSection pile section [m]
  * @param {number} [o.overhang=0] deck overhang beyond the end piles [m]
- * @param {boolean} [o.pinnedHeads=false] pile heads pinned to the deck beam
+ * @param {boolean} [o.pinnedHeads=false] pile heads pinned to the deck beam (needs at least two pile heads, otherwise the deck is a mechanism)
+ * @param {boolean} [o.floodedPiles=true] open-ended piles: water inside below the waterline (false = sealed, buoyant piles)
  * @param {object} [o.material]
  * @returns {{nodes:number[][], members:object[], supports:object[], loadCases:object[], meta:object}} frame3d model; meta = { headNodes, toeNodes, deckMembers, pileMembers }
  */
 export function wharfBentModel({
-  pileX, deckElevation, seabedZ, fixityDepth, rakers = [], deckSection, pileSection, overhang = 0, pinnedHeads = false, material = STEEL,
+  pileX, deckElevation, seabedZ, fixityDepth, rakers = [], deckSection, pileSection, overhang = 0, pinnedHeads = false, floodedPiles = true,
+  material = STEEL,
 }) {
   if (!Array.isArray(pileX) || pileX.length < 1) throw new RangeError('pileX must list at least one pile position');
   for (let i = 1; i < pileX.length; i++) if (!(pileX[i] > pileX[i - 1])) throw new RangeError('pileX must be strictly ascending');
   if (!Number.isFinite(deckElevation)) throw new RangeError('deckElevation must be finite');
   if (!deckSection) throw new RangeError('deckSection is required');
+  if (!(overhang >= 0)) throw new RangeError('overhang must be non-negative');
+  if (pinnedHeads && pileX.length < 2) throw new RangeError('pinnedHeads needs at least two pile positions in pileX (a deck on one pinned pile head is a mechanism)');
   const pile = tubeSec('pileSection', pileSection);
   const fix = fixityDepth === undefined ? 5 * pile.D : pos('fixityDepth', fixityDepth);
   const bedAt = (i) => (Array.isArray(seabedZ) ? seabedZ[i] : seabedZ);
@@ -346,7 +352,7 @@ export function wharfBentModel({
     if (!Number.isFinite(bed) || !(bed < deckElevation)) throw new RangeError('seabedZ must be below the deck at every pile');
     const zt = bed - fix;
     const toe = b.node(x + slope * (deckElevation - zt), 0, zt);
-    pileMembers.push(b.member(toe, head, pile, group, { material, ...rel }));
+    pileMembers.push(b.member(toe, head, pile, group, { material, flooded: floodedPiles, ...rel }));
     supports.push({ node: toe, fix: 'fixed' });
     toeNodes.push(toe);
   };
@@ -376,11 +382,13 @@ export function wharfBentModel({
  * @param {{D:number, t:number}} o.pileSection [m]
  * @param {number} [o.capStiffnessFactor=1000] multiplier on the pile section properties for the cap members [-]
  * @param {number} [o.capMass=0] mass of the cap at the central node [kg]
+ * @param {boolean} [o.floodedPiles=true] open-ended piles: water inside below the waterline (false = sealed, buoyant piles)
  * @param {object} [o.material]
  * @returns {{nodes:number[][], members:object[], supports:object[], nodeMasses:object[], loadCases:object[], meta:object}} frame3d model; meta = { capNode, headNodes, toeNodes }
  */
 export function dolphinModel({
-  nPiles, radius, capElevation, seabedZ, fixityDepth, batter = Infinity, pileSection, capStiffnessFactor = 1000, capMass = 0, material = STEEL,
+  nPiles, radius, capElevation, seabedZ, fixityDepth, batter = Infinity, pileSection, capStiffnessFactor = 1000, capMass = 0, floodedPiles = true,
+  material = STEEL,
 }) {
   if (!Number.isInteger(nPiles) || nPiles < 3) throw new RangeError('nPiles must be an integer of at least 3');
   pos('radius', radius);
@@ -392,7 +400,7 @@ export function dolphinModel({
   const capNode = b.node(0, 0, capElevation);
   const di = pile.D - 2 * pile.t;
   const A = Math.PI / 4 * (pile.D ** 2 - di ** 2); const I = Math.PI / 64 * (pile.D ** 4 - di ** 4);
-  const k = capStiffnessFactor;
+  const k = pos('capStiffnessFactor', capStiffnessFactor);
   const capSec = { A: A * k, Iy: I * k, Iz: I * k, J: 2 * I * k };
   const massless = { ...material, rho: 0 };
   const headNodes = []; const toeNodes = []; const supports = [];
@@ -404,7 +412,7 @@ export function dolphinModel({
     const rt = radius + slope * (capElevation - zt);
     const toe = b.node(rt * Math.cos(a), rt * Math.sin(a), zt);
     b.member(capNode, head, capSec, 'cap', { material: massless });
-    b.member(toe, head, pile, 'pile', { material });
+    b.member(toe, head, pile, 'pile', { material, flooded: floodedPiles });
     supports.push({ node: toe, fix: 'fixed' });
     headNodes.push(head); toeNodes.push(toe);
   }
