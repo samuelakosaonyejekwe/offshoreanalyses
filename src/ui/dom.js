@@ -35,6 +35,16 @@ function append(el, kids) {
   }
 }
 
+// Views compose children with conditionals (`cond ? node : null`). The platform's own append() would print
+// the text "null" for those, so drop empty children here once, for every element.
+if (typeof Element !== 'undefined' && !Element.prototype.__oaAppend) {
+  for (const name of ['append', 'prepend']) {
+    const native = Element.prototype[name];
+    Element.prototype[name] = function patched(...kids) { return native.apply(this, kids.flat(Infinity).filter((k) => k != null && k !== false)); };
+  }
+  Element.prototype.__oaAppend = true;
+}
+
 export const clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
 
 const ICONS = {
