@@ -448,35 +448,62 @@ export function eulerCharacteristic(indices, nVerts, edges = buildEdges(indices,
  *   the number shared by more than two (non-conforming input).
  */
 export function boundaryFaces(model) {
-  const faces = new Map();
-  let cellBase = 0;
+  let total = 0;
   for (const block of model.cells || []) {
     const info = CELL_INFO[block.type];
     if (!info) throw new RangeError(`cells.type: unsupported cell type '${block.type}'`);
+    total += ((block.conn.length / info.nodes) | 0) * CELL_FACES[block.type].length;
+  }
+  // open-addressing hash of faces keyed by their sorted node ids (typed arrays only: meshes of millions of cells)
+  let size = 16;
+  while (size < 2 * total) size *= 2;
+  const mask = size - 1;
+  const table = new Int32Array(size).fill(-1);
+  const sorted = new Uint32Array(4 * total), ids = new Uint32Array(4 * total), owner = new Uint32Array(total), count = new Uint8Array(total), nodes = new Uint8Array(total);
+  let nRec = 0, cellBase = 0;
+  const q = [0, 0, 0, 0];
+  for (const block of model.cells || []) {
     const ft = CELL_FACES[block.type];
-    const nn = info.nodes;
+    const nn = CELL_INFO[block.type].nodes;
     const nc = (block.conn.length / nn) | 0;
     for (let c = 0; c < nc; c++) {
-      for (let q = 0; q < ft.length; q++) {
-        const lf = ft[q];
-        const ids = lf.length === 3
-          ? [block.conn[c * nn + lf[0]], block.conn[c * nn + lf[1]], block.conn[c * nn + lf[2]]]
-          : [block.conn[c * nn + lf[0]], block.conn[c * nn + lf[1]], block.conn[c * nn + lf[2]], block.conn[c * nn + lf[3]]];
-        const key = ids.slice().sort((x, y) => x - y).join(',');
-        const rec = faces.get(key);
-        if (rec) rec.n++; else faces.set(key, { ids, cell: cellBase + c, n: 1 });
+      for (let f = 0; f < ft.length; f++) {
+        const lf = ft[f], m = lf.length;
+        for (let k = 0; k < m; k++) q[k] = block.conn[c * nn + lf[k]];
+        let s0 = q[0], s1 = q[1], s2 = q[2], s3 = m === 4 ? q[3] : NONE, t;
+        if (s0 > s1) { t = s0; s0 = s1; s1 = t; }
+        if (s2 > s3) { t = s2; s2 = s3; s3 = t; }
+        if (s0 > s2) { t = s0; s0 = s2; s2 = t; }
+        if (s1 > s3) { t = s1; s1 = s3; s3 = t; }
+        if (s1 > s2) { t = s1; s1 = s2; s2 = t; }
+        let h = (Math.imul(s0, 73856093) ^ Math.imul(s1, 19349663) ^ Math.imul(s2, 83492791) ^ Math.imul(s3, 2654435761)) & mask;
+        for (;;) {
+          const r = table[h];
+          if (r < 0) {
+            table[h] = nRec;
+            sorted[4 * nRec] = s0; sorted[4 * nRec + 1] = s1; sorted[4 * nRec + 2] = s2; sorted[4 * nRec + 3] = s3;
+            for (let k = 0; k < m; k++) ids[4 * nRec + k] = q[k];
+            owner[nRec] = cellBase + c; count[nRec] = 1; nodes[nRec] = m;
+            nRec++;
+            break;
+          }
+          if (sorted[4 * r] === s0 && sorted[4 * r + 1] === s1 && sorted[4 * r + 2] === s2 && sorted[4 * r + 3] === s3) { if (count[r] < 255) count[r]++; break; }
+          h = (h + 1) & mask;
+        }
       }
     }
     cellBase += nc;
   }
-  const tris = [], quads = [], triCell = [], quadCell = [];
-  let interior = 0, over = 0;
-  for (const rec of faces.values()) {
-    if (rec.n === 1) {
-      if (rec.ids.length === 3) { tris.push(...rec.ids); triCell.push(rec.cell); } else { quads.push(...rec.ids); quadCell.push(rec.cell); }
-    } else if (rec.n === 2) interior++; else over++;
+  let nt = 0, nq = 0, interior = 0, over = 0;
+  for (let r = 0; r < nRec; r++) { if (count[r] === 1) { if (nodes[r] === 3) nt++; else nq++; } else if (count[r] === 2) interior++; else over++; }
+  const tris = new Uint32Array(3 * nt), quads = new Uint32Array(4 * nq), triCell = new Uint32Array(nt), quadCell = new Uint32Array(nq);
+  nt = 0; nq = 0;
+  for (let r = 0; r < nRec; r++) {
+    if (count[r] !== 1) continue;
+    if (nodes[r] === 3) { tris[3 * nt] = ids[4 * r]; tris[3 * nt + 1] = ids[4 * r + 1]; tris[3 * nt + 2] = ids[4 * r + 2]; triCell[nt++] = owner[r]; }
+    else { quads[4 * nq] = ids[4 * r]; quads[4 * nq + 1] = ids[4 * r + 1]; quads[4 * nq + 2] = ids[4 * r + 2]; quads[4 * nq + 3] = ids[4 * r + 3]; quadCell[nq++] = owner[r]; }
   }
-  return { tris: Uint32Array.from(tris), quads: Uint32Array.from(quads), triCell: Uint32Array.from(triCell), quadCell: Uint32Array.from(quadCell), interiorFaces: interior, overSharedFaces: over };
+  return { tris, quads, triCell, quadCell, interiorFaces: interior, overSharedFaces: over };
 }
 
 /**
@@ -575,10 +602,8 @@ export function selfIntersections(positions, indices, { maxPairs = 1000 } = {}) 
   const pairs = [];
   if (F < 2) return { pairs, truncated: false };
   const bb = bounds(positions);
-  const n = Math.max(1, Math.min(64, Math.round(Math.cbrt(F / 2))));
-  const sx = (bb.max[0] - bb.min[0]) / n || 1, sy = (bb.max[1] - bb.min[1]) / n || 1, sz = (bb.max[2] - bb.min[2]) / n || 1;
-  const cells = new Map();
   const fb = new Float64Array(6 * F);
+  let ext = 0;
   for (let f = 0; f < F; f++) {
     let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
     for (let k = 0; k < 3; k++) {
@@ -588,11 +613,19 @@ export function selfIntersections(positions, indices, { maxPairs = 1000 } = {}) 
       z0 = Math.min(z0, positions[v + 2]); z1 = Math.max(z1, positions[v + 2]);
     }
     fb.set([x0, y0, z0, x1, y1, z1], 6 * f);
-    const i0 = Math.min(n - 1, Math.floor((x0 - bb.min[0]) / sx)), i1 = Math.min(n - 1, Math.floor((x1 - bb.min[0]) / sx));
-    const j0 = Math.min(n - 1, Math.floor((y0 - bb.min[1]) / sy)), j1 = Math.min(n - 1, Math.floor((y1 - bb.min[1]) / sy));
-    const k0 = Math.min(n - 1, Math.floor((z0 - bb.min[2]) / sz)), k1 = Math.min(n - 1, Math.floor((z1 - bb.min[2]) / sz));
+    ext += Math.max(x1 - x0, y1 - y0, z1 - z0);
+  }
+  // cubic cells about twice the mean face size, whatever the proportions of the body (a long slender hull must
+  // not put all its faces into a few slab-shaped cells); at most 1024 cells along any axis
+  const h = Math.max(2 * ext / F, bb.diagonal / 1024, 1e-300);
+  const nx = Math.max(1, Math.ceil((bb.max[0] - bb.min[0]) / h)), ny = Math.max(1, Math.ceil((bb.max[1] - bb.min[1]) / h)), nz = Math.max(1, Math.ceil((bb.max[2] - bb.min[2]) / h));
+  const cells = new Map();
+  for (let f = 0; f < F; f++) {
+    const i0 = Math.min(nx - 1, Math.floor((fb[6 * f] - bb.min[0]) / h)), i1 = Math.min(nx - 1, Math.floor((fb[6 * f + 3] - bb.min[0]) / h));
+    const j0 = Math.min(ny - 1, Math.floor((fb[6 * f + 1] - bb.min[1]) / h)), j1 = Math.min(ny - 1, Math.floor((fb[6 * f + 4] - bb.min[1]) / h));
+    const k0 = Math.min(nz - 1, Math.floor((fb[6 * f + 2] - bb.min[2]) / h)), k1 = Math.min(nz - 1, Math.floor((fb[6 * f + 5] - bb.min[2]) / h));
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
-      const key = (i * n + j) * n + k;
+      const key = (i * ny + j) * nz + k;
       const l = cells.get(key);
       if (l) l.push(f); else cells.set(key, [f]);
     }
@@ -751,9 +784,11 @@ function inspectVolume(model) {
     issue(issues, 'error', 'over-shared-faces', bf.overSharedFaces, `${plural(bf.overSharedFaces, 'face')} are shared by more than two cells.`);
     const surf = toSurface(model);
     const edges = buildEdges(surf.indices, nV);
-    const loops = boundaryLoops(surf.indices, nV, edges);
-    // a conforming mesh has a closed boundary; free edges on it reveal hanging nodes or mismatched faces
-    issue(issues, 'error', 'non-conforming-boundary', loops.edgeCount, `The boundary of the mesh has ${plural(loops.edgeCount, 'free edge')}: cells do not match face to face (hanging nodes or mixed face types).`);
+    // a conforming mesh has a closed two-manifold boundary. A hanging node leaves the unmatched coarse and fine
+    // faces back to back, so their edges carry one, three or four boundary faces instead of two
+    let odd = 0;
+    for (let e = 0; e < edges.edgeCount; e++) if (edges.edgeFaceStart[e + 1] - edges.edgeFaceStart[e] !== 2) odd++;
+    issue(issues, 'error', 'non-conforming-boundary', odd, `${plural(odd, 'edge')} of the mesh boundary do not join exactly two boundary faces: cells do not match face to face (hanging nodes, mixed face types, or cells touching only along an edge).`);
     boundary = { triangles: bf.tris.length / 3, quads: bf.quads.length / 4, interiorFaces: bf.interiorFaces, components: connectedComponents(surf.indices, nV, 'edge', edges).count };
   }
   return {

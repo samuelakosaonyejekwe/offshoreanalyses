@@ -30,7 +30,7 @@ export function checksTable(result) {
 }
 
 function modelView(p) {
-  const box = h('div.viewer', { role: 'img', 'aria-label': p.title || '3-D model view' });
+  const box = h('div.viewer');
   const wrap = h('div.figure', h('h3', p.title || '3-D view'), box, h('small.muted', 'Drag to orbit · two fingers or right-drag to pan · wheel or pinch to zoom · F fits the view.'));
   import('./viewer3d.js').then(({ createViewer }) => {
     const viewer = createViewer(box, {});
