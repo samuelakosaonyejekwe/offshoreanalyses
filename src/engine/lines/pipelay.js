@@ -23,6 +23,100 @@ function num(v, name, { min = -Infinity, max = Infinity, strictMin = false } = {
 /* ------------------------------------------------------------------------------------------------------- */
 /* S-lay                                                                                                     */
 
+/* Validated inputs → rod model, mesh bookkeeping and the natural lift-off geometry shared by sLay and sLayRodModel. */
+function sLaySetup(o) {
+  const { pipe, D, hingeHeight: zH, stingerRadius: R, stingerLength: Ls, tension: T, nElem = 260, rollerStiffness = 1e8 } = o ?? {};
+  if (!pipe) throw new RangeError('pipelay: argument pipe is required');
+  num(D, 'D', { min: 0, strictMin: true }); num(zH, 'hingeHeight', { min: 0, strictMin: true });
+  num(R, 'stingerRadius', { min: 0, strictMin: true }); num(Ls, 'stingerLength', { min: 0, strictMin: true, max: 0.5 * Math.PI * R });
+  const w = pipe.w;
+  num(T, 'tension', { min: w * zH, strictMin: true });
+  const H = T - w * zH, a = H / w;
+  // natural lift-off: stinger slope equals the catenary slope at the same elevation
+  const thTip = Ls / R;
+  const g = (phi) => Math.cos(phi) - H / (H + w * (zH - R * (1 - Math.cos(phi))));
+  let phiL = thTip;
+  if (g(1e-9) > 0 && g(thTip) < 0) phiL = brent(g, 1e-9, thTip, { tol: 1e-12 });
+  const sLift = R * phiL, zL = zH - R * (1 - Math.cos(phiL));
+  const sig = Math.sqrt(zL * (zL + 2 * a));
+  const Lg = num(o.groundedLength ?? 0.35 * sig, 'groundedLength', { min: 0, strictMin: true });
+  const lob = Math.min(1.3 * Ls, sLift + 0.5 * sig);
+  const n1 = Math.max(30, Math.round(0.27 * nElem)), n3 = Math.max(10, Math.round(0.13 * nElem)), n2 = Math.max(40, nElem - n1 - n3);
+  const sections = [
+    { ...pipe, length: lob, nElem: n1 },
+    { ...pipe, length: sLift + sig - lob + 0.4 * Lg, nElem: n2 },
+    { ...pipe, length: 0.6 * Lg, nElem: n3 },
+  ];
+  // Starting shape, marched from the tensioner along the stretched element lengths so that it already carries the
+  // lay tension Te = H + w·z (frictionless stinger and catenary alike); a stress-free start has no geometric
+  // stiffness against the tensioner force and makes the first equilibrium iteration ill-conditioned.
+  //  - on the rollers up to the lift-off point: the stinger arc, seated into the roller springs by the penetration
+  //    that carries the contact pressure Te/R + w·cos φ;
+  //  - free span: slope of the natural catenary at the current elevation, tan θ = sqrt(z(z + 2a))/a. When the pipe
+  //    bears on the stinger tip the catenary leaves steeper than the tip tangent; the slope then starts at the tip
+  //    tangent and approaches the catenary over the bending boundary layer λ = sqrt(EI/Te) (tensioned beam over a
+  //    knife edge) instead of forming a kink;
+  //  - on the seabed: horizontal, seated by the penetration w/kn that carries the weight.
+  // Seating matters: nodes placed exactly on a contact surface are in or out of contact by rounding alone.
+  const nn = n1 + n2 + n3 + 1, x = new Float64Array(nn), z = new Float64Array(nn);
+  const kSeabed = o.seabed?.kn ?? 1e6;
+  const catSlope = (zz) => Math.atan(Math.sqrt(zz * (zz + 2 * a)) / a);
+  const kink = phiL < thTip ? 0 : phiL - catSlope(zL), lamB = Math.sqrt(pipe.EI / (H + w * zL));
+  const arc = (p) => {
+    const phi = p / R;
+    const Rs = R - Math.min(1, phi / 0.02) * ((H + w * (zH - R * (1 - Math.cos(phi)))) / R + w * Math.cos(phi)) / rollerStiffness;
+    return [Rs * Math.sin(phi), zH - R + Rs * Math.cos(phi)];
+  };
+  // The seabed end is pinned where the unstretched stinger arc + catenary + grounded length would end; the
+  // tensioner end is free to move horizontally and takes up the stretch, so the march starts at the arc
+  // coordinate p0 (on the flat tensioner bed when negative) that brings the last node to the pinned position.
+  const n = nn - 1, xEnd = R * Math.sin(phiL) + a * Math.asinh(sig / a) + Lg;
+  const march = (p0) => {
+    let k = 0, p = p0, cx = Math.min(p0, 0), cz = zH, sFree = 0, sGround = -1;
+    if (p0 > 0) [cx, cz] = arc(p0);
+    x[0] = cx; z[0] = cz;
+    for (const sec of sections) {
+      const h = sec.length / sec.nElem;
+      for (let i = 0; i < sec.nElem; i++) {
+        let rem = h * (1 + (H + w * Math.max(cz, 0)) / pipe.EA);
+        if (p < 0) { const d = Math.min(rem, -p); p += d; rem -= d; cx = p; }
+        // on the arc the element is a chord, shorter than the arc it spans by the factor 1 − c²/(24R²)
+        if (rem > 0 && p < sLift) { const gain = 1 + rem * rem / (24 * R * R), d = Math.min(rem, (sLift - p) / gain); p = Math.min(p + d * gain, sLift); rem -= d; [cx, cz] = arc(p); }
+        const ds = rem / 8;
+        for (let j = 0; j < 8 && rem > 0; j++) {
+          if (sGround < 0) {
+            const th0 = catSlope(cz) + kink * Math.exp(-sFree / lamB), zm = Math.max(cz - 0.5 * ds * Math.sin(th0), 0);
+            const th = catSlope(zm) + kink * Math.exp(-(sFree + 0.5 * ds) / lamB);
+            cx += ds * Math.cos(th); cz -= ds * Math.sin(th); sFree += ds;
+            if (cz <= 0 || th <= 0) { cz = 0; sGround = 0; }
+          } else { cx += ds; sGround += ds; cz = -Math.min(1, sGround / (0.02 * a)) * w / kSeabed; }
+        }
+        k++; x[k] = cx; z[k] = cz;
+      }
+    }
+    return x[n];
+  };
+  let p0 = 0;
+  for (let pass = 0; pass < 4; pass++) p0 += xEnd - march(p0);
+  march(p0);
+  const model = {
+    sections,
+    endA: { z: zH, angle: 0, Fx: -T }, endB: { x: xEnd, z: 0 },
+    seabed: { z: 0, kn: 1e6, ...(o.seabed ?? {}) },
+    supports: [{ xc: 0, zc: zH - R, R, k: rollerStiffness, angMin: Math.PI / 2 - thTip, angMax: Math.PI }],
+    initial: { x, z }, rampLoads: false, rampSupports: false, nSteps: 1,
+  };
+  return { model, n, zL, thTip, hEl: lob / n1 };
+}
+
+/**
+ * The rod.js model that sLay solves (sections, end conditions, seabed, stinger support and starting shape), for
+ * callers that want to solve or vary it themselves with solveRodStatic.
+ * @param {object} o sLay arguments
+ * @returns {object} solveRodStatic model; `initial.x`, `initial.z` are the starting node coordinates [m]
+ */
+export function sLayRodModel(o) { return sLaySetup(o).model; }
+
 /**
  * S-lay static configuration: pipe held by the tensioner at the top of a circular-arc stinger (roller bed of
  * radius R and arc length Ls), curving over the overbend, lifting off, passing through the sagbend and touching
@@ -31,7 +125,8 @@ function num(v, name, { min = -Infinity, max = Infinity, strictMin = false } = {
  * Method: rod.js beam model; the pipe end at the tensioner is clamped horizontal at the hinge elevation and
  * loaded by the tensioner force, the stinger is a frictionless rigid circular support active over its arc only
  * (the pipe may lift off before the last roller or bear on it), the seabed is a linear spring bed. The starting
- * shape is the stinger arc joined to a natural catenary with H = T − w·zHinge.
+ * shape is the stinger arc joined to a natural catenary with H = T − w·zHinge, pre-tensioned and seated on its
+ * supports (see the comments in the code).
  * Reference: DNV-ST-F101 Sec. 10 (installation analysis); Bai & Bai, "Subsea Pipelines and Risers", Ch. 34;
  * analytic overbend strain ε = D/(2R) + T/EA.
  * Validity: static, in-plane, continuous roller support (discrete roller reactions not resolved), elastic pipe,
@@ -54,48 +149,9 @@ function num(v, name, { min = -Infinity, max = Infinity, strictMin = false } = {
  *   horizontal distance stinger tip → touchdown); angles [deg below horizontal]; maxRollerReaction [N/m]
  */
 export function sLay(o) {
-  const { pipe, D, hingeHeight: zH, stingerRadius: R, stingerLength: Ls, tension: T, nElem = 260, rollerStiffness = 1e8 } = o ?? {};
-  if (!pipe) throw new RangeError('pipelay: argument pipe is required');
-  num(D, 'D', { min: 0, strictMin: true }); num(zH, 'hingeHeight', { min: 0, strictMin: true });
-  num(R, 'stingerRadius', { min: 0, strictMin: true }); num(Ls, 'stingerLength', { min: 0, strictMin: true, max: 0.5 * Math.PI * R });
-  const w = pipe.w;
-  num(T, 'tension', { min: w * zH, strictMin: true });
-  const H = T - w * zH, a = H / w;
-  // natural lift-off: stinger slope equals the catenary slope at the same elevation
-  const thTip = Ls / R;
-  const g = (phi) => Math.cos(phi) - H / (H + w * (zH - R * (1 - Math.cos(phi))));
-  let phiL = thTip;
-  if (g(1e-9) > 0 && g(thTip) < 0) phiL = brent(g, 1e-9, thTip, { tol: 1e-12 });
-  const sLift = R * phiL, xL = R * Math.sin(phiL), zL = zH - R * (1 - Math.cos(phiL));
-  const sig = Math.sqrt(zL * (zL + 2 * a));
-  const Lg = num(o.groundedLength ?? 0.35 * sig, 'groundedLength', { min: 0, strictMin: true });
-  const lob = Math.min(1.3 * Ls, sLift + 0.5 * sig);
-  const n1 = Math.max(30, Math.round(0.27 * nElem)), n3 = Math.max(10, Math.round(0.13 * nElem)), n2 = Math.max(40, nElem - n1 - n3);
-  const sections = [
-    { ...pipe, length: lob, nElem: n1 },
-    { ...pipe, length: sLift + sig - lob + 0.4 * Lg, nElem: n2 },
-    { ...pipe, length: 0.6 * Lg, nElem: n3 },
-  ];
-  const nn = n1 + n2 + n3 + 1, x = new Float64Array(nn), z = new Float64Array(nn);
-  const xT = xL + a * Math.asinh(sig / a);
-  let k = 0, s = 0;
-  const place = () => {
-    if (s <= sLift) { x[k] = R * Math.sin(s / R); z[k] = zH - R * (1 - Math.cos(s / R)); } else {
-      const q = sig - (s - sLift);
-      if (q > 0) { x[k] = xL + a * (Math.asinh(sig / a) - Math.asinh(q / a)); z[k] = Math.sqrt(a * a + q * q) - a; } else { x[k] = xT - q; z[k] = 0; }
-    }
-    k++;
-  };
-  place();
-  for (const sec of sections) { const h = sec.length / sec.nElem; for (let i = 0; i < sec.nElem; i++) { s += h; place(); } }
-  const n = nn - 1;
-  const rod = solveRodStatic({
-    sections,
-    endA: { z: zH, angle: 0, Fx: -T }, endB: { x: x[n], z: 0 },
-    seabed: { z: 0, kn: 1e6, ...(o.seabed ?? {}) },
-    supports: [{ xc: 0, zc: zH - R, R, k: rollerStiffness, angMin: Math.PI / 2 - thTip, angMax: Math.PI }],
-    initial: { x, z }, rampLoads: false, rampSupports: false, nSteps: 1,
-  });
+  const { model, n, zL, thTip, hEl } = sLaySetup(o);
+  const { pipe, D, hingeHeight: zH, stingerRadius: R, tension: T } = o;
+  const rod = solveRodStatic(model);
   let kOb = 0, kSag = 0, kLift = 0, kTdp = n, maxQ = 0;
   for (let i = 0; i <= n; i++) {
     if (rod.curvature[i] < rod.curvature[kOb]) kOb = i;
@@ -105,7 +161,6 @@ export function sLay(o) {
   for (let i = kLift + 1; i <= n; i++) if (rod.reaction[i] > 0) { kTdp = i; break; }
   const xTip = R * Math.sin(thTip);
   const polar = Math.atan2(rod.z[kLift] - (zH - R), rod.x[kLift]);
-  const hEl = sections[0].length / n1;
   return {
     topTension: rod.Te[0], bottomTension: rod.Te[n],
     overbendCurvature: -rod.curvature[kOb], overbendStrain: -rod.curvature[kOb] * D / 2 + rod.Te[kOb] / pipe.EA,

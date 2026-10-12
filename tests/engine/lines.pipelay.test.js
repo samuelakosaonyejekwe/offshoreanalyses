@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../../src/engine/lines/pipelay.js';
 import { pipeProperties } from '../../src/engine/lines/riser.js';
+import { solveRodStatic } from '../../src/engine/lines/rod.js';
 
 const rel = (a, b) => Math.abs(a - b) / Math.abs(b);
 const DEG = Math.PI / 180;
@@ -135,4 +136,125 @@ test('quasi-dynamic tension bounds, limiting DAF and DNV-ST-F101 simplified layi
   const seq = Math.max(eq(N / A + 2e5 * D / (2 * I)), eq(N / A - 2e5 * D / (2 * I)));
   assert.ok(rel(cr.sagbendStress, seq) < 1e-12 && rel(cr.ucSagbend, seq / (0.87 * 448e6)) < 1e-12);
   assert.throws(() => P.layCriteriaF101({ grade: 'X80', overbendStrain: 0.002, D, t, fy: 1 }), /grade/);
+});
+
+/* ------------------------------------------------------------------------------------------------------- */
+/* Robustness of the S-lay solve: the result must not depend on the last bit of the arithmetic.             */
+
+// 323.9 × 14.3 mm X65 pipe, 3 mm coating, 40 mm concrete, empty, in 120 m of water with the hinge 5 m above the surface
+const layPipe = { EA: 2879103036.9407005, EI: 34569624.09166873, w: 1198.8017938116636 };
+const layBase = { pipe: layPipe, D: 0.3239, hingeHeight: 125, stingerRadius: 150, stingerLength: 90, tension: 1e6, seabed: { kn: 1e6 }, nElem: 100 };
+const LAY_KEYS = ['topTension', 'bottomTension', 'overbendStrain', 'sagbendStrain', 'sagbendMoment', 'departureAngleDeg', 'tdpX', 'layBack', 'maxRollerReaction'];
+const maxRelDiff = (a, b) => Math.max(...LAY_KEYS.map((k) => rel(a[k], b[k])));
+// deterministic pseudo-random numbers in (−0.5, 0.5)
+const lcg = (seed) => () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 - 0.5; };
+// a clean Newton solve from a good starting shape takes a handful of iterations; dozens mean it wandered
+const CLEAN = 12;
+
+test('S-lay, 120 m water depth, 1000 kN: converges in a few Newton iterations to T_top = T and H = T − w·z', () => {
+  const r = P.sLay(layBase);
+  assert.ok(r.rod.converged && r.rod.steps === 1 && r.rod.iterations <= CLEAN, `iterations ${r.rod.iterations}`);
+  assert.ok(r.rod.residual < 1e-8 * 2e6);
+  assert.ok(rel(r.topTension, 1000025.1876) < 1e-6, `${r.topTension}`);
+  assert.ok(rel(r.bottomTension, 1e6 - layPipe.w * 125) < 2e-3, `${r.bottomTension}`);       // frictionless rollers
+  assert.ok(!r.bearsOnTip && r.departureAngleDeg < r.stingerTipAngleDeg);
+  // the starting shape already carries the lay tension and is seated on its supports
+  const m = P.sLayRodModel(layBase), n = m.initial.x.length - 1;
+  const strain0 = Math.hypot(m.initial.x[1] - m.initial.x[0], m.initial.z[1] - m.initial.z[0]) / (m.sections[0].length / m.sections[0].nElem) - 1;
+  assert.ok(rel(strain0, 1e6 / layPipe.EA) < 0.05, `${strain0}`);
+  assert.ok(rel(-m.initial.z[n], layPipe.w / 1e6) < 1e-9);                                    // seabed penetration w/kn
+  const k = 10, d = Math.hypot(m.initial.x[k], m.initial.z[k] - (125 - 150));
+  assert.ok(150 - d > 0.5 * (1e6 / 150) / 1e8 && 150 - d < 2 * (1e6 / 150) / 1e8, `${150 - d}`); // roller penetration ≈ (T/R)/k
+});
+
+test('S-lay is insensitive to perturbations of every input by ±1e-9 (relative)', () => {
+  const ref = P.sLay(layBase);
+  const vary = (f) => ({
+    pipe: { EA: layPipe.EA * f(), EI: layPipe.EI * f(), w: layPipe.w * f() }, D: layBase.D * f(), hingeHeight: 125 * f(), stingerRadius: 150 * f(),
+    stingerLength: 90 * f(), tension: 1e6 * f(), seabed: { kn: 1e6 * f() }, nElem: 100,
+  });
+  const cases = [vary(() => 1 + 1e-9), vary(() => 1 - 1e-9)];
+  // one input at a time, each way
+  for (let i = 0; i < 9; i++) for (const sg of [1, -1]) { let j = 0; cases.push(vary(() => (j++ === i ? 1 + sg * 1e-9 : 1))); }
+  const rnd = lcg(2024);
+  for (let t = 0; t < 10; t++) cases.push(vary(() => 1 + Math.sign(rnd()) * 1e-9));
+  for (const c of cases) {
+    const r = P.sLay(c);
+    assert.ok(r.rod.converged && r.rod.iterations <= CLEAN, `iterations ${r.rod.iterations}`);
+    assert.ok(maxRelDiff(r, ref) < 1e-6, `${maxRelDiff(r, ref)}`);
+  }
+});
+
+test('S-lay is insensitive to 1e-10 m jitter of the starting shape and to last-bit noise in the Math functions', () => {
+  const NOISY = ['sin', 'cos', 'tan', 'atan', 'atan2', 'asinh', 'hypot', 'exp'];
+  // lift-off before the tip, and the pipe bearing on the stinger tip (low tension)
+  for (const c of [layBase, { ...layBase, tension: 6e5 }, { ...layBase, tension: 7e5, nElem: 200 }]) {
+    const ref = P.sLay(c);
+    assert.ok(ref.rod.converged);
+    const rnd = lcg(7);
+    for (let t = 0; t < 8; t++) {
+      const m = P.sLayRodModel(c);
+      for (let i = 0; i < m.initial.x.length; i++) { m.initial.x[i] += 2e-10 * rnd(); m.initial.z[i] += 2e-10 * rnd(); }
+      const rod = solveRodStatic(m), n = rod.s.length - 1;
+      assert.ok(rod.converged && rod.iterations === ref.rod.iterations, `iterations ${rod.iterations} vs ${ref.rod.iterations}`);
+      assert.ok(rel(rod.Te[0], ref.rod.Te[0]) < 1e-8 && rel(rod.Te[n], ref.rod.Te[n]) < 1e-8);
+      let dz = 0;
+      for (let i = 0; i <= n; i++) dz = Math.max(dz, Math.abs(rod.z[i] - ref.rod.z[i]), Math.abs(rod.x[i] - ref.rod.x[i]));
+      assert.ok(dz < 1e-7, `shape differs by ${dz} m`);
+    }
+    // every transcendental result off by up to one unit in the last place, as between JavaScript engines
+    const orig = NOISY.map((f) => Math[f]);
+    try {
+      for (let t = 0; t < 4; t++) {
+        NOISY.forEach((f, i) => { Math[f] = (...a) => orig[i](...a) * (1 + 2.220446049250313e-16 * Math.round(2 * rnd())); });
+        const r = P.sLay(c);
+        assert.ok(r.rod.converged && r.rod.iterations === ref.rod.iterations, `iterations ${r.rod.iterations} vs ${ref.rod.iterations}`);
+        assert.ok(maxRelDiff(r, ref) < 1e-6, `${maxRelDiff(r, ref)}`);
+      }
+    } finally { NOISY.forEach((f, i) => { Math[f] = orig[i]; }); }
+  }
+});
+
+test('S-lay sweep, tension 600–2500 kN × 60–200 elements: every case converges cleanly; tension below w·z is rejected', () => {
+  // All combinations are physically feasible: the tension exceeds the weight of the pipe hanging from the hinge,
+  // w·z = 150 kN. Below about 710 kN the natural catenary would leave steeper than the stinger tip (34.4°), so the
+  // pipe stays on the rollers to the last metres of the stinger or bears on its tip, which is still an equilibrium.
+  // The only infeasible region is T ≤ w·z (no horizontal tension left), rejected as an invalid argument.
+  const wz = layPipe.w * 125;
+  for (const T of [600e3, 650e3, 700e3, 800e3, 1000e3, 1300e3, 1700e3, 2100e3, 2500e3]) {
+    let prev = null;
+    for (const nElem of [60, 80, 100, 130, 160, 200]) {
+      const r = P.sLay({ ...layBase, tension: T, nElem });
+      const tag = `T = ${T / 1e3} kN, nElem = ${nElem}`;
+      assert.ok(r.rod.converged && r.rod.iterations <= 2 * CLEAN, `${tag}: iterations ${r.rod.iterations}`);
+      assert.ok(rel(r.topTension, T) < 1e-3, `${tag}: top ${r.topTension}`);
+      assert.ok(rel(r.bottomTension, T - wz) < 5e-3, `${tag}: bottom ${r.bottomTension}`);
+      // bearsOnTip flags a last roller contact within 1.5 elements of the tip, so near the transition (650–720 kN)
+      // it depends on the mesh; well below and well above it must not
+      if (T <= 600e3) assert.ok(r.bearsOnTip, tag);
+      if (T >= 800e3) assert.ok(!r.bearsOnTip && r.departureAngleDeg < r.stingerTipAngleDeg - 1, tag);
+      assert.ok(r.sagbendStrain > 0 && r.layBack > 0 && r.suspendedLength > 125, tag);
+      // mesh refinement changes the answer only a little (the touchdown point is reported at a node, so it is
+      // resolved to one element length, up to about 2 % of the lay-back on the coarsest mesh)
+      if (prev) assert.ok(rel(r.sagbendStrain, prev.sagbendStrain) < 0.02 && rel(r.tdpX, prev.tdpX) < 0.02, `${tag}: mesh sensitivity`);
+      prev = r;
+    }
+  }
+  // sagbend curvature falls and lay-back grows monotonically with tension (the total sagbend strain does not: its
+  // axial part T/EA grows with tension and dominates above about 1000 kN here)
+  const rs = [600e3, 800e3, 1000e3, 1500e3, 2500e3].map((T) => P.sLay({ ...layBase, tension: T }));
+  for (let i = 1; i < rs.length; i++) assert.ok(rs[i].sagbendCurvature < rs[i - 1].sagbendCurvature && rs[i].layBack > rs[i - 1].layBack);
+  assert.throws(() => P.sLay({ ...layBase, tension: 0.99 * wz }), /pipelay: argument tension/);
+  assert.throws(() => P.sLay({ ...layBase, tension: wz }), /pipelay: argument tension/);
+});
+
+test('S-lay with the pipe bearing hard on the stinger tip (25° kink): converges, and the tension search is continuous', () => {
+  for (const T of [6e5, 6.5e5, 7e5, 7.5e5, 8e5, 9e5]) {
+    const r = P.sLay({ ...base, tension: T });
+    assert.ok(r.rod.converged && r.bearsOnTip, `T = ${T}`);
+    assert.ok(rel(r.topTension, T) < 2e-3 && rel(r.bottomTension, T - pp.w * 160) < 0.08, `T = ${T}: ${r.topTension}, ${r.bottomTension}`);
+  }
+  // neighbouring tensions give neighbouring answers (no jump between equilibria as a node passes the tip)
+  const a = P.sLay({ ...base, tension: 7e5 }), b = P.sLay({ ...base, tension: 7e5 * (1 + 1e-7) });
+  assert.ok(maxRelDiff(a, b) < 1e-4, `${maxRelDiff(a, b)}`);
 });

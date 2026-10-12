@@ -57,7 +57,7 @@ export default {
     if (isS) {
       const T = inp.tension * 1e3;
       need(T > 1.05 * w * h, `The lay tension (${fmt(inp.tension)} kN) does not carry the suspended pipe: it must exceed about ${fmt(1.05 * w * h / 1e3)} kN (weight × height) for this depth.`);
-      r = run(() => sLay({ pipe, D: p.D, hingeHeight: h, stingerRadius: inp.Rst, stingerLength: inp.Lst, tension: T, seabed, nElem: inp.nElem }), 'S-lay solution (try a higher tension, a longer stinger or more elements)');
+      r = run(() => sLay({ pipe, D: p.D, hingeHeight: h, stingerRadius: inp.Rst, stingerLength: inp.Lst, tension: T, seabed, nElem: inp.nElem }), 'S-lay solution (check that the lay tension exceeds the submerged weight times the water depth and that the stinger geometry is consistent)');
       topAngle = r.departureAngleDeg;
     } else {
       r = run(() => jLay({ pipe, D: p.D, depth: h, towerAngleDeg: inp.tower, seabed, nElem: inp.nElem }), 'J-lay solution');

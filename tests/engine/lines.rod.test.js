@@ -254,3 +254,55 @@ test('harmonic response at touchdown: frozen contact peaks at the contact edge; 
   assert.throws(() => rodHarmonicResponse(r, { ...opts, touchdownSmoothing: { travel: -1 } }), /travel/);
   assert.throws(() => rodHarmonicResponse(r, { ...opts, touchdownSmoothing: true }), /touchdownSmoothing/);
 });
+
+test('a rod with no equilibrium fails quickly with a message that says what to check', () => {
+  // weight with nothing to carry it: only the horizontal position of one end is held
+  const x = Float64Array.from({ length: 11 }, (_, i) => i), z = new Float64Array(11).fill(5);
+  const sections = [{ length: 10, EA: 1e8, EI: 1e4, w: 100 }];
+  assert.throws(() => solveRodStatic({ sections, nElem: 10, initial: { x, z }, endA: { x: 0 }, nSteps: 1 }),
+    /rod: static solution did not converge \(load factor [\d.]+, residual [\d.e+-]+ N, [\d.e+-]+ of the reference force\): no stable equilibrium.*end conditions/);
+  assert.throws(() => solveRodStatic({ sections, nElem: 10 }), /no stable equilibrium/);
+});
+
+test('support with an angular window: a rod bearing on the end of the arc has a rounding-independent equilibrium', () => {
+  // weightless tensioned rod clamped horizontal at the crown of a circular bed that ends 30° round, pulled at 60°
+  // below the horizontal from beyond the end: it turns the last 30° over the end of the bed
+  const Rs = 50, tip = Math.PI / 6, pull = Math.PI / 3, T = 2e5;
+  const model = (jit) => {
+    const n = 80, L = 60, x = new Float64Array(n + 1), z = new Float64Array(n + 1);
+    for (let i = 0; i <= n; i++) {
+      const s = L * i / n, sa = Rs * tip;
+      if (s <= sa) { x[i] = (Rs - 2e-5) * Math.sin(s / Rs); z[i] = (Rs - 2e-5) * Math.cos(s / Rs); } else {
+        const be = pull - (pull - tip) * Math.exp(-(s - sa) / 3);          // slope below horizontal, boundary layer sqrt(EI/T) ≈ 3 m
+        x[i] = x[i - 1] + (L / n) * Math.cos(be); z[i] = z[i - 1] - (L / n) * Math.sin(be);
+      }
+      x[i] += jit(); z[i] += jit();
+    }
+    return { sections: [{ length: L, EA: 2e9, EI: 2e6, w: 0, nElem: n }], endA: { x: x[0], z: z[0], angle: 0 },
+      endB: { Fx: T * Math.cos(pull), Fz: -T * Math.sin(pull) },
+      supports: [{ xc: 0, zc: 0, R: Rs, k: 1e8, angMin: Math.PI / 2 - tip, angMax: Math.PI }], initial: { x, z }, rampLoads: false, rampSupports: false, nSteps: 1 };
+  };
+  const ref = solveRodStatic(model(() => 0)), n = ref.s.length - 1;
+  assert.ok(ref.converged);
+  // no contact beyond the end of the arc, and a concentrated reaction just inside it
+  let bx = 0, bz = 0, qEnd = 0;
+  for (let i = 0; i <= n; i++) {
+    const a = Math.atan2(ref.z[i], ref.x[i]), tr = (i === 0 || i === n ? 0.5 : 1) * 60 / 80;
+    if (a < Math.PI / 2 - tip) assert.equal(ref.reaction[i], 0);
+    else if ((a - (Math.PI / 2 - tip)) * Rs < 3) qEnd = Math.max(qEnd, ref.reaction[i]);
+    bx += ref.reaction[i] * tr * Math.cos(a); bz += ref.reaction[i] * tr * Math.sin(a);
+  }
+  assert.ok(qEnd > 5 * T / Rs, `${qEnd}`);                                // well above the seated pressure T/R
+  // global equilibrium: bed reactions + clamp reaction + pull = 0 (to within the small tangential component of the
+  // tapered end contact, of order penetration / taper length of the end reaction, which `reaction` does not carry)
+  assert.ok(Math.abs(bx + ref.endA.Fx + T * Math.cos(pull)) < 1e-3 * T && Math.abs(bz + ref.endA.Fz - T * Math.sin(pull)) < 1e-3 * T);
+  assert.ok(rel(ref.Te[n], T) < 0.01, `${ref.Te[n]}`);
+  let seed = 11;
+  const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed / 4294967296 - 0.5) * 2e-10; };
+  for (let t = 0; t < 6; t++) {
+    const r = solveRodStatic(model(rnd));
+    let d = 0;
+    for (let i = 0; i <= n; i++) d = Math.max(d, Math.abs(r.x[i] - ref.x[i]), Math.abs(r.z[i] - ref.z[i]));
+    assert.ok(r.converged && d < 1e-7, `shape differs by ${d} m`);
+  }
+});

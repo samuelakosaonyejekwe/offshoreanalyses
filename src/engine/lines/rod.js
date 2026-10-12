@@ -356,21 +356,48 @@ function assemble(mesh, model, st, u, fac, R, B, out) {
         const Rc = sp.R + (inside ? -1 : 1) * ((sp.offset ?? 0) + mesh.offset[k]);
         const pen = inside ? d - Rc : Rc - d;
         if (pen <= 0) continue;
+        // Angular window: no contact outside it, and the stiffness rises smoothly from zero to its full value over
+        // the arc length `edge` inside each end (ph = taper factor with zero slope at both ends of the taper, dph
+        // and ddph its first and second derivatives with respect to the polar angle). Without the taper a node
+        // sliding past the end of the support would lose its whole reaction at once, and the discrete problem
+        // would have no equilibrium when the rod bears on the end. The contact force derives from the energy
+        // ½·k·ph·pen², so the tangent is symmetric.
+        let ph = 1, dph = 0, ddph = 0;
         if (sp.angMin !== undefined || sp.angMax !== undefined) {
           const a = Math.atan2(pz, px);
-          if (a < (sp.angMin ?? -Math.PI) || a > (sp.angMax ?? Math.PI)) continue;
+          const dLo = sp.angMin !== undefined ? (a - sp.angMin) * sp.R : Infinity;
+          const dHi = sp.angMax !== undefined ? (sp.angMax - a) * sp.R : Infinity;
+          const dIn = Math.min(dLo, dHi);
+          if (dIn <= 0) continue;
+          const edge = sp.edge ?? mesh.trib[k];
+          if (dIn < edge) {
+            const ta = dIn / edge, da = (dLo < dHi ? 1 : -1) * sp.R / edge;
+            ph = ta * ta * (3 - 2 * ta); dph = 6 * ta * (1 - ta) * da; ddph = (6 - 12 * ta) * da * da;
+          }
         }
         const kl = fac.support * sp.k * mesh.trib[k];
         const sgn = inside ? -1 : 1;
-        const nx = sgn * px / d, nz = sgn * pz / d;
-        R[3 * k] -= kl * pen * nx; R[3 * k + 1] -= kl * pen * nz;
-        if (out) out.q[k] += fac.support * sp.k * pen;
+        const erx = px / d, erz = pz / d;
+        const nx = sgn * erx, nz = sgn * erz;
+        R[3 * k] -= kl * ph * pen * nx; R[3 * k + 1] -= kl * ph * pen * nz;
+        if (out) out.q[k] += fac.support * sp.k * ph * pen;
         if (B) {
           const g = -sgn * pen / d;
-          bandAdd(B, 3 * k, 3 * k, kl * (nx * nx + g * (1 - nx * nx)));
-          bandAdd(B, 3 * k, 3 * k + 1, kl * (nx * nz - g * nx * nz));
-          bandAdd(B, 3 * k + 1, 3 * k, kl * (nx * nz - g * nx * nz));
-          bandAdd(B, 3 * k + 1, 3 * k + 1, kl * (nz * nz + g * (1 - nz * nz)));
+          bandAdd(B, 3 * k, 3 * k, kl * ph * (nx * nx + g * (1 - nx * nx)));
+          bandAdd(B, 3 * k, 3 * k + 1, kl * ph * (nx * nz - g * nx * nz));
+          bandAdd(B, 3 * k + 1, 3 * k, kl * ph * (nx * nz - g * nx * nz));
+          bandAdd(B, 3 * k + 1, 3 * k + 1, kl * ph * (nz * nz + g * (1 - nz * nz)));
+        }
+        if (dph !== 0) {
+          // gradient of the polar angle: ea/d with ea = (−erz, erx); its Hessian is −(er·eaᵀ + ea·erᵀ)/d²
+          const ax = -erz / d, az = erx / d, c1 = kl * pen * dph, c2 = 0.5 * kl * pen * pen * dph, c3 = 0.5 * kl * pen * pen * ddph;
+          R[3 * k] += c2 * ax; R[3 * k + 1] += c2 * az;
+          if (B) {
+            bandAdd(B, 3 * k, 3 * k, -2 * c1 * nx * ax - 2 * c2 * erx * ax + c3 * ax * ax);
+            bandAdd(B, 3 * k, 3 * k + 1, -c1 * (nx * az + ax * nz) - c2 * (erx * az + ax * erz) + c3 * ax * az);
+            bandAdd(B, 3 * k + 1, 3 * k, -c1 * (nx * az + ax * nz) - c2 * (erx * az + ax * erz) + c3 * ax * az);
+            bandAdd(B, 3 * k + 1, 3 * k + 1, -2 * c1 * nz * az - 2 * c2 * erz * az + c3 * az * az);
+          }
         }
       }
     }
@@ -379,6 +406,63 @@ function assemble(mesh, model, st, u, fac, R, B, out) {
     R[rs.dof] += rs.k * (u[rs.dof] - rs.th0);
     if (B) bandAdd(B, rs.dof, rs.dof, rs.k);
   }
+}
+
+/**
+ * Total potential energy [J] whose gradient is the residual of `assemble`, for a frictionless rod on a level seabed
+ * (the only case in which the model is conservative): element axial and bending strain energy, weight and load
+ * potentials, and the contact-spring energies. `acc[0]` receives the sum of the absolute values of the terms, a
+ * measure of the rounding noise of the result.
+ */
+function potentialEnergy(mesh, model, st, u, fac, acc) {
+  const { ne, nn } = mesh;
+  let E = 0, Ea = 0;
+  for (let e = 0; e < ne; e++) {
+    const i = 3 * e;
+    const dx = u[i + 3] - u[i], dz = u[i + 4] - u[i + 1];
+    const Ln = Math.hypot(dx, dz), beta = Math.atan2(dz, dx);
+    const t1 = wrapPi(u[i + 2] - beta), t2 = wrapPi(u[i + 5] - beta);
+    const L0 = mesh.L0[e], dL = Ln - L0;
+    const Es = 0.5 * (mesh.EA[e] / L0) * dL * dL + 2 * (mesh.EI[e] / L0) * (t1 * t1 + t1 * t2 + t2 * t2);
+    const Wh = 0.5 * fac.weight * (st.w0 ? st.w0[e] + fac.lam * (mesh.w[e] - st.w0[e]) : mesh.w[e]) * L0;
+    const Ew = Wh * (u[i + 1] + u[i + 4]) - mesh.P0[e] * dL;
+    E += Es + Ew; Ea += Es + Math.abs(Ew);
+  }
+  for (let k = 0; k < nn; k++) {
+    const El = -fac.load * ((st.Fx[k] + mesh.dragX[k]) * u[3 * k] + (st.Fz[k] + mesh.dragZ[k]) * u[3 * k + 1] + st.Mn[k] * u[3 * k + 2]);
+    E += El; Ea += Math.abs(El);
+  }
+  let Ec = 0;
+  const sb = model.seabed;
+  if (sb) {
+    for (let k = 0; k < nn; k++) {
+      const pen = sb.z + mesh.offset[k] - u[3 * k + 1];
+      if (pen > 0) Ec += 0.5 * sb.kn * mesh.trib[k] * pen * pen;
+    }
+  }
+  for (const sp of model.supports ?? []) {
+    const inside = sp.side === 'inside';
+    for (let k = 0; k < nn; k++) {
+      const px = u[3 * k] - sp.xc, pz = u[3 * k + 1] - sp.zc;
+      const d = Math.hypot(px, pz);
+      if (d === 0) continue;
+      const Rc = sp.R + (inside ? -1 : 1) * ((sp.offset ?? 0) + mesh.offset[k]);
+      const pen = inside ? d - Rc : Rc - d;
+      if (pen <= 0) continue;
+      let ph = 1;
+      if (sp.angMin !== undefined || sp.angMax !== undefined) {
+        const a = Math.atan2(pz, px);
+        const dIn = Math.min(sp.angMin !== undefined ? (a - sp.angMin) * sp.R : Infinity, sp.angMax !== undefined ? (sp.angMax - a) * sp.R : Infinity);
+        if (dIn <= 0) continue;
+        const ta = Math.min(1, dIn / (sp.edge ?? mesh.trib[k]));
+        ph = ta * ta * (3 - 2 * ta);
+      }
+      Ec += 0.5 * fac.support * sp.k * mesh.trib[k] * ph * pen * pen;
+    }
+  }
+  for (const rs of st.rotSprings) { const dth = u[rs.dof] - rs.th0; Ec += 0.5 * rs.k * dth * dth; }
+  if (acc) acc[0] = Ea + Ec;
+  return E + Ec;
 }
 
 function applyConstraint(B, rhs, c, d) {
@@ -404,8 +488,9 @@ function endSpec(end, name) {
  * current drag, seabed and rigid circular support contact.
  *
  * Method: corotational Euler–Bernoulli beam elements, Newton–Raphson with step limiting and adaptive
- * load/displacement stepping; Morison drag and the pressure end-cap strain term are lagged in an outer
- * fixed-point loop. Reference: Crisfield (1991) Vol. 1 Ch. 7; Sparks (2007) Ch. 2–3 (effective tension);
+ * load/displacement stepping (restart from the last converged state, with a damped line-search iteration as the
+ * fallback when plain Newton steps do not settle); Morison drag and the pressure end-cap strain term are lagged
+ * in an outer fixed-point loop. Reference: Crisfield (1991) Vol. 1 Ch. 7; Sparks (2007) Ch. 2–3 (effective tension);
  * DNV-RP-C205 §6.2 (Morison normal/tangential drag).
  * Validity: planar, small strain, linear elastic; rod stress-free shape is straight; seabed reaction is a
  * linear unilateral (lift-off) Winkler spring acting vertically; supports are frictionless.
@@ -430,7 +515,8 @@ function endSpec(end, name) {
  *   kt = 0 switches friction off explicitly. Friction develops only through movement along the seabed after
  *   first contact, so it depends on the load path (ramping) as in the real installation.
  * @param {Array<object>} [model.supports] rigid circles `{ xc, zc, R [m], k [Pa penalty stiffness per unit length],
- *   side? 'outside' | 'inside', angMin?, angMax? [rad polar angle window about the centre], offset? [m] }`
+ *   side? 'outside' | 'inside', angMin?, angMax? [rad polar angle window about the centre], edge? [m arc length inside
+ *   each end of the window over which the stiffness tapers smoothly to zero; default one element length], offset? [m] }`
  * @param {object} [model.current] `{ rho? [kg/m³], U? [m/s uniform, +x] | profile? (z) => U | z: [], U: [] }`
  * @param {object} [model.pressure] `{ rhoInt [kg/m³], pIntRef [Pa at zIntRef], zIntRef [m], rhoExt [kg/m³],
  *   zSurface [m], nu? = 0.3, g? }`
@@ -524,7 +610,7 @@ export function solveRodStatic(model) {
   let totalIter = 0, lastRes = 0;
   const maxTrans = model.maxStep ?? 0.05 * mesh.Ltot, maxRot = 0.4;
 
-  const newton = (lam) => {
+  const newton = (lam, growMax = 12) => {
     const fac = { lam, weight: rampWeight && !w0 ? lam : 1, load: (model.rampLoads ?? true) ? lam : 1, support: (model.rampSupports ?? true) ? Math.max(lam, 1e-3) : 1 };
     let prev = Infinity, grow = 0, lastStep = Infinity;
     for (let it = 0; it < maxIter; it++) {
@@ -548,7 +634,7 @@ export function solveRodStatic(model) {
       lastRes = rn;
       // second test: the Newton correction has reached round-off (very stiff EA limits the attainable residual)
       if (cn <= 1e-11 * (mesh.Ltot + 1) && (rn <= tol * Fr || (lastStep <= 1e-12 * mesh.Ltot && rn <= 1e-4 * Fr))) return true;
-      if (rn > prev) { grow++; if (grow > 12) return false; }
+      if (rn > prev) { grow++; if (grow > growMax) return false; }
       prev = rn;
       bandFactor(B); bandSolve(B, du);
       let mt = 0, mr = 0;
@@ -564,24 +650,131 @@ export function solveRodStatic(model) {
     return false;
   };
 
+  // Globalised equilibrium iteration, used when the plain Newton iteration above does not settle (typically a
+  // starting shape whose contact state is far from the final one, so that full Newton steps make nodes chatter in
+  // and out of contact). Each correction solves (K + mu·diag|K|)·du = −R and is accepted only if it makes
+  // progress; otherwise it is halved, and when no fraction of it helps the damping mu is raised
+  // (Levenberg–Marquardt / pseudo-transient continuation; Nocedal & Wright, "Numerical Optimization", Ch. 3 and
+  // §11.2). Progress is measured on the total potential energy (sufficient-decrease test along a descent
+  // direction), which cannot stall at the slope changes of the contact forces and leads to a stable equilibrium.
+  // Where the model has no potential (seabed friction, sloping seabed), or the energy change is below its rounding
+  // noise, the weighted imbalance |R| is used instead. mu decays to zero as full steps are accepted, so the final
+  // iterations are plain Newton and the convergence test is the same as above. Because every accepted step
+  // improves a merit function, the outcome does not hinge on the rounding of any single iteration.
+  const trial = new Float64Array(ndof), ancTrial = new Float64Array(nn), diag = new Float64Array(ndof), acc = [0];
+  const conservative = !(sb && ((sb.mu > 0 && seabedKt(sb) > 0) || typeof sb.profile === 'function'));
+  const robust = (lam) => {
+    const fac = { lam, weight: rampWeight && !w0 ? lam : 1, load: (model.rampLoads ?? true) ? lam : 1, support: (model.rampSupports ?? true) ? Math.max(lam, 1e-3) : 1 };
+    for (const c of st.cons) u[c.dof] = c.v0 + lam * (c.vt - c.v0);
+    const norms = () => {
+      let rn = 0, phi = 0;
+      for (let i = 0; i < ndof; i++) {
+        if (isCon[i]) continue;
+        const v = Math.abs(i % 3 === 2 ? R[i] / mesh.hRef : R[i]);
+        if (v > rn) rn = v;
+        phi += v * v;
+      }
+      return [rn, phi];
+    };
+    let mu = 0, lastStep = Infinity;
+    const budget = 12 * maxIter;
+    for (let it = 0; it < budget; it++) {
+      fac.Nmax = 0;
+      assemble(mesh, model, st, u, fac, R, B, null);
+      const [rn, phi] = norms();
+      if (!Number.isFinite(rn)) return false;
+      lastRes = rn;
+      if (rn <= tol * (Fref + fac.Nmax) || (lastStep <= 1e-12 * mesh.Ltot && rn <= 1e-4 * (Fref + fac.Nmax))) return true;
+      const E0 = conservative ? potentialEnergy(mesh, model, st, u, fac, acc) : 0, noise = 1e-13 * acc[0];
+      for (let i = 0; i < ndof; i++) { du[i] = -R[i]; diag[i] = Math.abs(bandGet(B, i, i)); }
+      if (mu > 0) for (let i = 0; i < ndof; i++) bandAdd(B, i, i, mu * diag[i]);
+      for (const c of st.cons) applyConstraint(B, du, c.dof, 0);
+      let solved = true;
+      try { bandFactor(B); bandSolve(B, du); } catch (err) { solved = false; }
+      let accepted = false, al = 0, full = 0;
+      if (solved) {
+        let mt = 0, mr = 0, slope = 0;
+        for (let k = 0; k < nn; k++) {
+          mt = Math.max(mt, Math.abs(du[3 * k]), Math.abs(du[3 * k + 1]));
+          mr = Math.max(mr, Math.abs(du[3 * k + 2]));
+        }
+        for (let i = 0; i < ndof; i++) if (!isCon[i]) slope += R[i] * du[i];
+        // with an indefinite tangent the correction can point uphill in energy: only more damping helps then
+        if (Number.isFinite(mt) && Number.isFinite(mr) && !(conservative && slope >= 0)) {
+          full = Math.min(1, maxTrans / (mt + 1e-300), maxRot / (mr + 1e-300));
+          ancTrial.set(st.anchor);
+          al = full;
+          for (let ls = 0; ls < 7; ls++, al *= 0.5) {
+            for (let i = 0; i < ndof; i++) trial[i] = u[i] + al * du[i];
+            if (conservative && -al * slope > noise) {
+              const E1 = potentialEnergy(mesh, model, st, trial, fac, null);
+              if (Number.isFinite(E1) && E1 <= E0 + 1e-4 * al * slope) { accepted = true; break; }
+            } else {
+              assemble(mesh, model, st, trial, fac, R, null, null);
+              const ph = norms()[1];
+              if (Number.isFinite(ph) && ph <= (1 - 1e-4 * al) * phi) { accepted = true; break; }
+              st.anchor.set(ancTrial);
+            }
+          }
+          if (accepted) lastStep = al < 1 ? Infinity : Math.max(mt, mr * mesh.hRef);
+        }
+      }
+      totalIter++;
+      if (accepted) {
+        u.set(trial);
+        if (al === full) mu = mu < 1e-9 ? 0 : 0.2 * mu; else if (al < 0.2 * full) mu = Math.max(4 * mu, 1e-6);
+      } else {
+        mu = Math.max(10 * mu, 1e-6);
+        if (mu > 1e12) return false;                         // no correction makes progress: no equilibrium nearby
+      }
+    }
+    return false;
+  };
+
+  // Does the load factor change the problem materially? If weight, loads and supports are applied in full from
+  // the start and the prescribed ends barely move, cutting the step poses the same problem again.
+  let travel = 0, anyLoad = hasLagged;
+  for (const c of st.cons) travel = Math.max(travel, Math.abs(c.vt - c.v0) * (c.dof % 3 === 2 ? mesh.hRef : 1));
+  for (let k = 0; k < nn; k++) if (st.Fx[k] !== 0 || st.Fz[k] !== 0 || st.Mn[k] !== 0) anyLoad = true;
+  const stepped = rampWeight || !!w0 || ((model.rampLoads ?? true) && anyLoad) || ((model.rampSupports ?? true) && (model.supports ?? []).length > 0)
+    || travel > 1e-3 * mesh.Ltot;
+
   const saved = Float64Array.from(u), savedAnchor = Float64Array.from(st.anchor);
-  let lam = 0, steps = 0;
+  let lam = 0, steps = 0, fails = 0;
   let dl = 1 / Math.max(1, Math.round(model.nSteps ?? (init === 'straight' ? 10 : 4)));
   while (lam < 1 - 1e-12) {
     const lt = Math.min(1, lam + dl);
     if (hasLagged) updateLaggedLoads(mesh, model, u);
     const before = totalIter;
     let ok;
-    try { ok = newton(lt); } catch (err) { ok = false; }
+    // Started close to equilibrium with nothing being stepped, a plain Newton iteration whose imbalance keeps
+    // rising is wandering between contact states; where it would end up is then a matter of rounding, so it is
+    // stopped early in favour of the globalised iteration.
+    try { ok = newton(lt, stepped ? 12 : 3); } catch (err) { ok = false; }
+    if (!ok) {
+      // restart from the last converged state; switch to the globalised iteration at once when a smaller step
+      // would pose the same problem again, otherwise after repeated failures at shrinking steps
+      u.set(saved); st.anchor.set(savedAnchor);
+      fails++;
+      if (!stepped || fails % 3 === 0) {
+        try { ok = robust(lt); } catch (err) { ok = false; }
+        if (!ok) { u.set(saved); st.anchor.set(savedAnchor); }
+        if (!ok && !stepped) dl = 0;
+      }
+    } else fails = 0;
     if (ok) {
       lam = lt; steps++;
       setAnchors(false);
       saved.set(u); savedAnchor.set(st.anchor);
-      if (totalIter - before < 8) dl *= 1.6;
+      if (fails === 0 && totalIter - before < 8) dl *= 1.6;
+      fails = 0;
     } else {
-      u.set(saved); st.anchor.set(savedAnchor);
       dl *= 0.5;
-      if (dl < 1e-7) throw new Error(`rod: static solution did not converge (load factor ${lam.toFixed(4)}, residual ${lastRes.toExponential(2)} N)`);
+      if (dl < 1e-7) {
+        throw new Error(`rod: static solution did not converge (load factor ${lam.toFixed(4)}, residual ${lastRes.toExponential(2)} N, `
+          + `${(lastRes / Fref).toExponential(1)} of the reference force): no stable equilibrium was found from the starting shape — `
+          + 'check that the end conditions and tension can carry the weight, that the rod can reach its supports, and refine the mesh or start closer to the expected shape');
+      }
     }
   }
   let outer = 0;
@@ -592,7 +785,10 @@ export function solveRodStatic(model) {
     for (; outer < maxOuter && change > 1e-9 * mesh.Ltot; outer++) {
       prevU.set(u);
       updateLaggedLoads(mesh, model, u);
-      if (!newton(1)) throw new Error('rod: static solution did not converge in the drag / pressure iteration');
+      let ok;
+      try { ok = newton(1); } catch (err) { ok = false; }
+      if (!ok) { u.set(prevU); try { ok = robust(1); } catch (err) { ok = false; } }
+      if (!ok) throw new Error('rod: static solution did not converge in the drag / pressure iteration (the current or pressure load changes the shape too abruptly: check the current profile and drag coefficients)');
       change = 0;
       for (let k = 0; k < nn; k++) change = Math.max(change, Math.abs(u[3 * k] - prevU[3 * k]), Math.abs(u[3 * k + 1] - prevU[3 * k + 1]));
     }
