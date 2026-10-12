@@ -6,7 +6,8 @@ import { join, relative, sep } from 'node:path';
 
 const root = process.cwd();
 const include = ['index.html', 'manifest.webmanifest', 'mirrors.json', 'css', 'assets', 'src', 'vendor'];
-const skip = /(^|\/)(\.|LICENSE|README)|\.map$|\.d\.ts$/;
+// Node-only vendor builds serve the test suite, not the browser
+const skip = /(^|\/)(\.|LICENSE|README)|\.map$|\.d\.ts$|^vendor\/[^/]+\/node\/|package\.json$/;
 
 async function walk(p, out) {
   for (const e of await readdir(p, { withFileTypes: true }).catch(() => [])) {
