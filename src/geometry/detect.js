@@ -27,7 +27,7 @@ export const EXTENSION_MAP = Object.freeze({
   las: 'las', laz: 'laz', e57: 'e57', pts: 'pts', ptx: 'ptx', xyzrgb: 'xyzrgb', xyzi: 'xyzrgb', xyzn: 'xyzrgb',
   gpkg: 'geopackage', sqlite: 'geopackage',
   x_t: 'parasolid', x_b: 'parasolid', xmt_txt: 'parasolid', xmt_bin: 'parasolid', xt: 'parasolid',
-  sat: 'acis', sab: 'acis', asat: 'acis', asab: 'acis', dwg: 'dwg', dgn: 'native-cad',
+  sat: 'acis', sab: 'acis', asat: 'acis', asab: 'acis', dwg: 'dwg', dgn: 'native-cad', brep: 'brep', brp: 'brep',
   sldprt: 'native-cad', sldasm: 'native-cad', ipt: 'native-cad', iam: 'native-cad', prt: 'native-cad', asm: 'native-cad',
   catpart: 'native-cad', catproduct: 'native-cad', '3dm': 'native-cad', jt: 'native-cad', rvt: 'native-cad', skp: 'native-cad',
   fbx: 'native-cad', '3ds': 'native-cad', par: 'native-cad', psm: 'native-cad', f3d: 'native-cad', nwd: 'native-cad', rfa: 'native-cad',
@@ -167,11 +167,12 @@ function sniffText(head, ext) {
     return ['step', schema ? `ISO 10303-21 file with schema ${schema.replace(/['\s]/g, '')}` : 'ISO 10303-21 file'];
   }
   if (lead.startsWith('# vtk DataFile')) return ['vtk', 'legacy VTK header'];
+  if (lead.startsWith('DBRep_DrawableShape') || /^CASCADE Topology V\d/m.test(lead.slice(0, 200))) return ['brep', 'OpenCascade BREP header'];
   if (lead.startsWith('$MeshFormat') || lead.startsWith('$NOD') || lead.startsWith('$PostFormat')) return ['msh', 'Gmsh section header'];
   if (/^ply\s/.test(lead)) return ['ply', 'PLY magic'];
   if (/^(C|N|ST|CN|4|4N)*OFF\b/.test(lead)) return ['off', 'OFF header'];
   if (lead.startsWith('DSAA')) return ['surfer-grd', 'Surfer ASCII grid magic DSAA'];
-  if (lead.startsWith('AutoCAD Binary DXF')) return ['dxf', 'binary DXF sentinel'];
+  if (lead.startsWith('AutoCAD Binary DXF')) return ['dxf-binary', 'binary DXF sentinel'];
   if (lead.startsWith('**ABCDEFGHIJKLMNOPQRSTUVWXYZ') || /^\*\*PART1;/m.test(lead)) return ['parasolid', 'Parasolid transmit-file header'];
 
   if (lead[0] === '<') {
@@ -247,7 +248,7 @@ function sniffBinary(bytes, ext) {
   if (startsWith(bytes, SIG.sqlite)) return ['geopackage', 'SQLite database header'];
   if (startsWith(bytes, ascii('DSBB'))) return ['surfer-grd', 'Surfer 6 binary grid magic DSBB'];
   if (startsWith(bytes, ascii('DSRR'))) return ['surfer-grd', 'Surfer 7 binary grid magic DSRR'];
-  if (startsWith(bytes, SIG.binDxf)) return ['dxf', 'binary DXF sentinel'];
+  if (startsWith(bytes, SIG.binDxf)) return ['dxf-binary', 'binary DXF sentinel'];
   if (startsWith(bytes, ascii('AC10')) && bytes.length > 6 && bytes[4] >= 0x30 && bytes[4] <= 0x39) return ['dwg', 'DWG version string'];
   if (bytes.length >= 100 && bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0x27 && bytes[3] === 0x0a) return ['shapefile', 'ESRI shapefile file code 9994'];
   if (startsWith(bytes, ascii('ply\n')) || startsWith(bytes, ascii('ply\r'))) return ['ply', 'PLY magic'];
@@ -339,6 +340,8 @@ export function detectFormat(input) {
     if (s) return s[0] ? { id: s[0], reason: s[1] } : null;
   }
   if (ext === 'grd') return { id: 'surfer-grd', reason: 'extension .grd' };
+  // .asc is also a common extension for plain x y z point lists
+  if (ext === 'asc' && head) { const { first, rows } = numericRows(head, 10); if (first && first.numeric && rows.filter(Boolean).length >= 2) return { id: 'table', reason: 'rows of numbers in an .asc file without an ESRI grid header' }; }
   const id = EXTENSION_MAP[ext];
   if (id) return { id, reason: `extension .${ext}` };
   if (head && /\d/.test(head)) {

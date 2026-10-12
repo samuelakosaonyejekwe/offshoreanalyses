@@ -100,6 +100,7 @@ export class LineCursor {
     if (typeof source === 'string') { this.s = source; this.b = null; this.len = source.length; } else { this.b = source; this.s = null; this.len = source.length; }
     this.offset = 0;
     this.lineNo = 0;
+    this.win = null; this.w0 = 0; this.w1 = 0; this.slowUntil = 0;
     if (this.b && this.len >= 3 && this.b[0] === 0xef && this.b[1] === 0xbb && this.b[2] === 0xbf) this.offset = 3;
     if (this.s && this.s.charCodeAt(0) === 0xfeff) this.offset = 1;
   }
@@ -117,6 +118,30 @@ export class LineCursor {
       return this.s.slice(start, e);
     }
     const b = this.b;
+    // Fast path: decode a 64 kB window once and cut lines out of it. Valid only while the window is pure
+    // ASCII, so that character positions equal byte positions.
+    if (start >= this.slowUntil) {
+      if (!(start >= this.w0 && start < this.w1)) this.loadWindow(start);
+      if (this.win !== null) {
+        const rel = start - this.w0;
+        let e = this.win.indexOf('\n', rel);
+        if (e < 0 && this.w1 < this.len && rel > 0) { this.loadWindow(start); if (this.win !== null) e = this.win.indexOf('\n', 0); }
+        if (this.win !== null && (e >= 0 || this.w1 >= this.len)) {
+          const r0 = start - this.w0;
+          if (e < 0) e = this.win.length;
+          let line = this.win.slice(r0, e);
+          let adv = e + 1;
+          const cr = line.indexOf('\r');
+          if (cr >= 0) {
+            // CRLF ends here; a CR elsewhere is an old-style line break of its own
+            if (cr === line.length - 1) line = line.slice(0, cr); else { line = line.slice(0, cr); adv = r0 + cr + 1; }
+          }
+          this.offset = this.w0 + adv;
+          return line;
+        }
+        // a line longer than the window: scan it byte by byte below
+      }
+    }
     let e = start, hi = 0;
     while (e < this.len) {
       const c = b[e];
@@ -127,6 +152,11 @@ export class LineCursor {
     this.offset = e < this.len && b[e] === 13 && e + 1 < this.len && b[e + 1] === 10 ? e + 2 : e + 1;
     if (hi < 128 && e - start <= 8192) return String.fromCharCode.apply(null, b.subarray(start, e));
     return UTF8.decode(b.subarray(start, e));
+  }
+  loadWindow(start) {
+    const end = Math.min(this.len, start + 65536);
+    const text = UTF8.decode(this.b.subarray(start, end));
+    if (text.length === end - start) { this.win = text; this.w0 = start; this.w1 = end; } else { this.win = null; this.w0 = 0; this.w1 = 0; this.slowUntil = end; }
   }
   /** Next line that is not blank (after trimming), trimmed; null at end. */
   nextNonBlank() {
@@ -971,4 +1001,164 @@ export function closeLoop(flat) {
   if (n >= 4 && Math.abs(flat[0] - flat[n - 2]) < 1e-12 && Math.abs(flat[1] - flat[n - 1]) < 1e-12) n -= 2;
   if (n < 6) return null;
   return Float64Array.from(n === flat.length ? flat : Array.prototype.slice.call(flat, 0, n));
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Vertex welding, base64, importer metadata
+// ---------------------------------------------------------------------------------------------------------
+
+const F64 = new Float64Array(3);
+const U32 = new Uint32Array(F64.buffer);
+
+/**
+ * Merge identical vertices while they are being read (triangle soups: STL, panel lists, 3DFACE).
+ * `tol` = 0 welds bit-identical coordinates; a positive `tol` snaps to a lattice of that pitch first, which
+ * merges points closer than about tol/2 (points straddling a lattice boundary may stay separate).
+ */
+export class Welder {
+  constructor(tol = 0, capacity = 1024) {
+    this.tol = tol;
+    this.coords = new Grow(Float64Array, capacity * 3);
+    this.size = 16;
+    while (this.size < capacity * 2) this.size *= 2;
+    this.table = new Int32Array(this.size).fill(-1);
+    this.count = 0;
+  }
+  add(x, y, z) {
+    const t = this.tol;
+    // + 0 turns −0 into +0 so both hash alike
+    if (t > 0) { F64[0] = Math.round(x / t) + 0; F64[1] = Math.round(y / t) + 0; F64[2] = Math.round(z / t) + 0; } else { F64[0] = x + 0; F64[1] = y + 0; F64[2] = z + 0; }
+    let h = (Math.imul(U32[0] ^ U32[1], 0x9e3779b1) ^ Math.imul(U32[2] ^ U32[3], 0x85ebca6b) ^ Math.imul(U32[4] ^ U32[5], 0xc2b2ae35)) >>> 0;
+    const kx = F64[0], ky = F64[1], kz = F64[2];
+    const mask = this.size - 1;
+    const c = this.coords.a;
+    for (let i = h & mask; ; i = (i + 1) & mask) {
+      const v = this.table[i];
+      if (v < 0) {
+        this.table[i] = this.count;
+        this.coords.push3(x, y, z);
+        if (++this.count * 2 > this.size) this.rehash();
+        return this.count - 1;
+      }
+      const o = 3 * v;
+      if (t > 0 ? (Math.round(c[o] / t) + 0 === kx && Math.round(c[o + 1] / t) + 0 === ky && Math.round(c[o + 2] / t) + 0 === kz) : (c[o] === x && c[o + 1] === y && c[o + 2] === z)) return v;
+    }
+  }
+  rehash() {
+    const pts = this.coords.a, n = this.count, t = this.tol;
+    this.size *= 2;
+    this.table = new Int32Array(this.size).fill(-1);
+    const mask = this.size - 1;
+    for (let v = 0; v < n; v++) {
+      if (t > 0) { F64[0] = Math.round(pts[3 * v] / t) + 0; F64[1] = Math.round(pts[3 * v + 1] / t) + 0; F64[2] = Math.round(pts[3 * v + 2] / t) + 0; } else { F64[0] = pts[3 * v] + 0; F64[1] = pts[3 * v + 1] + 0; F64[2] = pts[3 * v + 2] + 0; }
+      const h = (Math.imul(U32[0] ^ U32[1], 0x9e3779b1) ^ Math.imul(U32[2] ^ U32[3], 0x85ebca6b) ^ Math.imul(U32[4] ^ U32[5], 0xc2b2ae35)) >>> 0;
+      let i = h & mask;
+      while (this.table[i] >= 0) i = (i + 1) & mask;
+      this.table[i] = v;
+    }
+  }
+  /** Exact-length copy of the welded coordinates. */
+  finish() { return this.coords.finish(); }
+}
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+let B64_REV = null;
+
+/** Decode base64 (standard or URL-safe alphabet; whitespace and padding tolerated) to bytes. */
+export function base64Decode(s, start = 0, end = s.length) {
+  if (!B64_REV) {
+    B64_REV = new Int8Array(128).fill(-1);
+    for (let i = 0; i < 64; i++) B64_REV[B64.charCodeAt(i)] = i;
+    B64_REV[45] = 62; B64_REV[95] = 63;
+  }
+  const out = new Uint8Array(Math.floor(((end - start) * 3) / 4) + 3);
+  let o = 0, acc = 0, bits = 0;
+  for (let i = start; i < end; i++) {
+    const c = s.charCodeAt(i);
+    const v = c < 128 ? B64_REV[c] : -1;
+    if (v < 0) continue;
+    acc = (acc << 6) | v;
+    bits += 6;
+    if (bits >= 8) { bits -= 8; out[o++] = (acc >> bits) & 0xff; }
+  }
+  return out.subarray(0, o);
+}
+
+/** Encode bytes as standard base64 with padding. */
+export function base64Encode(bytes) {
+  const parts = [];
+  const CH = 3 * 8192;
+  for (let p = 0; p < bytes.length; p += CH) {
+    const e = Math.min(bytes.length, p + CH);
+    let s = '';
+    let i = p;
+    for (; i + 2 < e; i += 3) {
+      const n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+      s += B64[n >> 18] + B64[(n >> 12) & 63] + B64[(n >> 6) & 63] + B64[n & 63];
+    }
+    if (i < e) {
+      const n = (bytes[i] << 16) | ((i + 1 < e ? bytes[i + 1] : 0) << 8);
+      s += B64[n >> 18] + B64[(n >> 12) & 63] + (i + 1 < e ? B64[(n >> 6) & 63] : '=') + '=';
+    }
+    parts.push(s);
+  }
+  return parts.join('');
+}
+
+/**
+ * Advisory warning for files that declare no length unit: says what was assumed and, when the size is
+ * implausible for an offshore structure in metres, what the unit probably is.
+ * @param {object} units result of resolveUnits()
+ * @param {{min:number[],max:number[]}} bbox bounds after scaling (metres)
+ * @param {(b: object) => object|null} suggest units.suggestUnits
+ */
+export function unitAdvice(units, bbox, suggest, warnings) {
+  if (units.basis !== 'assumed') return;
+  const s = suggest({ min: bbox.min.map((v) => v / units.scale), max: bbox.max.map((v) => v / units.scale) });
+  if (s) warnings.push(`The file declares no length unit; ${units.unit} was assumed, but ${s.reason}. Re-import with units = '${s.unit}' if so.`);
+  else warnings.push(`The file declares no length unit; ${units.unit} was assumed.`);
+}
+
+/** Strip a model name down to something printable (control characters removed, trimmed). */
+export function cleanName(s, fallback = 'model') {
+  const t = String(s ?? '').replace(/[\u0000-\u001f]+/g, ' ').trim();
+  return t || fallback;
+}
+
+/**
+ * Split triangles that were collected per named bucket into one index array plus contiguous `groups`.
+ * @param {Map<string, Grow>} buckets group name → Grow(Uint32Array) of vertex indices
+ */
+export function groupsFromBuckets(buckets) {
+  let total = 0;
+  for (const g of buckets.values()) total += g.n;
+  const indices = new Uint32Array(total);
+  const groups = [];
+  let off = 0;
+  for (const [name, g] of buckets) {
+    if (!g.n) continue;
+    indices.set(g.view(), off);
+    groups.push({ name, start: off, count: g.n });
+    off += g.n;
+  }
+  return { indices, groups };
+}
+
+/** Append a planar polygon (indices into a shared vertex table) to an index list as triangles. */
+export function pushPolygon(out, idx, coords) {
+  const n = idx.length;
+  if (n < 3) return 0;
+  if (n === 3) { out.push(idx[0]); out.push(idx[1]); out.push(idx[2]); return 1; }
+  if (n === 4) {
+    // split along the shorter diagonal so that warped quads stay well shaped
+    const d = (a, b) => { const p = 3 * idx[a], q = 3 * idx[b]; return (coords[p] - coords[q]) ** 2 + (coords[p + 1] - coords[q + 1]) ** 2 + (coords[p + 2] - coords[q + 2]) ** 2; };
+    if (d(0, 2) <= d(1, 3)) { out.push(idx[0]); out.push(idx[1]); out.push(idx[2]); out.push(idx[0]); out.push(idx[2]); out.push(idx[3]); } else { out.push(idx[0]); out.push(idx[1]); out.push(idx[3]); out.push(idx[1]); out.push(idx[2]); out.push(idx[3]); }
+    return 2;
+  }
+  const flat = new Float64Array(3 * n);
+  for (let i = 0; i < n; i++) { flat[3 * i] = coords[3 * idx[i]]; flat[3 * i + 1] = coords[3 * idx[i] + 1]; flat[3 * i + 2] = coords[3 * idx[i] + 2]; }
+  let t = triangulate3D(flat);
+  if (!t.length) { t = []; for (let i = 1; i + 1 < n; i++) t.push(0, i, i + 1); }
+  for (let i = 0; i < t.length; i++) out.push(idx[t[i]]);
+  return t.length / 3;
 }

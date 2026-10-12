@@ -134,3 +134,25 @@ export function checkElements(model) {
     }
   }
 }
+
+const INTERNAL = /Cannot read|is not a function|is not iterable|is not defined|Invalid (typed )?array length|Offset is outside|Invalid array buffer length|Array buffer allocation failed|Invalid DataView length|Start offset|Maximum call stack|out of memory|Invalid string length|source is too large/i;
+
+/**
+ * Cut `bytes` short at several points and feed each piece to `parse`. Every attempt must either succeed with
+ * a well-formed result or fail with a deliberate, worded Error — never with an internal TypeError/RangeError.
+ */
+export async function assertTruncationSafe(bytes, parse, label) {
+  const cuts = [0, 1, 3, 7, 16, 33, 64, 100, 131, 200, 256].filter((c) => c < bytes.length);
+  for (const f of [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 0.97]) cuts.push(Math.floor(bytes.length * f));
+  cuts.push(bytes.length - 1, bytes.length - 2, bytes.length - 5);
+  for (const c of new Set(cuts)) {
+    if (c < 0 || c >= bytes.length) continue;
+    try {
+      const r = await parse(bytes.slice(0, c));
+      assert.ok(r && Array.isArray(r.models) && Array.isArray(r.warnings) && r.meta, `${label} cut at ${c}: result shape`);
+    } catch (e) {
+      const ok = e instanceof Error && !(e instanceof TypeError) && !(e instanceof ReferenceError) && !(e instanceof SyntaxError) && !INTERNAL.test(e.message) && e.message.length > 15;
+      assert.ok(ok, `${label} cut at ${c} of ${bytes.length}: failed with an internal error — ${e && e.constructor && e.constructor.name}: ${e && e.message}\n${e && e.stack ? e.stack.split('\n').slice(1, 4).join('\n') : ''}`);
+    }
+  }
+}

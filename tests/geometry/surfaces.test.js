@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parseStl, parseObj, parsePly, parseOff } from '../../src/geometry/importers/surfaces.js';
 import { parseGltf, parse3mf } from '../../src/geometry/importers/gltf.js';
 import { makeZip } from '../../src/geometry/zip.js';
-import { enc, close, CUBE_V, CUBE_Q, CUBE_T, surfaceVolume, surfaceArea, binaryStl, concat, assertContract } from './fixtures/helpers.js';
+import { enc, close, CUBE_V, CUBE_Q, CUBE_T, surfaceVolume, surfaceArea, binaryStl, concat, assertContract, assertTruncationSafe } from './fixtures/helpers.js';
 
 const asciiStl = (name, tris, verts) => `solid ${name}\n` + tris.map((t) => ` facet normal 0 0 0\n  outer loop\n${t.map((k) => `   vertex ${verts[k].join(' ')}`).join('\n')}\n  endloop\n endfacet`).join('\n') + `\nendsolid ${name}\n`;
 
@@ -215,4 +215,21 @@ test('3MF package: millimetres to metres, components and build transform', async
   const bare = await parse3mf({ name: 'pair.model', text: model3mf });
   assert.equal(bare.meta.counts.triangles, 24);
   await assert.rejects(parse3mf({ name: 'x.3mf', text: '<svg/>' }), /expected root element <model>/);
+});
+
+test('truncated surface files fail with a worded error, never an internal one', async () => {
+  await assertTruncationSafe(binaryStl(CUBE_T, CUBE_V), (b) => parseStl({ name: 'c.stl', bytes: b }), 'STL binary');
+  for (const fmt of ['ascii', 'binary_little_endian', 'binary_big_endian']) await assertTruncationSafe(plyCube(fmt), (b) => parsePly({ name: 'c.ply', bytes: b }), `PLY ${fmt}`);
+  const { json, bin } = gltfCube();
+  const j = enc(JSON.stringify(json));
+  const jp = concat(j, enc(' '.repeat((4 - (j.length % 4)) % 4)));
+  const glb = new Uint8Array(28 + jp.length + bin.length);
+  const dv = new DataView(glb.buffer);
+  dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, glb.length, true);
+  dv.setUint32(12, jp.length, true); dv.setUint32(16, 0x4e4f534a, true); glb.set(jp, 20);
+  dv.setUint32(20 + jp.length, bin.length, true); dv.setUint32(24 + jp.length, 0x004e4942, true); glb.set(bin, 28 + jp.length);
+  await assertTruncationSafe(glb, (b) => parseGltf({ name: 'c.glb', bytes: b }), 'GLB');
+  const zip = makeZip([{ name: '3D/3dmodel.model', data: enc(model3mf) }]);
+  await assertTruncationSafe(zip, (b) => parse3mf({ name: 'c.3mf', bytes: b }), '3MF');
+  await assertTruncationSafe(enc(`OFF\n8 6 12\n${CUBE_V.map((v) => v.join(' ')).join('\n')}\n${CUBE_Q.map((q) => `4 ${q.join(' ')}`).join('\n')}\n`), (b) => parseOff({ name: 'c.off', bytes: b }), 'OFF');
 });

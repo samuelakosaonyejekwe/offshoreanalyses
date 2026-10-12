@@ -46,13 +46,13 @@ export async function importFiles(fileList, onStatus) {
 }
 
 export function dropZone(onFiles, accept, text) {
-  const input = h('input', { type: 'file', multiple: true, accept, style: { display: 'none' }, onchange: () => { if (input.files.length) onFiles(input.files); input.value = ''; } });
+  const input = h('input', { type: 'file', multiple: true, accept, style: { display: 'none' }, onchange: () => { const picked = [...input.files]; input.value = ''; if (picked.length) onFiles(picked); } });   // copy first: clearing the input empties the live FileList
   const zone = h('div.drop', { tabindex: 0, role: 'button', 'aria-label': 'Choose files to import', onclick: () => input.click(), onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } } },
     icon('upload'), h('p', h('b', text || 'Drop files here, or click to choose')), h('small.muted', 'Several files at once are fine. Files are read on this device and are not uploaded anywhere.'), input);
   zone.querySelector('svg').style.cssText = 'width:32px;height:32px';
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('over'));
-  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('over'); if (e.dataTransfer.files.length) onFiles(e.dataTransfer.files); });
+  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('over'); if (e.dataTransfer.files.length) onFiles([...e.dataTransfer.files]); });
   return zone;
 }
 
@@ -76,14 +76,10 @@ async function workbench(entry, box) {
   const host = h('div.viewer');
   const info = h('div');
   const pickInfo = h('small.muted', 'Click the model to read coordinates.');
-  clear(box).append(
-    models.length > 1 ? h('div.row', h('label', 'Part'), h('select.plain', { style: { maxWidth: '360px' }, onchange: (e) => { idx = Number(e.target.value); model = models[idx]; show(); } }, models.map((m, i) => h('option', { value: i }, `${m.name || `part ${i + 1}`} — ${KIND_LABEL[m.kind] || m.kind}`)))) : null,
-    host, h('div.row', { style: { margin: '6px 0' } },
-      ...['iso', 'top', 'front', 'side'].map((v) => h('button.btn.small', { type: 'button', onclick: () => viewer.setView(v) }, v)),
-      h('button.btn.small', { type: 'button', onclick: () => viewer.fit() }, 'Fit'),
-      h('label.check', h('input', { type: 'checkbox', checked: true, onchange: (e) => viewer.setEdges(e.target.checked) }), h('span', 'Edges')),
-      h('button.btn.small', { type: 'button', onclick: () => download(`${entry.name}.png`, dataUrlBlob(viewer.snapshot())) }, 'Image'), pickInfo),
-    info);
+  clear(box);
+  if (models.length > 1) box.append(h('div.row', h('label', 'Part'), h('select.plain', { style: { maxWidth: '360px' }, onchange: (e) => { idx = Number(e.target.value); model = models[idx]; show(); } }, models.map((m, i) => h('option', { value: i }, `${m.name || `part ${i + 1}`} — ${KIND_LABEL[m.kind] || m.kind}`)))));
+  box.append(host, h('div.row', { style: { margin: '6px 0' } },
+    h('button.btn.small', { type: 'button', onclick: () => download(`${entry.name}.png`, dataUrlBlob(viewer.snapshot())) }, icon('download'), 'Image'), pickInfo), info);
   const viewer = viewerM.createViewer(host, { edges: true });
   viewer.onPick((p) => { pickInfo.textContent = p ? `x ${fmt(p.point[0])}  y ${fmt(p.point[1])}  z ${fmt(p.point[2])} m${p.value != null ? ` · value ${fmt(p.value)}` : ''}` : 'Click the model to read coordinates.'; });
   let modelId;
@@ -194,12 +190,9 @@ async function workbench(entry, box) {
     const exportTab = () => {
       const el = h('div.card', h('h3', 'Export'), h('p.muted', 'Take the checked, repaired or remeshed model back out.'));
       import('../../geometry/exporters.js').then((ex) => {
-        const opts = [['STL', 'toStl', 'stl', ['surface']], ['OBJ', 'toObj', 'obj', ['surface']], ['PLY', 'toPly', 'ply', ['surface', 'points']], ['VTK', 'toVtk', 'vtk', ['surface', 'volume', 'frame', 'points']], ['CSV', 'toCsv', 'csv', ['polyline', 'points']], ['GeoJSON', 'toGeoJson', 'geojson', ['polyline', 'points']], ['ESRI ASCII grid', 'toAsciiGrid', 'asc', ['grid']], ['Application JSON', 'toAppJson', 'json', null]];
         const row = h('div.row');
-        for (const [label, fn, ext, kinds] of opts) {
-          const f = ex[fn] || ex[`export${fn.slice(2)}`];
-          if (!f || (kinds && !kinds.includes(model.kind))) continue;
-          row.append(h('button.btn', { type: 'button', onclick: () => { try { const out = f(model); download(`${(model.name || entry.name).replace(/\.[^.]+$/, '')}.${ext}`, out instanceof Uint8Array ? new Blob([out]) : out); } catch (e) { toast(e.message); } } }, icon('download'), label));
+        for (const e of ex.EXPORTERS.filter((x) => x.kinds.includes(model.kind))) {
+          row.append(h('button.btn', { type: 'button', onclick: () => { try { const out = ex.exportModels(e.id, model, { fileName: model.name || entry.name }); download(out.fileName, out.data instanceof Uint8Array ? new Blob([out.data], { type: out.mime }) : out.data, out.mime); } catch (err) { toast(err.message); } } }, icon('download'), e.name));
         }
         el.append(row.childNodes.length ? row : h('p.muted', 'No exporter applies to this kind of model.'));
       }).catch(() => el.append(h('p.muted', 'Exporters are not available in this build.')));
