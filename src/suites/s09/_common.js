@@ -140,3 +140,41 @@ export const vesselCo2Text = (days) => `${fmt(days)} vessel day(s) ≈ ${fmt(day
 
 export const LIMIT_2D = 'The rod model is two-dimensional (in-plane): out-of-plane current, cross offsets, torsion and lateral seabed friction are not modelled, and the seabed is a row of linear lift-off springs.';
 export const CONFIRM = 'Default recalled from the standard — confirm against the governing project edition.';
+
+/* ------------------------------------------------------------------------------------------------ results */
+
+export const kpi = (key, label, value, unit, explain, limit, sense) => (
+  limit == null ? { key, label, value, unit, explain } : { key, label, value, unit, limit, sense, explain });
+export const plot = (title, xl, xu, yl, yu, series, explain, type = 'line') => (
+  { type, title, x: { label: xl, unit: xu }, y: { label: yl, unit: yu }, series, explain });
+export const meshInput = (def = 160, levelsHint = '80 / 160 / 320') => ({
+  key: 'nElem', label: 'Beam elements along the riser', type: 'int', default: def, min: 20, max: 1280, group: 'Solver', role: 'control',
+  help: `Spatial discretisation of the rod model (${levelsHint} in the convergence study). The mesh is graded towards the hang-off and the touchdown zone.` });
+
+/** Reject a result that carries a non-finite headline number, with a message the user can act on. */
+export function finish(res) {
+  for (const k of res.kpis) finite(k.value, k.label);
+  for (const c of res.checks ?? []) if (!Number.isFinite(c.uc) || c.uc < 0) throw new Error(`Check '${c.name}' could not be evaluated. Review the inputs it depends on.`);
+  return res;
+}
+
+/**
+ * Independent hand formula for apparent (submerged) weight per metre [N/m] used by the verification cases:
+ * (steel + coating + contents mass − displaced water mass)·g, lengths in mm.
+ */
+export function handWeight({ D = 273.1, t = 20.6, coatT = 3, coatRho = 900, rhoInt = 700, rhoSteel = 7850, rhoW = 1025 } = {}) {
+  const d = D / 1e3, w = t / 1e3, c = coatT / 1e3, q = Math.PI / 4;
+  const steel = q * (d * d - (d - 2 * w) ** 2) * rhoSteel, coat = q * ((d + 2 * c) ** 2 - d * d) * coatRho;
+  const cont = q * (d - 2 * w) ** 2 * rhoInt, disp = q * (d + 2 * c) ** 2 * rhoW;
+  return (steel + coat + cont - disp) * 9.80665;
+}
+
+/** Stations table rows from parallel arrays, decimated to about n rows. */
+export function stations(cols, n = 40) {
+  const keys = Object.keys(cols), len = cols[keys[0]].length, rows = [];
+  const step = Math.max(1, Math.floor((len - 1) / n));
+  for (let i = 0; i < len; i += step) { const r = {}; for (const k of keys) r[k] = round(cols[k][i], 5); rows.push(r); }
+  return rows;
+}
+export const maxAbs = (a) => { let m = 0; for (const v of a) if (Math.abs(v) > m) m = Math.abs(v); return m; };
+export const argMaxAbs = (a) => { let k = 0; for (let i = 1; i < a.length; i++) if (Math.abs(a[i]) > Math.abs(a[k])) k = i; return k; };
