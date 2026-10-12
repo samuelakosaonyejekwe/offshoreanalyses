@@ -4,9 +4,9 @@ import { buildForm } from '../form.js';
 import { renderResult, runRecord, adviceList } from '../results.js';
 import { renderPlot } from '../plot.js';
 import { task } from '../../core/runner.js';
-import { defaults, summarise, numericInputs, ROLE_LABEL } from '../../core/studies.js';
+import { defaults, summarise, numericInputs, factorReport, ROLE_LABEL } from '../../core/studies.js';
 import { findModule, suiteModules, suiteIndex, SHORT } from '../../core/registry.js';
-import { getProject, busValues, setInputs, recordRun, publish, prefs } from '../../core/store.js';
+import { getProject, busValues, setInputs, recordRun, publish, prefs, confirmedFactors, recordEvidence, evidenceOf } from '../../core/store.js';
 import { literature } from '../../data/connectors.js';
 import { pager } from '../shell.js';
 
@@ -23,7 +23,7 @@ export async function moduleView(root, id) {
   const mod = await findModule(id);
   if (!mod) { root.append(h('div.empty', h('h2', 'Module not found'), h('p', `No analysis module with id ${id} is installed.`), h('a.btn', { href: '#/' }, 'Home'))); return { title: 'Not found' }; }
   const project = getProject();
-  const init = defaults(mod, busValues(), project.inputs[mod.id]);
+  const init = defaults(mod, busValues(), project.inputs[mod.id], confirmedFactors(mod.id));
   let lastResult = null, lastValues = null;
 
   const out = h('div', { 'aria-live': 'polite' }, h('div.empty', 'Results appear here. Press Run — or just edit a value.'));
@@ -41,7 +41,7 @@ export async function moduleView(root, id) {
     try {
       const result = await task('run', mod.id, values, {}, (f, m) => { status.textContent = `Computing… ${Math.round(100 * f)} %${m ? ` — ${m}` : ''}`; });
       lastMs = performance.now() - t0; lastResult = result; lastValues = values;
-      clear(out).append(renderResult(mod, values, result, { elapsed: lastMs }), practiceFeed(mod));
+      clear(out).append(assurance(mod, values), renderResult(mod, values, result, { elapsed: lastMs }), practiceFeed(mod));
       status.textContent = '';
       const s = summarise(result);
       setInputs(mod.id, stripGeometry(values));
@@ -62,7 +62,7 @@ export async function moduleView(root, id) {
     h('div.sticky', form.el,
       h('div.runbar',
         h('button.btn.primary', { type: 'button', onclick: run }, icon('play'), 'Run analysis'),
-        h('button.btn', { type: 'button', title: 'Restore every input to the module default and current project values', onclick: () => { const d = defaults(mod, busValues()); Object.assign(form.state.values, d.values); form.state.linked = d.linked; form.refresh(); run(); } }, icon('refresh'), 'Reset'),
+        h('button.btn', { type: 'button', title: 'Restore every input to the module default and current project values', onclick: () => { const d = defaults(mod, busValues(), {}, confirmedFactors(mod.id)); Object.assign(form.state.values, d.values); form.state.linked = d.linked; form.refresh(); run(); } }, icon('refresh'), 'Reset'),
         h('label.check', { title: 'Recompute automatically while you edit (fast analyses only)' }, live, h('span', 'Live')),
         status)),
     h('div', out,
@@ -216,6 +216,7 @@ export async function moduleView(root, id) {
         const params = pRows.filter((r) => r.on.checked).map((r) => ({ key: r.i.key, min: Number(r.lo.value), max: Number(r.hi.value) }));
         const r = await task('calibrate', mod.id, structuredCloneSafe(form.state.values), { params, data: parse(calTa.value) }, pb.set);
         clear(res);
+        recordEvidence(mod.id, 'calibration', { n: r.observed.length, kpi: kSel.value, vary: vary.value || null, rmse: r.metricsAfter.rmse, bias: r.metricsAfter.bias, params: r.params.map((q) => ({ key: q.key, fitted: q.fitted })), dataHash: hashRows(parse(calTa.value)), warnings: r.warnings.length });
         for (const w of r.warnings) res.append(h('div.banner.warn', icon('warn'), w));
         res.append(table([{ key: 'label', label: 'Parameter', left: true }, { key: 'initial', label: 'Before' }, { key: 'fitted', label: 'Calibrated' }, { key: 'min', label: 'Lower bound' }, { key: 'max', label: 'Upper bound' }], r.params));
         res.append(h('p', `Root-mean-square error ${fmt(r.metricsBefore.rmse)} → `, h('b', fmt(r.metricsAfter.rmse)), `; bias ${fmt(r.metricsBefore.bias)} → `, h('b', fmt(r.metricsAfter.bias)), ` over ${r.observed.length} measurements.`));
@@ -226,10 +227,19 @@ export async function moduleView(root, id) {
     const doVal = async () => {
       clear(res2).append(h('small.muted', 'Comparing…'));
       try {
-        const r = await task('validation', mod.id, structuredCloneSafe(form.state.values), { data: parse(valTa.value), acceptance: 0.1 });
+        const vData = parse(valTa.value);
+        // validation only means something on data the model has not been tuned to
+        const cal = evidenceOf(mod.id).calibration;
+        const calRows = new Set(parse(calTa.value).map((d) => JSON.stringify([d.set, d.value])));
+        const shared = vData.filter((d) => calRows.has(JSON.stringify([d.set, d.value]))).length;
+        if (shared > 0 || (cal && cal.dataHash === hashRows(vData))) { clear(res2).append(h('div.banner.fail', icon('warn'), h('div', h('b', `${shared || vData.length} of these rows are the calibration data. `), 'Agreement with data the parameters were fitted to proves nothing about prediction. Use measurements that were held back.'))); return; }
+        const r = await task('validation', mod.id, structuredCloneSafe(form.state.values), { data: vData, acceptance: 0.1 });
         clear(res2);
+        const xs = vary.value ? vData.map((d) => d.set[vary.value]) : [];
+        recordEvidence(mod.id, 'validation', { n: vData.length, kpi: kSel.value, kpiLabel: kSel.selectedOptions[0].textContent, vary: vary.value || null, varyLabel: vary.value ? vary.selectedOptions[0].textContent : null,
+          range: xs.length ? [Math.min(...xs), Math.max(...xs)] : null, measuredRange: [Math.min(...r.observed), Math.max(...r.observed)], rmse: r.metrics.rmse, bias: r.metrics.bias, r2: r.metrics.r2, within: r.within, peakBias: r.peakBias, acceptance: 0.1, pass: r.pass, dataHash: hashRows(vData) });
         res2.append(h('div.banner', { class: r.pass ? '' : 'warn' }, icon(r.pass ? 'check' : 'warn'), h('div', h('b', r.pass ? 'Predictions agree with the independent data within ±10 %. ' : 'Agreement is outside the ±10 % acceptance band. '),
-          `${fmt(100 * r.within, 3)} % of cases within the band; RMSE ${fmt(r.metrics.rmse)}, mean bias ${fmt(r.metrics.bias)}, R² ${fmt(r.metrics.r2, 3)}. Mean error on the largest fifth of measured values ${fmt(100 * r.peakBias, 3)} % (negative = under-prediction of peaks, which matters more than the average).`)));
+          `${fmt(100 * r.within, 3)} % of cases within the band; RMSE ${fmt(r.metrics.rmse)}, mean bias ${fmt(r.metrics.bias)}, R² ${fmt(r.metrics.r2, 3)}. Mean error on the largest fifth of measured values ${fmt(100 * r.peakBias, 3)} % (negative = under-prediction of peaks, which matters more than the average). This outcome is now recorded in the project as evidence for this module, with the range it covers.`)));
         res2.append(parity('Validation against independent data', r.predicted, r.observed));
         res2.append(h('p.muted', 'This statement holds for these measurements and this range of conditions only.'));
       } catch (e) { clear(res2).append(h('div.banner.fail', e.message)); }
@@ -313,6 +323,21 @@ export async function moduleView(root, id) {
   run();
   return { title: mod.title, crumbs: [{ href: `#/suite/${mod.suite}`, label: `${mod.suite}. ${SHORT[mod.suite]}` }, { href: `#/m/${mod.id}`, label: mod.title }], suite: idx.find((s) => s.n === mod.suite) };
 }
+
+// What stands behind this result: the status of the standards-derived factors it used and the evidence
+// (verification, calibration, validation) held in the project for this module.
+function assurance(mod, values) {
+  const fr = factorReport(mod, values, getProject().factors || {});
+  const ev = evidenceOf(mod.id);
+  const bits = [];
+  if (fr.total) bits.push(h('span', { class: `chip ${fr.unconfirmed ? 'warn' : 'ok'}` }, fr.unconfirmed ? `${fr.unconfirmed} of ${fr.total} code factors unconfirmed` : `all ${fr.total} code factors confirmed`), ' ', h('a', { href: `#/factors/m/${mod.id}` }, fr.unconfirmed ? 'Check them against your governing edition →' : 'Register'));
+  const v = ev.validation;
+  bits.push(' ', v ? h('span', { class: `chip ${v.pass ? 'ok' : 'warn'}`, title: `${v.n} independent measurements, ${new Date(v.at).toLocaleDateString()}` }, v.pass ? `validated for ${v.kpiLabel || v.kpi}${v.range ? ` over ${v.varyLabel} ${fmt(v.range[0])}–${fmt(v.range[1])}` : ''}` : 'validation attempted — outside acceptance')
+    : h('span.chip', { title: 'No independent measurements have been compared with this module in this project. Use the Calibrate & validate tab.' }, 'not validated against measurements'));
+  if (ev.calibration) bits.push(' ', h('span.chip.info', `calibrated on ${ev.calibration.n} measurements`));
+  return h('div', { style: { margin: '0 0 8px', fontSize: '.82rem', lineHeight: 2 } }, bits);
+}
+function hashRows(rows) { let hsh = 2166136261; for (const ch of JSON.stringify(rows.map((d) => [d.set, d.value]))) { hsh ^= ch.charCodeAt(0); hsh = Math.imul(hsh, 16777619); } return (hsh >>> 0).toString(16); }
 
 // Live check that the recommendations stay in step with current practice: the newest publications on the
 // module's topic, fetched by the browser (cached for a day, shown from cache when offline).

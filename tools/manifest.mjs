@@ -12,6 +12,8 @@ for (let n = 1; n <= 17; n++) {
     id: m.id, suite: n, title: m.title, summary: m.summary, covers: m.covers, fidelity: m.fidelity,
     standards: m.standards, models: m.models, publishes: m.publishes || [], searchTerms: m.searchTerms,
     hasMesh: !!(m.mesh || m.meshTime), verifyCases: (m.verify || []).filter((v) => !v.pending).length,
+    // every standards-derived factor (role 'criteria'): feeds the code-factor register
+    criteria: m.inputs.filter((i) => i.role === 'criteria' && (i.type || 'number') === 'number').map((i) => ({ key: i.key, label: i.label, unit: i.unit || '', default: i.default, ...(i.help ? { help: i.help } : {}) })),
     // only what list pages need: wiring (bind), the portal's table/series/geometry list, and one search string
     inputText: m.inputs.map((i) => i.label).join(' · '),
     inputs: m.inputs.filter((i) => i.bind || ['table', 'series', 'geometry'].includes(i.type)).map((i) => ({ label: i.label, type: i.type || 'number', ...(i.bind ? { bind: i.bind } : {}), ...(i.kinds ? { kinds: i.kinds } : {}),

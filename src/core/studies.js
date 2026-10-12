@@ -11,7 +11,7 @@ export const ROLE_LABEL = {
 };
 
 /** Default input set: module defaults, overridden by bound project-bus values, then by saved user values. */
-export function defaults(mod, bus = {}, saved = {}) {
+export function defaults(mod, bus = {}, saved = {}, factors = {}) {
   const out = {};
   const linked = {};
   for (const inp of mod.inputs || []) {
@@ -22,6 +22,8 @@ export function defaults(mod, bus = {}, saved = {}) {
       const conv = fromSI(bus[inp.bind], inp.unit);
       if (Number.isFinite(conv) && (inp.min == null || conv >= inp.min) && (inp.max == null || conv <= inp.max)) { v = conv; linked[inp.key] = inp.bind; }
     }
+    // a factor confirmed in the project's code-factor register replaces the built-in default everywhere
+    if (inp.role === 'criteria' && Number.isFinite(factors[inp.key])) v = factors[inp.key];
     if (saved && Object.prototype.hasOwnProperty.call(saved, inp.key)) { v = saved[inp.key]; delete linked[inp.key]; }
     out[inp.key] = v;
   }
@@ -73,6 +75,22 @@ export function conditionReport(mod, values) {
     rows.push({ role: inp.role || 'operation', label: inp.label, value: v, unit: inp.unit || '', key: inp.key });
   }
   return rows;
+}
+
+/**
+ * Status of the standards-derived factors (role 'criteria') used in a run: confirmed in the register,
+ * changed by the user without a sign-off, or still the built-in default recalled from the standard.
+ */
+export function factorReport(mod, values, confirmed = {}) {
+  const rows = [];
+  for (const inp of mod.inputs || []) {
+    if (inp.role !== 'criteria' || (inp.type || 'number') !== 'number' || hidden(inp, values)) continue;
+    const c = confirmed[`${mod.id}.${inp.key}`];
+    const v = values[inp.key];
+    rows.push({ key: inp.key, label: inp.label, unit: inp.unit || '', value: v, default: inp.default,
+      status: c && c.value === v ? 'confirmed' : v !== inp.default ? 'edited' : 'default', edition: c?.edition || '', by: c?.by || '' });
+  }
+  return { rows, unconfirmed: rows.filter((r) => r.status !== 'confirmed').length, total: rows.length };
 }
 
 export function summarise(result) {

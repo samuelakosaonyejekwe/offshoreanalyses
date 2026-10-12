@@ -94,6 +94,15 @@ export async function verification(root) {
             cases: h('span', r.res.map((c) => h('div', h('small', `${c.status === 'pass' ? '✓' : c.status === 'pending' ? '·' : '✗'} ${c.name}${c.error ? ` — ${c.error}` : ''}${c.rows?.some((x) => !x.pass) ? ` — got ${c.rows.filter((x) => !x.pass).map((x) => `${fmt(x.got)} vs ${fmt(x.expected)}`).join(', ')}` : ''}`)))) }))))));
     }
   }
+  const ev = getProject().evidence || {}, fac = getProject().factors || {};
+  const validated = Object.values(ev).filter((e) => e.validation?.pass).length, calibrated = Object.values(ev).filter((e) => e.calibration).length;
+  root.insertBefore(h('div.card', { style: { margin: '12px 0' } }, h('h3', 'Evidence held in this project'),
+    h('div.kpis', h('div.kpi', { class: validated ? 'ok' : '' }, h('span', 'Modules validated against independent measurements'), h('b', validated)), h('div.kpi', h('span', 'Modules calibrated on measurements'), h('b', calibrated)), h('div.kpi', h('span', 'Code factors confirmed'), h('b', Object.keys(fac).length), h('small', h('a', { href: '#/factors' }, 'Open the register')))),
+    Object.keys(ev).length ? table([{ key: 'id', label: 'Module', left: true }, { key: 'cal', label: 'Calibration', left: true }, { key: 'val', label: 'Validation', left: true }, { key: 'rng', label: 'Range covered', left: true }],
+      Object.entries(ev).map(([id, e]) => ({ id: h('a', { href: `#/m/${id}` }, id), cal: e.calibration ? `${e.calibration.n} measurements, RMSE ${fmt(e.calibration.rmse)} (${new Date(e.calibration.at).toLocaleDateString()})` : '—',
+        val: e.validation ? h('span', { class: `chip ${e.validation.pass ? 'ok' : 'warn'}` }, `${e.validation.pass ? '✓ within' : 'outside'} ±${100 * e.validation.acceptance} % · ${e.validation.n} measurements · bias ${fmt(e.validation.bias)}`) : '—',
+        rng: e.validation ? `${e.validation.kpiLabel || e.validation.kpi}${e.validation.range ? `; ${e.validation.varyLabel} ${fmt(e.validation.range[0])}–${fmt(e.validation.range[1])}` : ''}` : '—' })))
+      : h('p.muted', 'None yet. Open a module, run it, and use its Calibrate & validate tab with your own measurements. Calibration and validation data are kept apart automatically, and a validation is recorded together with the range of conditions it covers.')), prog);
   const prev = await idb.get('kv', 'verification');
   if (prev) summary.append(h('div.kpi.ok', h('span', `Last full run ${new Date(prev.at).toLocaleDateString()}`), h('b', `${prev.pass}/${prev.total}`), h('small.muted', 'modules numerically verified')), h('div.kpi', { class: prev.fail ? 'fail' : '' }, h('span', 'Failing'), h('b', prev.fail)), h('div.kpi', h('span', 'Benchmark cases'), h('b', prev.cases)));
   return { title: 'Verification & validation', crumbs: [{ href: '#/verification', label: 'Verification & validation' }] };

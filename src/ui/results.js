@@ -2,7 +2,8 @@
 // tables, remarks and recommendations, plus the exact set of conditions the run used.
 import { h, fmt, table, icon, download, toCsv } from './dom.js';
 import { renderPlot } from './plot.js';
-import { kpiOk, summarise, conditionReport, ROLE_LABEL } from '../core/studies.js';
+import { kpiOk, summarise, conditionReport, factorReport, ROLE_LABEL } from '../core/studies.js';
+import { getProject, evidenceOf } from '../core/store.js';
 
 export function kpiCards(result) {
   return h('div.kpis', (result.kpis || []).map((k) => {
@@ -95,6 +96,7 @@ export function runRecord(mod, values, result) {
   return {
     application: 'Offshore Analyses', module: { id: mod.id, title: mod.title, suite: mod.suite, fidelity: mod.fidelity, standards: mod.standards, models: mod.models, limits: mod.limits },
     generated: new Date().toISOString(), inputs: Object.fromEntries(Object.entries(values).map(([k, v]) => [k, strip(v)])), conditions: conditionReport(mod, values),
+    codeFactors: factorReport(mod, values, getProject().factors || {}), evidence: evidenceOf(mod.id),
     explanations: 'Every kpi, check, plot and table carries an `explain` field; advice items carry `basis` and `sustainability`.',
     result: { kpis: result.kpis, checks: result.checks, tables: result.tables, notes: result.notes, advice: result.advice, publish: result.publish, quantities: result.quantities },
   };

@@ -46,6 +46,8 @@ const blank = (name = 'Untitled project') => ({
   runs: {},       // moduleId -> { at, status, kpis, quantities, maxUC, icbc }
   geometry: [],   // [{ id, name, kind, format, stats }]
   materials: [],  // user-defined material records
+  factors: {},    // 'moduleId.key' -> { value, edition, by, at }: code factors confirmed against the governing standard
+  evidence: {},   // moduleId -> { calibration?, validation? }: what measurements have demonstrated, and over what range
   notes: '',
 });
 
@@ -90,6 +92,12 @@ export function publish(values, from) {
   if (changed) { save(); emit('bus', project.bus); }
 }
 export const busValues = () => Object.fromEntries(Object.entries(project.bus).map(([k, v]) => [k, v.value]));
+
+/** Confirmed code factors of one module as { key: value }. */
+export const confirmedFactors = (moduleId) => Object.fromEntries(Object.entries(project.factors || {}).filter(([k]) => k.startsWith(`${moduleId}.`)).map(([k, v]) => [k.slice(moduleId.length + 1), v.value]));
+export function confirmFactor(moduleId, key, rec) { project.factors ||= {}; if (rec) project.factors[`${moduleId}.${key}`] = { ...rec, at: new Date().toISOString() }; else delete project.factors[`${moduleId}.${key}`]; save(); emit('factors', project.factors); }
+export function recordEvidence(moduleId, kind, rec) { project.evidence ||= {}; (project.evidence[moduleId] ||= {})[kind] = { ...rec, at: new Date().toISOString() }; save(); emit('evidence', project.evidence); }
+export const evidenceOf = (moduleId) => (project.evidence || {})[moduleId] || {};
 
 export function setInputs(moduleId, values) { project.inputs[moduleId] = values; save(); }
 export function recordRun(moduleId, summary) { project.runs[moduleId] = { at: new Date().toISOString(), ...summary }; save(); emit('run', { moduleId, summary }); }

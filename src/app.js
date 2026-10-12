@@ -15,6 +15,9 @@ route('/m/:id', () => import('./ui/views/module.js').then((m) => ({ default: (ro
 route('/decision', view('decision'));
 route('/verification', view('pages', 'verification'));
 route('/wiring', view('pages', 'wiring'));
+route('/factors', view('registers'));
+route('/factors/m/:m', view('registers'));
+route('/factors/suite/:suite', view('registers'));
 route('/data', view('pages', 'data'));
 route('/help', view('pages', 'help'));
 route('/search/:q', view('pages', 'search'));

@@ -20,7 +20,7 @@ export function pager(prev, next) {
 const NAV = [
   ['Workspace', [['#/', 'home', 'Home'], ['#/site', 'globe', 'Project & site data'], ['#/portal', 'upload', 'Input data portal'], ['#/geometry', 'cube', 'Geometry & mesh'], ['#/materials', 'layers', 'Materials library']]],
   ['suites'],
-  ['Assurance & decisions', [['#/decision', 'bulb', 'Decision support'], ['#/verification', 'check', 'Verification & validation'], ['#/wiring', 'link', 'Suite wiring & coverage'], ['#/data', 'refresh', 'Live data sources'], ['#/help', 'help', 'Guide & install']]],
+  ['Assurance & decisions', [['#/decision', 'bulb', 'Decision support'], ['#/verification', 'check', 'Verification & validation'], ['#/factors', 'book', 'Code-factor register'], ['#/wiring', 'link', 'Suite wiring & coverage'], ['#/data', 'refresh', 'Live data sources'], ['#/help', 'help', 'Guide & install']]],
 ];
 
 async function buildNav() {

@@ -51,6 +51,7 @@ export const SOURCES = [
   { id: 'emodnet', name: 'EMODnet Bathymetry', provider: 'European Marine Observation and Data Network', home: 'https://emodnet.ec.europa.eu/en/bathymetry', gives: 'High-resolution depth for European seas', ttl: 90 * DAY, licence: 'CC BY 4.0', suites: [3, 7, 8, 13, 16] },
   { id: 'elevation', name: 'Open-Meteo Elevation', provider: 'Open-Meteo (Copernicus GLO-90 DEM)', home: 'https://open-meteo.com/en/docs/elevation-api', gives: 'Land elevation for landfalls, quays and coastal works', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [5, 6, 7, 13] },
   { id: 'quakes', name: 'USGS Earthquake Catalog', provider: 'U.S. Geological Survey', home: 'https://earthquake.usgs.gov/fdsnws/event/1/', gives: 'Global earthquake catalogue (real time) for seismicity screening', ttl: 6 * HOUR, licence: 'Public domain', suites: [1, 2, 3, 5, 6, 7] },
+  { id: 'tidegauge', name: 'NOAA CO-OPS tide gauges', provider: 'NOAA Center for Operational Oceanographic Products and Services', home: 'https://tidesandcurrents.noaa.gov', gives: 'Measured hourly water levels at about 300 gauges (United States coasts and territories) — used to check the modelled sea level against field measurements', ttl: 6 * HOUR, licence: 'Public domain', suites: [5, 6, 7, 15] },
   { id: 'power', name: 'NASA POWER', provider: 'NASA Langley Research Center', home: 'https://power.larc.nasa.gov/', gives: 'Solar irradiance and meteorological climatology for floating solar and hybrid systems', ttl: 30 * DAY, licence: 'Public domain', suites: [16] },
   { id: 'soilgrids', name: 'ISRIC SoilGrids', provider: 'ISRIC World Soil Information', home: 'https://soilgrids.org', gives: 'Onshore soil texture at landfalls and port sites (clay / sand / silt fractions, bulk density)', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [5, 6, 7, 13] },
   { id: 'place', name: 'OpenStreetMap Nominatim', provider: 'OpenStreetMap contributors', home: 'https://nominatim.org', gives: 'Place names, country and nearest coast context', ttl: 365 * DAY, licence: 'ODbL', suites: [17] },
@@ -173,6 +174,25 @@ export const earthquakes = (lat, lon, { radiusKm = 300, minMag = 4.5, since = '1
 
 export const solarClimatology = (lat, lon, o) => cached(`power:${r4(lat)},${r4(lon)}`, 30 * DAY, () =>
   getJson(`https://power.larc.nasa.gov/api/temporal/climatology/point?${q({ parameters: 'ALLSKY_SFC_SW_DWN,T2M,WS10M,WS50M', community: 'RE', longitude: lon, latitude: lat, format: 'JSON' })}`, { timeout: 60000 }), o);
+
+// ---------------- measured water levels (field validation of the site data layer) ----------------
+export const tideStations = () => cached('tidegauge:stations', 30 * DAY, async () => {
+  const j = await getJson('https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=waterlevels', { timeout: 60000 });
+  return (j.stations || []).map((st) => ({ id: st.id, name: st.name, state: st.state || '', lat: Number(st.lat), lon: Number(st.lng) }));
+});
+/** Verified hourly water level relative to mean sea level at a NOAA gauge, last `days` days. */
+export const tideGauge = (stationId, days = 30, o) => cached(`tidegauge:${stationId}:${days}`, 6 * HOUR, async () => {
+  const end = new Date(Date.now() - DAY), begin = new Date(end.getTime() - days * DAY);
+  const ymd = (d) => iso(d).replace(/-/g, '');
+  const j = await getJson(`https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?${q({ product: 'hourly_height', application: 'offshore-analyses', begin_date: ymd(begin), end_date: ymd(end), datum: 'MSL', station: stationId, time_zone: 'gmt', units: 'metric', format: 'json' })}`, { timeout: 60000 });
+  if (j.error) throw new Error(j.error.message || 'The gauge returned no data for this period');
+  return (j.data || []).map((r) => ({ t: `${r.t.replace(' ', 'T')}`, v: Number(r.v) })).filter((r) => Number.isFinite(r.v));
+}, o);
+/** Modelled hourly sea level (tide + surge) at a point for the same recent period. */
+export const modelledSeaLevel = (lat, lon, days = 30, o) => cached(`marine:level:${r4(lat)},${r4(lon)}:${days}`, 6 * HOUR, async () => {
+  const j = await getJson(`${MARINE}?${q({ latitude: lat, longitude: lon, hourly: 'sea_level_height_msl', past_days: Math.min(92, days + 2), forecast_days: 1, timezone: 'GMT', cell_selection: 'sea' })}`, { timeout: 60000 });
+  return (j.hourly?.time || []).map((t, i) => ({ t, v: j.hourly.sea_level_height_msl[i] })).filter((r) => typeof r.v === 'number');
+}, o);
 
 // ---------------- places ----------------
 export const searchPlace = (name) => cached(`geocode:${name.toLowerCase()}`, 365 * DAY, () =>
