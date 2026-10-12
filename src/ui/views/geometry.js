@@ -199,7 +199,67 @@ async function workbench(entry, box) {
       return el;
     };
 
-    info.append(tabs([{ label: 'Check & repair', render: checkTab }, { label: 'Mesh quality', render: qualityTab }, { label: 'Refine, coarsen & mesh study', render: meshTab }, { label: 'Export', render: exportTab }]));
+    // Hand-off to high-fidelity solvers, and the built-in panel-method added mass
+    const solverTab = () => {
+      const el = h('div');
+      const num = (label, value, unit, w = 90) => { const i = h('input.plain', { type: 'number', step: 'any', value, 'aria-label': label, style: { width: `${w}px` } }); return { i, row: h('span.row', h('label', label), i, unit ? h('small.muted', unit) : null), get v() { return Number(i.value); } }; };
+      const bb = topology.bounds ? safe(() => topology.bounds(model.positions || model.nodes)) : null;
+      const size = bb ? [bb.max[0] - bb.min[0], bb.max[1] - bb.min[1], bb.max[2] - bb.min[2]] : [10, 10, 10];
+      if (model.kind === 'surface') {
+        const res = h('div');
+        const rho = num('Water density', 1025, 'kg/m³');
+        const lim = h('select.plain', { style: { maxWidth: '300px' }, 'aria-label': 'Frequency limit' }, h('option', { value: 'infinite' }, 'High-frequency limit (A∞, for time-domain models)'), h('option', { value: 'zero' }, 'Low-frequency limit (rigid free surface)'), h('option', { value: 'unbounded' }, 'Deeply submerged (no free surface)'));
+        el.append(h('div.card', h('h3', 'Added mass by the boundary-element method'), h('p.muted', 'Solves the potential flow around this hull with panels on its wetted surface (waterline at z = 0) and returns the 6 × 6 added-mass matrix. This is a true panel-method result for the stated frequency limit. It is not a frequency-dependent radiation and diffraction analysis: it gives no wave damping and no wave excitation. For those, export a case below and bring the results back.'),
+          h('div.row', rho.row, lim, h('button.btn.primary', { type: 'button', onclick: async () => {
+            clear(res).append(h('small.muted', 'Solving…'));
+            try {
+              const { addedMassBem } = await import('../../engine/hydro/bem.js');
+              let hull = model;
+              if (hull.indices.length / 3 > 2400) hull = refineM.coarsenTo(model, 2400);   // keeps the dense solve to a few seconds on a phone
+              await new Promise((r) => setTimeout(r, 30));
+              const t0 = performance.now();
+              const r = addedMassBem({ surface: hull, rho: rho.v, limit: lim.value });
+              const lab = ['Surge', 'Sway', 'Heave', 'Roll', 'Pitch', 'Yaw'];
+              clear(res).append(h('p', `${r.panels} wetted panels, displaced volume ${fmt(r.volume)} m³, solved in ${fmt((performance.now() - t0) / 1000, 2)} s. Asymmetry removed from the matrix: ${fmt(100 * r.symmetryError, 2)} % (a measure of discretisation error — refine the mesh if it is more than a few per cent).`),
+                h('p.why', 'Rows and columns are surge, sway, heave [kg], roll, pitch, yaw [kg·m²]; off-diagonal blocks couple translation and rotation [kg·m]. Compare heave added mass with the displaced mass ' + fmt(r.volume * rho.v) + ' kg.'),
+                table([{ key: 'n', label: '', left: true }, ...lab.map((l, j) => ({ key: `c${j}`, label: l, sig: 4 }))], r.A.map((row, i) => ({ n: lab[i], ...Object.fromEntries(row.map((v, j) => [`c${j}`, v])) }))),
+                h('div.row', { style: { marginTop: '8px' } }, h('button.btn.small', { type: 'button', onclick: () => download('added-mass.json', JSON.stringify({ limit: r.limit, rho: rho.v, panels: r.panels, A: r.A }, null, 1), 'application/json') }, icon('download'), 'Matrix (JSON)')));
+            } catch (e) { clear(res).append(h('div.banner.fail', icon('warn'), e.message)); }
+          } }, 'Compute added mass')), res));
+      }
+      const card = h('div.card', h('h3', 'Hand off to a high-fidelity solver'), h('p.muted', 'Writes a complete, ready-to-run case for an established open-source solver from this model, as one ZIP. Run it on a workstation or cluster, then bring the results back into the analyses. This is how questions beyond the built-in models — wave diffraction and radiation, nonlinear collapse, viscous flow — are answered without leaving the workflow.'));
+      el.append(card);
+      import('../../interop/index.js').then((io) => {
+        const list = io.SOLVER_EXPORTS.filter((x) => x.kinds.includes(model.kind));
+        if (!list.length) { card.append(h('p.muted', 'No solver hand-off applies to this kind of model.')); return; }
+        const depth = num('Water depth', Math.max(20, Math.round(-((bb?.min?.[2]) ?? -20) * 3)), 'm'), H = num('Wave height', 2, 'm'), T = num('Wave period', 8, 's'), U = num('Current', 1, 'm/s');
+        const E = num('E', 210, 'GPa', 80), fy = num('Yield', 355, 'MPa', 80), thk = num('Shell thickness', 20, 'mm', 80);
+        card.append(h('div.row', { style: { margin: '8px 0' } }, depth.row, H.row, T.row, U.row), model.kind !== 'grid' ? h('div.row', { style: { margin: '8px 0' } }, E.row, fy.row, model.kind === 'surface' ? thk.row : null) : null);
+        const L = Math.max(...size);
+        const options = (id) => {
+          const name = (model.name || entry.name).replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '_') || 'model';
+          const omegas = Array.from({ length: 30 }, (_, i) => 0.2 + i * 0.06);
+          if (id === 'nemoh' || id === 'capytaine') return { surface: model, rho: 1025, g: 9.80665, depth: depth.v, omegas, headingsDeg: [0, 45, 90, 135, 180], cog: [0, 0, 0], name };
+          if (id === 'wamit-gdf') return { surface: model, ulen: 1, g: 9.80665, name };
+          if (id === 'calculix') {
+            // default restraint: every node on the lowest 1 % of the model height is fixed; default load: self-weight
+            const P = model.positions || model.nodes; const zmin = bb.min[2], tol = 0.01 * (size[2] || 1) + 1e-9; const fixed = [];
+            for (let i = 0; i < P.length / 3; i++) if (P[3 * i + 2] <= zmin + tol) fixed.push(i);
+            return { material: { E: E.v * 1e9, nu: 0.3, rho: 7850, fy: fy.v * 1e6, hardening: { Et: E.v * 1e9 / 100, epsMax: 0.15 } }, supports: [{ nodes: fixed, dofs: 'fixed' }], loads: [{ type: 'gravity' }], analysis: 'static-nlgeom', steps: 10, thickness: thk.v / 1000, name };
+          }
+          if (id === 'openfoam-wave-tank') return { surface: model, domain: { length: 12 * L, width: 6 * L, height: depth.v + 3 * Math.max(H.v, size[2]), waterDepth: depth.v, xMin: bb.min[0] - 5 * L, yMin: (bb.min[1] + bb.max[1]) / 2 - 3 * L }, wave: { H: H.v, T: T.v, theory: 'stokes2' }, cellSize: L / 6, refinement: { structure: 2, box: 1, freeSurface: 1 }, endTime: 6 * T.v, turbulence: 'laminar', name };
+          if (id === 'openfoam-current') return { surface: model, domain: { length: 14 * L, width: 6 * L, height: 6 * L, xMin: bb.min[0] - 4 * L, yMin: (bb.min[1] + bb.max[1]) / 2 - 3 * L, zMin: (bb.min[2] + bb.max[2]) / 2 - 3 * L }, current: U.v, cellSize: L / 6, refinement: { structure: 2, box: 1 }, name };
+          return { name };
+        };
+        card.append(table([{ key: 'solver', label: 'Solver', left: true }, { key: 'purpose', label: 'Answers', left: true }, { key: 'state', label: 'Case files', left: true }, { key: 'act', label: '', left: true }], list.map((x) => ({ solver: x.solver, purpose: h('span', x.purpose, x.notes ? h('small.why', Array.isArray(x.notes) ? x.notes.join(' ') : x.notes) : null),
+          state: h('span', { class: `chip ${x.executed ? 'ok' : 'warn'}`, title: x.executed ? 'A case written by this exporter was run end to end with the solver during development.' : 'Written to the solver’s documented input format; not executed during development because the solver was not installed. Check the first case you run.' }, x.executed ? '✓ run with the solver' : 'format-checked only'),
+          act: h('button.btn.small', { type: 'button', onclick: () => { try { const out = io.exportCase(x.id, model, options(x.id)); download(`${x.id}-case.zip`, new Blob([io.packCase(out.files, { root: `${x.id}-case` })], { type: 'application/zip' })); toast(`${out.files.length} files written.${out.notes?.length ? ` ${out.notes[0]}` : ''}`.slice(0, 200)); } catch (e) { toast(e.message); } } }, icon('download'), 'Case (ZIP)') }))),
+        h('p.why', 'Defaults are filled in from this model’s size (domain extents, cell size, restraint at its base, self-weight). They produce a case that runs; refine mesh, loads and run time in the solver’s own files for a production analysis. Results come back through the floating-structure RAO module (hydrodynamic coefficients) and the readers documented in docs/interop.md.'));
+      }).catch((e) => card.append(h('p.muted', `Solver hand-off is not available in this build (${e.message}).`)));
+      return el;
+    };
+
+    info.append(tabs([{ label: 'Check & repair', render: checkTab }, { label: 'Mesh quality', render: qualityTab }, { label: 'Refine, coarsen & mesh study', render: meshTab }, { label: 'High-fidelity solvers', render: solverTab }, { label: 'Export', render: exportTab }]));
   }
   show();
 }

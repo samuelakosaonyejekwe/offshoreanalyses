@@ -26,6 +26,12 @@ https://raw.githack.com/samuelakosaonyejekwe/offshoreanalyses/main/index.html
 * **Studies on every module.** Sensitivity ranking, parameter sweeps, uncertainty propagation, discretisation
   convergence with automatic mesh selection (observed order, Richardson extrapolation, Grid Convergence Index),
   calibration against measurements and validation against independent data.
+* **Managed assurance.** A code-factor register lists every standards-derived factor (1,242 of them) with a
+  sign-off against the governing edition; an evidence register records calibration and validation against
+  measurements with the range covered; the modelled sea level can be checked against tide-gauge measurements.
+* **Hand-off to high-fidelity solvers.** Ready-to-run cases for OpenFOAM, NEMOH, Capytaine, WAMIT and CalculiX are
+  written from the app's own models and their results read back; a built-in boundary-element solver gives the
+  added-mass matrix of any imported hull. `docs/interop.md` states which exports were run with the solver.
 * **Works offline.** Installable on desktop, Android and iOS; all calculations run on the device; projects stay
   on the device.
 
@@ -36,7 +42,7 @@ No build step. Any static file server works:
 ```
 npm run serve        # http://localhost:8080
 npm test             # ~3,500 tests: engine benchmarks, importers, mesh tools and the suite contract gate
-npm run precache     # refresh the module catalogue and the offline file list before publishing
+npm run build        # pack each suite into one file (dist/), refresh the catalogue and the offline file list
 ```
 
 ## Host it anywhere
@@ -52,7 +58,9 @@ src/engine    numerical engines (pure ES modules, tested under Node)
 src/suites    analysis modules, one folder per suite, plus the generated catalogue
 src/spec      the 17-suite specification shown inside the app
 src/geometry  file importers, exporters and adapters      src/mesh   mesh tools and convergence toolkit
+src/interop   case writers and result readers for external solvers
 src/core      project store, analysis worker, generic studies
+dist          packed suites and worker (built by `npm run build`; a test fails if they are stale)
 src/data      live-data connectors and site characterisation
 src/ui        application shell and views
 vendor        third-party readers loaded on first use (versions and licences in docs/vendor.md)
