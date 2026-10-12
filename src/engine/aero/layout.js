@@ -507,26 +507,37 @@ function convexHull(points) {
 /**
  * Capacity density of an array. Numerically W/m² equals MW/km². Two areas are reported: the site polygon (when
  * given) and the convex hull of the turbine positions.
+ * Degenerate layouts: a single turbine or a single straight row encloses no area, so a hull density does not
+ * exist. hullArea and hullDensity are then returned as 0 (not as a non-finite number), `degenerate` is true and
+ * `note` says so; no buffer around the row is invented. Use the site polygon for the density of such a layout.
  * @param {object} o
  * @param {number[][]} o.points positions (m)
  * @param {number} o.ratedPower rated power per turbine (W)
  * @param {number[][]} [o.polygon] site boundary (m)
- * @returns {{installed:number, hullArea:number, hullDensity:number, siteArea:number, siteDensity:number}}
- *   installed capacity (W), areas (m²), densities (W/m² ≡ MW/km²)
+ * @returns {{installed:number, hullArea:number, hullDensity:number, siteArea:number, siteDensity:number,
+ *   degenerate:boolean, note:(string|null)}} installed capacity (W), areas (m²), densities (W/m² ≡ MW/km²);
+ *   siteArea and siteDensity are NaN when no polygon is given; degenerate = the turbine positions enclose no area
  */
 export function capacityDensity({ points, ratedPower, polygon }) {
   need(Array.isArray(points) && points.length > 0, 'points must be a non-empty array');
   finitePos(ratedPower, 'ratedPower');
   const installed = points.length * ratedPower;
   const hull = convexHull(points);
-  const hullArea = hull.length >= 3 ? Math.abs(polygonArea(hull)) : 0;
+  let hullArea = hull.length >= 3 ? Math.abs(polygonArea(hull)) : 0;
+  // collinear positions can leave a sliver of round-off area: compare with the square of the hull extent
+  let ext = 0;
+  for (const p of points) for (const q of points) ext = Math.max(ext, Math.hypot(p[0] - q[0], p[1] - q[1]));
+  const degenerate = !(hullArea > 1e-9 * ext * ext);
+  if (degenerate) hullArea = 0;
   const siteArea = polygon ? Math.abs(polygonArea(polygon)) : NaN;
   return {
     installed,
     hullArea,
-    hullDensity: hullArea > 0 ? installed / hullArea : NaN,
+    hullDensity: degenerate ? 0 : installed / hullArea,
     siteArea,
     siteDensity: siteArea > 0 ? installed / siteArea : NaN,
+    degenerate,
+    note: degenerate ? 'The turbine positions lie on one line (or there is a single turbine): they enclose no area, so the hull-based capacity density is not defined and is reported as 0.' : null,
   };
 }
 

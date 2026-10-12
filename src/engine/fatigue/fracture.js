@@ -280,16 +280,26 @@ const BS7910_TWO_STAGE = {
  *    'marine-cp850' (cathodic protection at −850 mV Ag/AgCl).
  * Threshold ΔK0: 63 N/mm^(3/2) for welded joints in air and with cathodic protection; 0 for free corrosion
  * (BS 7910:2019 clause 8). Override with `threshold`.
+ *
+ * Threshold trap. The default threshold describes constant-amplitude loading: every cycle with ΔK <= ΔK0 gives
+ * no growth at all. A variable-amplitude history is often condensed to an equivalent constant-amplitude range
+ * (e.g. the m-th root mean stress range); that range commonly sits below ΔK0 for a small flaw — 63 N/mm^(3/2) =
+ * 2.0 MPa·√m is reached by Δσ·Y·√(πa) = 36 MPa at a = 1 mm (Y = 1) — and the calculation then reports an
+ * arrested crack although the large cycles of the real history do propagate it. For variable-amplitude loading
+ * BS 7910 advises taking ΔK0 = 0 unless every cycle of the spectrum is below the threshold: pass
+ * `variableAmplitude: true` (an explicit `threshold` still takes precedence).
  * @param {object} [o]
  * @param {string} [o.environment='air'] 'air' | 'marine' (simplified only) | 'marine-free' | 'marine-cp850'
  * @param {string} [o.curve='simplified'] 'simplified' | 'mean' | 'mean+2sd'
  * @param {string} [o.rRatio='high'] 'low' (R < 0.5) | 'high' (R >= 0.5)
  * @param {number} [o.threshold] ΔK0 [Pa·√m]
+ * @param {boolean} [o.variableAmplitude=false] the law will be used with an equivalent stress range standing for a
+ *   variable-amplitude history: ΔK0 = 0 (unless `threshold` is given)
  * @returns {{stages: {A:number, m:number}[], threshold:number, published: {A:number, m:number}[],
- *   transition:(number|null), label:string}} stages in SI (m/cycle, Pa·√m); `published` in N–mm units;
- *   transition ΔK between the stages [Pa·√m]
+ *   transition:(number|null), label:string, variableAmplitude:boolean}} stages in SI (m/cycle, Pa·√m); threshold
+ *   [Pa·√m]; `published` in N–mm units; transition ΔK between the stages [Pa·√m]
  */
-export function parisLawBs7910({ environment = 'air', curve = 'simplified', rRatio = 'high', threshold } = {}) {
+export function parisLawBs7910({ environment = 'air', curve = 'simplified', rRatio = 'high', threshold, variableAmplitude = false } = {}) {
   let published;
   if (curve === 'simplified') {
     if (environment === 'air') published = [{ A: 5.21e-13, m: 3 }];
@@ -301,13 +311,15 @@ export function parisLawBs7910({ environment = 'air', curve = 'simplified', rRat
     published = [{ A: row[0], m: row[1] }, { A: row[2], m: row[3] }];
   }
   const stages = published.map((s) => ({ A: parisConstantToSI(s.A, s.m), m: s.m }));
-  const th = threshold !== undefined ? threshold : environment === 'marine-free' || environment === 'marine' ? 0 : kFromNmm32(63);
+  const th = threshold !== undefined ? threshold
+    : variableAmplitude || environment === 'marine-free' || environment === 'marine' ? 0 : kFromNmm32(63);
   need(th >= 0, 'threshold must be non-negative');
   let transition = null;
   if (published.length === 2) {
     transition = kFromNmm32((published[1].A / published[0].A) ** (1 / (published[0].m - published[1].m)));
   }
-  return { stages, threshold: th, published, transition, label: `BS 7910 ${environment} ${curve}${curve === 'simplified' ? '' : ` R ${rRatio}`}` };
+  return { stages, threshold: th, published, transition, label: `BS 7910 ${environment} ${curve}${curve === 'simplified' ? '' : ` R ${rRatio}`}`,
+    variableAmplitude: !!variableAmplitude };
 }
 
 /**
@@ -387,6 +399,9 @@ export function parisCrackSizeClosedForm({ a0, cycles, stressRange, Y, A, m }) {
 /**
  * Numerical Paris integration of a one-parameter crack with an arbitrary stress-intensity solution.
  * Mid-point (second-order) stepping with the increment limited to a fraction of the current crack size.
+ * The law's threshold applies to the range given: with an equivalent constant-amplitude range of a
+ * variable-amplitude history pass `variableAmplitude: true` (threshold taken as zero, BS 7910:2019 clause 8),
+ * otherwise a range below ΔK0 returns `arrested` with no growth at all (see {@link parisLawBs7910}).
  * @param {object} o
  * @param {number} o.a0 initial crack size [m]
  * @param {number} o.af final crack size [m]
@@ -395,9 +410,11 @@ export function parisCrackSizeClosedForm({ a0, cycles, stressRange, Y, A, m }) {
  * @param {number} [o.maxCycles=Infinity] stop after this many cycles [cycles]
  * @param {number} [o.stepFraction=0.005] largest relative growth per step [-]
  * @param {object} [o.rateOptions] passed to {@link crackGrowthRate}
+ * @param {boolean} [o.variableAmplitude=false] ignore the law's threshold (ΔK0 = 0)
  * @returns {{cycles:number, a:number, reached:boolean, arrested:boolean, history: {cycles:number[], a:number[]}}}
  */
-export function parisIntegrate({ a0, af, deltaK, law, maxCycles = Infinity, stepFraction = 0.005, rateOptions }) {
+export function parisIntegrate({ a0, af, deltaK, law: lawIn, maxCycles = Infinity, stepFraction = 0.005, rateOptions, variableAmplitude = false }) {
+  const law = variableAmplitude ? { ...lawIn, threshold: 0 } : lawIn;
   positive(a0, 'a0');
   need(af > a0, 'af must exceed a0');
   need(stepFraction > 0 && stepFraction <= 0.1, 'stepFraction must be in (0, 0.1]');
@@ -428,6 +445,12 @@ export function parisIntegrate({ a0, af, deltaK, law, maxCycles = Infinity, step
  * Stops at wall break-through (a = throughFraction·t), at fracture (K_max >= toughness), when 2c reaches
  * widthFraction·W, or at maxCycles.
  * Reference: BS 7910:2019 clause 8 (general procedure); Newman & Raju (1981).
+ * Threshold: membraneRange and bendingRange are treated as constant-amplitude ranges, so with the default
+ * threshold of {@link parisLawBs7910} (2.0 MPa·√m in air or with cathodic protection) a small flaw under a
+ * modest range does not grow at all and the result is 'arrested' with cycles = Infinity. When the ranges are an
+ * equivalent constant-amplitude representation of a variable-amplitude history that is wrong — the larger cycles
+ * of the real history do grow the crack — and BS 7910:2019 clause 8 advises ΔK0 = 0: pass
+ * `variableAmplitude: true`, which integrates with the law's threshold set to zero.
  * @param {object} o
  * @param {number} o.a0 initial depth [m]
  * @param {number} o.c0 initial half-length [m]
@@ -444,11 +467,14 @@ export function parisIntegrate({ a0, af, deltaK, law, maxCycles = Infinity, step
  * @param {number} [o.peakFactor=1] K_max/ΔK ratio = 1/(1 − R) for the fracture check [-]
  * @param {number} [o.stepFraction=0.005] largest relative growth per step [-]
  * @param {object} [o.rateOptions] passed to {@link crackGrowthRate}
+ * @param {boolean} [o.variableAmplitude=false] the stress ranges are equivalent ranges of a variable-amplitude
+ *   history: ignore the law's threshold (ΔK0 = 0)
  * @returns {{cycles:number, a:number, c:number, status:string, history: {cycles:number[], a:number[], c:number[]}}}
  *   status: 'through-thickness' | 'fracture' | 'width' | 'max-cycles' | 'arrested'; cycles = Infinity if arrested
  */
-export function surfaceCrackGrowth({ a0, c0, t, W = Infinity, membraneRange = 0, bendingRange = 0, law, Mk, maxCycles = Infinity,
-  throughFraction = 1, widthFraction = 0.8, toughness, peakFactor = 1, stepFraction = 0.005, rateOptions }) {
+export function surfaceCrackGrowth({ a0, c0, t, W = Infinity, membraneRange = 0, bendingRange = 0, law: lawIn, Mk, maxCycles = Infinity,
+  throughFraction = 1, widthFraction = 0.8, toughness, peakFactor = 1, stepFraction = 0.005, rateOptions, variableAmplitude = false }) {
+  const law = variableAmplitude ? { ...lawIn, threshold: 0 } : lawIn;
   positive(a0, 'a0');
   positive(c0, 'c0');
   positive(t, 't');

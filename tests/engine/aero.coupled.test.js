@@ -287,3 +287,60 @@ test('input validation: time step too large for the structural mode, missing sur
   assert.throws(() => simulateCoupled({ turbine, controller: cfg, wind: 8, dt: 0.02, duration: 10 }), RangeError);
   assert.throws(() => buildSupportStructure({ segments: [], rnaMass: 1, zHub: 1 }), RangeError);
 });
+
+test('closed loop above rated in steady wind: rated speed is held without a limit cycle at 12, 13 and 18 m/s (with dynamic inflow)', () => {
+  // The run starts 3 % over speed at fine pitch and gets a 1 m/s, 2 s gust at t = 50 s; the last 100 s must be quiet.
+  for (const V of [12, 13, 18]) {
+    const r = simulateCoupled({ surface, turbine, controller: cfg, structure: oneMode(0.02), dt: 0.02, duration: 300, dynamicInflow: true,
+      wind: (t) => V + (t > 50 && t < 52 ? 1 : 0), initial: { omega: rotor.ratedRotorSpeed * 1.03, pitchDeg: 0 } });
+    const i0 = Math.round(200 / 0.02);
+    const om = seriesStats(r.rotorSpeed, i0); const pt = seriesStats(r.pitchDeg, i0);
+    rel(om.mean, rotor.ratedRotorSpeed, 1e-4, `V = ${V}: mean speed`);
+    assert.ok((om.max - om.min) / rotor.ratedRotorSpeed < 1e-4, `V = ${V}: speed ripple ${(om.max - om.min) / rotor.ratedRotorSpeed}`);
+    assert.ok(pt.max - pt.min < 0.01, `V = ${V}: pitch peak-to-peak ${pt.max - pt.min} deg`);
+    assert.ok(pt.mean > 2 && pt.mean < 20);
+  }
+  // the gains of the plain fit (designed at the vanishing fine-pitch sensitivity) do limit-cycle at 12 m/s
+  const stiff = controllerFromRotor({ rotor, surface, pitchDesign: 'fit' });
+  const r = simulateCoupled({ surface, turbine, controller: stiff, structure: oneMode(0.02), dt: 0.02, duration: 300, dynamicInflow: true,
+    wind: (t) => 12 + (t > 50 && t < 52 ? 1 : 0), initial: { omega: rotor.ratedRotorSpeed * 1.03, pitchDeg: 0 } });
+  const pt = seriesStats(r.pitchDeg, Math.round(200 / 0.02));
+  assert.ok(pt.max - pt.min > 1, `plain-fit gains: pitch peak-to-peak ${pt.max - pt.min} deg`);
+});
+
+test('monopileTowerSegments honours the hub height: the tower top sits at hubHeight − hubOffset and the structure builds', () => {
+  // the reference tower record is 87.6 m long (land based); on a transition at +10 m its top would be at 97.6 m, above a 90 m hub
+  const base = { tower: rotor.tower, waterDepth: 20, transitionZ: 10, monopileD: 6, monopileT: 0.06 };
+  const legacy = monopileTowerSegments(base);
+  close(legacy[1].zTop, 10 + rotor.tower.height, 1e-12);
+  assert.throws(() => buildSupportStructure({ segments: legacy, rnaMass: 350000, zHub: 90, nModes: 1, nElem: 20 }), /zHub/);
+  const seg = monopileTowerSegments({ ...base, hubHeight: 90, hubOffset: 2.4 });
+  close(seg[1].zTop, 87.6, 1e-12); close(seg[1].zBase, 10, 1e-12); close(seg[0].zTop, 10, 1e-12); close(seg[0].zBase, -20, 1e-12);
+  assert.equal(seg[1].dBase, rotor.tower.baseDiameter); assert.equal(seg[1].dTop, rotor.tower.topDiameter);
+  const s = buildSupportStructure({ segments: seg, rnaMass: 350000, zHub: 90, nModes: 2, nElem: 30 });
+  close(s.zTop, 87.6, 1e-12); assert.ok(s.modes[0].frequency > 0.2 && s.modes[0].frequency < 0.4);
+  // identical to shortening the tower record by hand
+  const byHand = buildSupportStructure({ segments: monopileTowerSegments({ ...base, tower: { ...rotor.tower, height: 77.6 } }), rnaMass: 350000, zHub: 90, nModes: 2, nElem: 30 });
+  rel(s.modes[0].frequency, byHand.modes[0].frequency, 1e-12);
+  // a taller hub lengthens the tower and lowers the frequency; default offset 0 puts the top at the hub
+  close(monopileTowerSegments({ ...base, hubHeight: 110 })[1].zTop, 110, 1e-12);
+  const tall = buildSupportStructure({ segments: monopileTowerSegments({ ...base, hubHeight: 110, hubOffset: 2.4 }), rnaMass: 350000, zHub: 110, nModes: 1, nElem: 30 });
+  assert.ok(tall.modes[0].frequency < s.modes[0].frequency);
+  assert.throws(() => monopileTowerSegments({ ...base, hubHeight: 8 }), RangeError);
+});
+
+test('dynamic inflow: load statistics do not depend on the time step when the same wind series is used', () => {
+  // 14 m/s with 15 % turbulence, one synthesis at 0.1 s interpolated linearly for every step size
+  const ws = Float64Array.from({ length: 2400 }, (_, i) => 14 + 1.5 * Math.sin(0.11 * i * 0.1) + 1.0 * Math.sin(0.53 * i * 0.1 + 1) + 0.6 * Math.sin(1.7 * i * 0.1 + 2));
+  const wind = (t) => { const x = Math.max(0, t) / 0.1; const i = Math.min(ws.length - 2, Math.floor(x)); return ws[i] + (ws[i + 1] - ws[i]) * (x - i); };
+  const std = (dt, dyn) => {
+    const r = simulateCoupled({ surface, turbine, controller: cfg, structure: oneMode(0.02), dt, wind, duration: 200, tTransient: 40, dynamicInflow: dyn });
+    const i0 = Math.round(40 / dt);
+    return { m: seriesStats(r.mudlineMoment, i0).std, t: seriesStats(r.thrust, i0).mean };
+  };
+  const a = std(0.05, true); const b = std(0.025, true);
+  rel(a.m, b.m, 0.015, 'mudline-moment standard deviation'); rel(a.t, b.t, 2e-3, 'mean thrust');
+  // dynamic inflow matters (it changes the thrust response to pitch and wind changes) while keeping the mean
+  const q = std(0.05, false);
+  assert.ok(Math.abs(a.m / q.m - 1) > 0.01, `with ${a.m}, without ${q.m}`); rel(a.t, q.t, 0.05);
+});

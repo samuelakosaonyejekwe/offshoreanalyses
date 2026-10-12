@@ -297,19 +297,35 @@ export function buildSupportStructure(o) {
 /**
  * Support-structure segments for a rotor's tower on a monopile (convenience for buildSupportStructure): monopile
  * from the mudline to the transition elevation, tower from there to the tower top.
+ * Tower top. A rotor's tower record gives the tower length for its land-based reference (base at ground level).
+ * Standing that full length on a transition piece puts the tower top above the hub, which buildSupportStructure
+ * rejects. With `hubHeight` the tower top is placed at hubHeight − hubOffset and the tower is shortened (or
+ * lengthened) to the length that fits between the transition and that elevation, keeping its base and top
+ * sections and the linear taper between them. Without `hubHeight` the tower keeps the length of the record.
  * @param {object} o
  * @param {object} o.tower rotor.tower record (height, baseDiameter, topDiameter, baseThickness, topThickness, density, E)
  * @param {number} o.waterDepth [m] @param {number} o.transitionZ elevation of the tower base above still water [m]
  * @param {number} o.monopileD [m] @param {number} o.monopileT wall thickness [m]
  * @param {number} [o.monopileDensity=7850] [kg/m3]
+ * @param {number} [o.hubHeight] hub elevation above still water [m]; sets the tower-top elevation
+ * @param {number} [o.hubOffset=0] vertical distance from the tower top (yaw bearing) to the hub centre [m]
+ *   (NREL 5-MW: 2.4 m); used with hubHeight
  * @returns {Array<object>} segments
  */
 export function monopileTowerSegments(o) {
   need(o && o.tower && o.waterDepth > 0, 'tower/waterDepth', 'required');
   const t = o.tower;
+  need(Number.isFinite(o.transitionZ), 'transitionZ', 'must be a finite elevation');
+  let zTop = o.transitionZ + t.height;
+  if (o.hubHeight !== undefined) {
+    const off = o.hubOffset ?? 0;
+    need(Number.isFinite(o.hubHeight) && off >= 0, 'hubHeight/hubOffset', 'hubHeight must be finite and hubOffset >= 0');
+    zTop = o.hubHeight - off;
+    need(zTop > o.transitionZ, 'hubHeight', `tower top at ${zTop} m must lie above the transition at ${o.transitionZ} m`);
+  }
   return [
     { zBase: -o.waterDepth, zTop: o.transitionZ, dBase: o.monopileD, dTop: o.monopileD, tBase: o.monopileT, tTop: o.monopileT, density: o.monopileDensity ?? 7850, E: t.E ?? 210e9 },
-    { zBase: o.transitionZ, zTop: o.transitionZ + t.height, dBase: t.baseDiameter, dTop: t.topDiameter, tBase: t.baseThickness, tTop: t.topThickness, density: t.density ?? 7850, E: t.E ?? 210e9 },
+    { zBase: o.transitionZ, zTop, dBase: t.baseDiameter, dTop: t.topDiameter, tBase: t.baseThickness, tTop: t.topThickness, density: t.density ?? 7850, E: t.E ?? 210e9 },
   ];
 }
 
@@ -502,7 +518,12 @@ function as3(m, name) {
  * @param {{ct:number, cq?:number}} [o.aeroOverride] constant thrust/torque coefficients replacing the surface (parked rotor)
  * @param {boolean} [o.dynamicInflow=false] reduced-order dynamic inflow: the mean induced velocity v = a V (a from
  *   Ct by momentum theory with the Buhl closure) is lagged with the Oye time constant tau1 and the surfaces are
- *   evaluated at the equivalent wind speed V + (v_qs - v_lag)/(1 - a)
+ *   evaluated at the equivalent wind speed V + (v_qs - v_lag)/(1 - a). The lag is a state of the fourth-order
+ *   Runge-Kutta integration (time constant of seconds against steps of hundredths of a second), so it adds no
+ *   step-size dependence of its own; what remains (a few tenths of a per cent in load standard deviations between
+ *   dt = 0.05 and 0.025 s above rated) comes from the controller and the pitch actuator being sampled once per
+ *   step. Compare runs at different dt on the SAME wind series: a turbulence series generated at each dt is a
+ *   different realisation unless it is resampled from one synthesis.
  * @param {object} [o.initial] { omega [rad/s], pitchDeg, q[], qd[], platform[3], platformVel[3], mode }
  * @param {function(number):object} [o.events] t [s] -> { command?: 'start'|'stop'|'estop', gridLoss?: boolean }
  * @param {object} [o.actuator] pitch actuator constants (omegaAct [rad/s], zetaAct)

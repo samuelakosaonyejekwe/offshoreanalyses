@@ -48,22 +48,51 @@ export function keuleganCarpenter(Um, T, D) {
  *       A = 0.03 + 0.75 Ucw^2.6,  B = 6 exp(−4.7 Ucw),  Ucw = Uc / (Uc + Um).
  *   Steady current (Ucw = 1 or KC → ∞):      S/D = 1.3 with standard deviation σ(S/D) = 0.7; the design
  *       value is 1.3 + nSigma·0.7 (DNV-ST-0126 quotes 1.3 D as the default when no other data exist).
+ * Range of the combined formula. It was fitted to tests at KC of about 4 to 26 and expresses how a current helps
+ * the wave-driven horseshoe vortex; it does not contain the scour the current produces on its own. Outside
+ * that range it under-predicts badly: a large monopile in a current with small waves has KC ≪ 1, and the
+ * expression returns S of a few per cent of D where the current alone gives 1.3 D. The function therefore
+ * selects a regime and reports it:
+ *   'steady-current'     KC = ∞ or Ucw = 1: S/D = 1.3 (+ nSigma·0.7);
+ *   'current-dominated'  Ucw ≥ currentDominatedUcw (default 0.7): the steady-current value (Sumer & Fredsøe
+ *                        2001, J. Hydraul. Eng. 127(5): for Ucw above about 0.7 the scour depth approaches its
+ *                        steady-current value);
+ *   'current-below-wave-threshold'  KC < B with a current present (0 < Ucw < currentDominatedUcw): the waves are
+ *                        below their scour threshold, the steady-current value is returned;
+ *   'no-wave-scour'      KC < 6 without current (Ucw = 0): S = 0;
+ *   'wave'               Ucw = 0, KC ≥ 6: Sumer et al. (1992);
+ *   'wave-current'       otherwise: Sumer & Fredsøe (2001), limited from above by the steady-current value.
+ * The two current regimes assume the current alone keeps the bed live (θ > θcr): check the mobility, and use
+ * `fallback: false` for the bare formula when the current is too weak to move the bed.
  * Live-bed conditions (θ > θcr), D/L < ~0.1 (no diffraction).
  * @param {object} o
  * @param {number} [o.KC=Infinity] Keulegan–Carpenter number [-]
  * @param {number} [o.Ucw=0] current ratio Uc/(Uc + Um) [-], 0 (waves) … 1 (current)
  * @param {number} [o.nSigma=0] number of standard deviations added to the mean equilibrium value [-]
- * @returns {{SoverD:number,A:number,B:number}} [-]
+ * @param {boolean} [o.fallback=true] apply the steady-current value in the two current regimes above; false
+ *   evaluates the exponential formula for every KC and Ucw (regime 'formula')
+ * @param {number} [o.currentDominatedUcw=0.7] current ratio from which the flow counts as current-dominated [-]
+ * @returns {{SoverD:number,A:number,B:number,regime:string,formulaSoverD:number}} S/D [-], coefficients [-], the
+ *   regime used, and the value of the exponential formula itself for comparison [-]
  */
-export function pileScour({ KC = Infinity, Ucw = 0, nSigma = 0 } = {}) {
+export function pileScour({ KC = Infinity, Ucw = 0, nSigma = 0, fallback = true, currentDominatedUcw = 0.7 } = {}) {
   need('KC', KC, 0, Infinity);
   need('Ucw', Ucw, 0, 1);
   need('nSigma', nSigma, 0, 5);
+  need('currentDominatedUcw', currentDominatedUcw, 0, 1);
   const A = 0.03 + 0.75 * Ucw ** 2.6;
   const B = 6 * Math.exp(-4.7 * Ucw);
   const eq = 1.3 + 0.7 * nSigma;
-  if (KC === Infinity || Ucw === 1) return { SoverD: eq, A, B };
-  return { SoverD: KC > B ? eq * (1 - Math.exp(-A * (KC - B))) : 0, A, B };
+  if (KC === Infinity || Ucw === 1) return { SoverD: eq, A, B, regime: 'steady-current', formulaSoverD: eq };
+  const formula = KC > B ? eq * (1 - Math.exp(-A * (KC - B))) : 0;
+  let SoverD = formula;
+  let regime;
+  if (!fallback) regime = 'formula';
+  else if (Ucw >= currentDominatedUcw) { regime = 'current-dominated'; SoverD = eq; }
+  else if (!(KC > B)) {
+    if (Ucw > 0) { regime = 'current-below-wave-threshold'; SoverD = eq; } else regime = 'no-wave-scour';
+  } else regime = Ucw > 0 ? 'wave-current' : 'wave';
+  return { SoverD, A, B, regime, formulaSoverD: formula };
 }
 
 /**

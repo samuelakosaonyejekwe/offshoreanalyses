@@ -126,6 +126,17 @@ function summarise(checks) {
   return gov;
 }
 
+// Largest moment amplification 1/(1 − σc/fe) carried through the beam-column equations. At and beyond the Euler
+// stress the member has no second-order equilibrium and the factor is unbounded; it is held at this value so that
+// the utilisation stays a large finite number that can be ranked, plotted and iterated on.
+const EULER_AMP_CAP = 1000;
+const eulerAmp = (ratio) => {
+  const d = 1 - ratio;
+  return d > 1 / EULER_AMP_CAP ? 1 / d : EULER_AMP_CAP;
+};
+const EULER_WARNING = 'Axial compression is at or beyond the Euler buckling load: the moment amplification is held at '
+  + `${EULER_AMP_CAP} and the beam-column utilisation is indicative only`;
+
 /**
  * ISO 19902 §13 member check for a tubular under axial force, biaxial bending, shear, torsion and (optionally)
  * external hydrostatic pressure. Partial resistance factors default to the ISO values
@@ -140,6 +151,10 @@ function summarise(checks) {
  * net tension: γR,t σt,c/ft,h + γR,b σb/fb,h ≤ 1; compression: γR,c σc,c/fyc + γR,b σb/fb,h ≤ 1 and the beam-column
  * equation with fc,h and fb,h; elastic local/hoop interaction (σx − 0.5 fhe/γR,h)/(fxe/γR,c − 0.5 fhe/γR,h) + (γR,h σh/fhe)² ≤ 1
  * when σx > 0.5 fhe/γR,h and fxe > 0.5 fhe.
+ *
+ * Beyond the Euler load (σc ≥ fe about either axis) the amplification 1/(1 − σc/fe) is held at 1000: every
+ * utilisation stays finite (and far above 1 when there is any bending; the axial term alone already exceeds 1),
+ * `beyondEuler` is true and a warning is added.
  * @param {object} o
  * @param {number} o.D outer diameter [m]
  * @param {number} o.t wall thickness [m]
@@ -159,8 +174,10 @@ function summarise(checks) {
  * @param {number} [o.Lr=o.L] ring spacing for hoop buckling [m]
  * @param {boolean} [o.cappedEndIncluded=false] true when N already contains the capped-end (end pressure) force
  * @param {object} [o.gamma] partial resistance factors { t, c, b, v, h }
- * @returns {{stresses:object, strengths:object, checks:Array<{name:string, uc:number, ref:string}>, governing:object, warnings:string[]}}
- *   stresses and strengths in Pa, utilisations dimensionless
+ * @returns {{stresses:object, strengths:object, checks:Array<{name:string, uc:number, ref:string}>, governing:object,
+ *   warnings:string[], beyondEuler:boolean}}
+ *   stresses and strengths in Pa, utilisations dimensionless; beyondEuler = compressive stress at
+ *   or above the Euler stress about either axis
  */
 export function isoTubularCheck({
   D, t, fy, E = 2.05e11, L, Ky = 1, Kz = 1, Cmy = 0.85, Cmz = 0.85, N = 0, My = 0, Mz = 0, V = 0, T = 0, p = 0, Lr,
@@ -190,10 +207,9 @@ export function isoTubularCheck({
   add('Bending', g.b * sb / S.fb, 'ISO 19902 §13.2.4');
   add('Beam shear', g.v * tauB / S.fv, 'ISO 19902 §13.2.5.1');
   add('Torsional shear', g.v * tauT / S.fv, 'ISO 19902 §13.2.5.2');
-  const amp = (sc, fe) => {
-    const d = 1 - sc / fe;
-    return d > 0 ? 1 / d : Infinity;
-  };
+  const amp = (sc, fe) => eulerAmp(sc / fe);
+  const beyondEuler = saEx < 0 && -saEx >= Math.min(fey, fez);
+  if (beyondEuler) warnings.push(EULER_WARNING);
   if (sh === 0) {
     if (saEx >= 0) {
       add('Tension + bending', g.t * saEx / S.ft + g.b * sb / S.fb, 'ISO 19902 §13.3.2');
@@ -241,7 +257,7 @@ export function isoTubularCheck({
   }
   return {
     stresses: { axial: sa, axialExcludingCappedEnd: saEx, bendingY: sby, bendingZ: sbz, bending: sb, shear: tauB, torsion: tauT, hoop: sh, cappedEnd: sq },
-    strengths: S, checks, governing: summarise(checks), warnings,
+    strengths: S, checks, governing: summarise(checks), warnings, beyondEuler,
   };
 }
 
@@ -258,7 +274,9 @@ export function isoTubularCheck({
  *    and 1 − cos(π fc/(2 φc Fxc)) + √(fby² + fbz²)/(φb Fbn) ≤ 1
  * @param {object} o same geometry / force arguments as isoTubularCheck (p only used for the hoop check)
  * @param {object} [o.phi] resistance factors { t, c, b, v, h }
- * @returns {{stresses:object, strengths:object, checks:Array, governing:object, warnings:string[]}}
+ * @returns {{stresses:object, strengths:object, checks:Array, governing:object, warnings:string[], beyondEuler:boolean}}
+ *   stresses and strengths in Pa; beyondEuler = compression at or above the (factored) Euler stress, where the
+ *   moment amplification is held at 1000 so that the beam-column utilisation stays finite
  */
 export function apiLrfdTubularCheck({
   D, t, fy, E = 2.0e11, L, Ky = 1, Kz = 1, Cmy = 0.85, Cmz = 0.85, N = 0, My = 0, Mz = 0, V = 0, T = 0, p = 0, Lr, phi = {},
@@ -267,6 +285,7 @@ export function apiLrfdTubularCheck({
   const g = geom(D, t);
   pos('fy', fy); pos('E', E); pos('L', L);
   const warnings = [];
+  let beyondEuler = false;
   const dt = D / t;
   if (dt > 300) warnings.push('D/t exceeds 300: outside the range of API RP 2A-LRFD Section D.');
   const Fxe = 2 * 0.3 * E * t / D;
@@ -294,7 +313,8 @@ export function apiLrfdTubularCheck({
   } else {
     const fc = -sa;
     add('Axial compression', fc / (f.c * Fcn), 'API RP 2A-LRFD D.2.2');
-    const amp = (fe) => { const d = 1 - fc / (f.c * fe); return d > 0 ? 1 / d : Infinity; };
+    const amp = (fe) => eulerAmp(fc / (f.c * fe));
+    if (fc >= f.c * Math.min(Fey, Fez)) { beyondEuler = true; warnings.push(EULER_WARNING); }
     add('Compression + bending (beam-column)', fc / (f.c * Fcn) + Math.hypot(Cmy * sby * amp(Fey), Cmz * sbz * amp(Fez)) / (f.b * Fbn), 'API RP 2A-LRFD D.3.2-1');
     add('Compression + bending (local strength)', 1 - Math.cos(Math.PI / 2 * Math.min(fc / (f.c * Fxc), 2)) + sb / (f.b * Fbn), 'API RP 2A-LRFD D.3.2-2');
   }
@@ -309,7 +329,7 @@ export function apiLrfdTubularCheck({
   }
   return {
     stresses: { axial: sa, bendingY: sby, bendingZ: sbz, bending: sb, hoop: sh },
-    strengths: { ...g, Fxe, Fxc, lambda, Fcn, Fbn, Fvn, Fey, Fez, Fhe, Fhc }, checks, governing: summarise(checks), warnings,
+    strengths: { ...g, Fxe, Fxc, lambda, Fcn, Fbn, Fvn, Fey, Fez, Fhe, Fhc }, checks, governing: summarise(checks), warnings, beyondEuler,
   };
 }
 
@@ -333,7 +353,9 @@ export function apiLrfdTubularCheck({
  * @param {number} [o.SFxTension=1.67] safety factor, axial tension with hydrostatic pressure [-]
  * @param {number} [o.SFxCompression=2.0] safety factor, axial compression with hydrostatic pressure [-] (1.67–2.0)
  * @param {number} [o.SFh=2.0] safety factor, hoop compression [-]
- * @returns {{stresses:object, strengths:object, checks:Array, governing:object, warnings:string[]}}
+ * @returns {{stresses:object, strengths:object, checks:Array, governing:object, warnings:string[], beyondEuler:boolean}}
+ *   stresses and strengths in Pa; beyondEuler = compression at or above the (factored) Euler stress, where the
+ *   moment amplification is held at 1000 so that the beam-column utilisation stays finite
  */
 export function apiWsdTubularCheck({
   D, t, fy, E = 2.0e11, L, Ky = 1, Kz = 1, Cmy = 0.85, Cmz = 0.85, N = 0, My = 0, Mz = 0, V = 0, T = 0, p = 0, Lr,
@@ -342,6 +364,7 @@ export function apiWsdTubularCheck({
   const g = geom(D, t);
   pos('fy', fy); pos('E', E); pos('L', L); pos('allowableFactor', allowableFactor);
   const warnings = [];
+  let beyondEuler = false;
   const dt = D / t;
   if (dt > 300) warnings.push('D/t exceeds 300: outside the range of API RP 2A-WSD §3.2.');
   const af = allowableFactor;
@@ -385,7 +408,8 @@ export function apiWsdTubularCheck({
     if (fc / FaMin <= 0.15) {
       add('Compression + bending (low axial)', fc / FaMin + fb / Fb, 'API RP 2A-WSD Eq. 3.3.1-3');
     } else {
-      const amp = (K) => { const d = 1 - fc / Fe(K); return d > 0 ? 1 / d : Infinity; };
+      const amp = (K) => eulerAmp(fc / Fe(K));
+      if (fc >= Math.min(Fe(Ky), Fe(Kz))) { beyondEuler = true; warnings.push(EULER_WARNING); }
       add('Compression + bending (stability)', fc / FaMin + Math.hypot(Cmy * fby * amp(Ky), Cmz * fbz * amp(Kz)) / Fb, 'API RP 2A-WSD Eq. 3.3.1-4');
     }
   }
@@ -417,7 +441,7 @@ export function apiWsdTubularCheck({
   }
   return {
     stresses: { axial: fa, bendingY: fby, bendingZ: fbz, bending: fb, hoop: fh },
-    strengths: { ...g, Ft, Fa: FaMin, Fb, Fv, Fxe, Fxc, Fhe, Fhc }, checks, governing: summarise(checks), warnings,
+    strengths: { ...g, Ft, Fa: FaMin, Fb, Fv, Fxe, Fxc, Fhe, Fhc }, checks, governing: summarise(checks), warnings, beyondEuler,
   };
 }
 

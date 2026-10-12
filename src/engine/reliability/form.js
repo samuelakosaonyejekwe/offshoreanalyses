@@ -40,20 +40,36 @@ function setup(g, vars, opts, name) {
  * Reference: Hasofer & Lind (1974), J. Eng. Mech. Div. ASCE 100, 111–121; Rackwitz & Fiessler (1978), Comput.
  * Struct. 9, 489–494; Zhang & Der Kiureghian (1995), "Two improved algorithms for reliability analysis";
  * Liu & Der Kiureghian (1986) for the Nataf model.
- * Validity: g continuous and differentiable near the design point; |β| <~ 8 (probabilities below 1e-15 are
- * outside double precision of the transformation); a single dominant design point.
+ * Kinked limit states (g = min or max of several functions, absolute values, clipped terms). A central difference
+ * taken across a kink averages the slopes of the two branches, and the recursion can then settle on the kink —
+ * for a series system g = min(g1, g2) on the corner where both branches vanish, which is the farthest, not the
+ * nearest, failure point of its neighbourhood. One-sided differences are therefore compared at every iterate;
+ * when the start or the end point of the search is not smooth (or the search fails), the search is repeated from
+ * 4n points displaced by ±`restartStep` along each u-axis from the origin and from the first end point, each of
+ * which starts on one branch. The answer is the point on the limit state with the smallest |u| among the
+ * searches that converged; `restarts` counts them and `nonSmooth` reports that the returned point itself lies on
+ * a kink (a parallel-system corner; FORM's tangent-plane probability is then only indicative). If no search
+ * converges the best point found is returned with `converged: false` — never a silently wrong index. For a
+ * series system FORM still gives the probability of the dominant mode only; the union needs system bounds or
+ * sampling.
+ * Validity: g continuous and piecewise differentiable; |β| <~ 8 (probabilities below 1e-15 are outside double
+ * precision of the transformation); a single dominant design point.
  *
  * @param {(x: Object<string, number>) => number} g limit-state function, failure when g < 0 (argument object is
  *   reused between calls)
  * @param {Object<string, object>} vars { name: distSpec }
- * @param {{ corr?: object, tol?: number, maxIter?: number, fdStep?: number, nataf?: boolean, u0?: number[] }} [opts]
+ * @param {{ corr?: object, tol?: number, maxIter?: number, fdStep?: number, nataf?: boolean, u0?: number[],
+ *   restarts?: boolean, restartStep?: number }} [opts]
  *   corr: correlations; tol: convergence tolerance on |G/G0| and on the misalignment of u with ∇G (1e-6);
- *   maxIter (100); fdStep: finite-difference step in u-space (1e-4); u0: starting point in u-space (origin)
+ *   maxIter (100, per search); fdStep: finite-difference step in u-space (1e-4); u0: starting point in u-space
+ *   (origin); restarts: repeat the search from displaced points when a kink is detected or the search fails
+ *   (default true); restartStep: displacement of those starting points in u-space (default 0.25)
  * @returns {{ beta: number, pf: number, alpha: Object<string, number>, designPoint: Object<string, number>,
  *   iterations: number, converged: boolean, u: number[], importance: Object<string, number>, gradient: number[],
- *   evaluations: number }} reliability index [-], failure probability [-], unit direction cosines α [-],
- *   design point in physical units, iteration count, convergence flag, design point in u-space, α² importance
- *   factors, ∇G in u-space at the design point, number of g evaluations
+ *   evaluations: number, nonSmooth: boolean, restarts: number }} reliability index [-], failure probability [-],
+ *   unit direction cosines α [-], design point in physical units, iteration count of the search that produced the
+ *   result, convergence flag, design point in u-space, α² importance factors, ∇G in u-space at the design point,
+ *   number of g evaluations (all searches), kink flag of the returned point, number of repeated searches
  */
 export function form(g, vars, opts = {}) {
   const s = setup(g, vars, opts, 'form');
@@ -61,18 +77,60 @@ export function form(g, vars, opts = {}) {
 }
 
 function formCore(s, opts) {
+  const n = s.names.length;
+  if (opts.u0 && opts.u0.length !== n) throw new RangeError('form: u0 must have one entry per variable');
+  const finish = (r, restarts) => ({ ...r.out, evaluations: s.count(), nonSmooth: r.kinkEnd, restarts });
+  let first = null;
+  let firstError = null;
+  try { first = formSearch(s, opts, opts.u0); } catch (e) { if (!e.zeroGradient) throw e; firstError = e; }
+  if (first && first.out.converged && !first.kinkStart && !first.kinkEnd) return finish(first, 0);
+  if (opts.restarts === false) { if (!first) throw firstError; return finish(first, 0); }
+  const d = opts.restartStep ?? 0.25;
+  if (!(d > 0)) throw new RangeError('form: restartStep must be > 0');
+  const bases = [opts.u0 ? Array.from(opts.u0) : new Array(n).fill(0)];
+  if (first && first.kinkEnd) bases.push(first.out.u);
+  // rank: converged on a smooth point first, then converged on a kink, then by distance from the origin
+  const better = (a, b) => {
+    if (!b) return true;
+    if (a.out.converged !== b.out.converged) return a.out.converged;
+    return Math.abs(a.out.beta) < Math.abs(b.out.beta) - 1e-9 * (1 + Math.abs(b.out.beta))
+      || (Math.abs(a.out.beta) <= Math.abs(b.out.beta) + 1e-9 * (1 + Math.abs(b.out.beta)) && !a.kinkEnd && b.kinkEnd);
+  };
+  let best = first;
+  let restarts = 0;
+  for (const base of bases) {
+    for (let i = 0; i < n; i++) {
+      for (const sg of [1, -1]) {
+        const u0 = base.slice();
+        u0[i] += sg * d;
+        restarts++;
+        let r;
+        try { r = formSearch(s, opts, u0); } catch (e) { if (!e.zeroGradient) throw e; continue; }
+        if (better(r, best)) best = r;
+      }
+    }
+  }
+  if (!best) throw firstError;
+  return finish(best, restarts);
+}
+
+// One improved HL-RF search from u0. Returns the result record, and whether the start and the end point lie on
+// a kink of the limit-state function (one-sided slopes differ).
+function formSearch(s, opts, u0) {
   const { names, tr, G } = s;
   const n = names.length;
   const tol = opts.tol ?? 1e-6;
   const maxIter = opts.maxIter ?? 100;
   const h = opts.fdStep ?? 1e-4;
   if (!(tol > 0)) throw new RangeError('form: tol must be > 0');
-  let u = opts.u0 ? Array.from(opts.u0) : new Array(n).fill(0);
-  if (u.length !== n) throw new RangeError('form: u0 must have one entry per variable');
+  let u = u0 ? Array.from(u0) : new Array(n).fill(0);
   const grad = new Array(n).fill(0);
   const up = new Array(n);
-  const gradient = (uu) => {
+  let kink = false; // one-sided slopes at the last gradient point differ
+  const gradient = (uu, Gc) => {
     for (let i = 0; i < n; i++) up[i] = uu[i];
+    let sec = 0;
+    let fst = 0;
     for (let i = 0; i < n; i++) {
       up[i] = uu[i] + h;
       const gp = G(up);
@@ -80,8 +138,13 @@ function formCore(s, opts) {
       const gm = G(up);
       up[i] = uu[i];
       grad[i] = (gp - gm) / (2 * h);
+      // second difference against first difference: O(h) on a smooth function, O(1) across a kink
+      sec = Math.max(sec, Math.abs(gp + gm - 2 * Gc));
+      fst = Math.max(fst, Math.abs(gp - gm));
     }
+    kink = sec > 0.02 * (fst + sec) && sec > 1e-12 * (Math.abs(Gc) + fst);
   };
+  let kinkStart = false;
   let Gu = G(u);
   const G0 = Math.abs(Gu) > 0 ? Math.abs(Gu) : 1;
   let converged = false;
@@ -89,10 +152,13 @@ function formCore(s, opts) {
   let gnorm = 0;
   const trial = new Array(n);
   for (; it < maxIter; ) {
-    gradient(u);
+    gradient(u, Gu);
+    if (it === 0) kinkStart = kink;
     gnorm = Math.hypot(...grad);
     if (!(gnorm > 0) || !Number.isFinite(gnorm)) {
-      throw new Error('form: the limit-state function has a zero or non-finite gradient — it does not depend on the random variables at the current point');
+      const err = new Error('form: the limit-state function has a zero or non-finite gradient — it does not depend on the random variables at the current point');
+      err.zeroGradient = true;
+      throw err;
     }
     let gu = 0;
     let unorm = 0;
@@ -173,16 +239,19 @@ function formCore(s, opts) {
   }
   const designPoint = { ...tr.toX(u, {}) };
   return {
-    beta,
-    pf: normCdf(-beta),
-    alpha,
-    designPoint,
-    iterations: it,
-    converged,
-    u: u.slice(),
-    importance,
-    gradient: grad.slice(),
-    evaluations: s.count(),
+    out: {
+      beta,
+      pf: normCdf(-beta),
+      alpha,
+      designPoint,
+      iterations: it,
+      converged,
+      u: u.slice(),
+      importance,
+      gradient: grad.slice(),
+    },
+    kinkStart,
+    kinkEnd: kink,
   };
 }
 

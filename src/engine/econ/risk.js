@@ -450,7 +450,8 @@ export function expectedMonetaryValue(outcomes) {
  * sample sizes, in the order the samples were generated.
  * Ref: Vose, Risk Analysis, ch. 7 (how many iterations).
  * @param {ArrayLike<number>} samples values in generation order
- * @param {number} [points] number of checkpoints (default 40)
+ * @param {number} [points] approximate number of checkpoints (default 40): one every ⌊N/points⌋ samples from
+ *   n = 2, plus the last sample, so up to points + 1 entries
  * @returns {{n: number[], runningMean: number[], standardError: number[], relativeError: number}} relativeError =
  *   final standard error / |final mean|
  */

@@ -361,19 +361,36 @@ export function pitchActuatorStep(state, o) {
 /**
  * Controller configuration for a rotor from its Cp surface: region-2 gain, torque-law constants, pitch sensitivity,
  * PI gains and gain-schedule angle, with NREL-baseline-style limits as editable defaults.
+ *
+ * Pitch-loop design point. The gains follow piPitchGains with the sensitivity s0 of the gain-schedule model
+ * dP/dtheta = s0 (1 + theta/thetaK). At the rated point itself the blade sits at fine pitch, the Cp optimum, where
+ * dP/dtheta vanishes; a straight-line fit through the region-3 sensitivities that includes that point is pulled to
+ * an intercept several times smaller than the sensitivities the controller actually works with, and the resulting
+ * gains (and a thetaK near 1 deg) are several times the published baseline — too stiff for the actuator and the
+ * speed filter just above rated wind speed. `pitchDesign: 'region3'` (default) therefore designs on region 3 proper:
+ * s0 is the fitted intercept but not smaller in magnitude than `sensitivityFloor` (default 0.2) times the
+ * sensitivity at the highest wind speed of the schedule, and thetaK is chosen so that the model reproduces the
+ * sensitivity at the middle point of the region-3 schedule. For the NREL 5-MW planform this gives Kp of about
+ * 0.026 s, Ki of about 0.011 and thetaK of about 7 deg (published baseline with its own polars: 0.0188 s, 0.0081,
+ * 6.3 deg; Jonkman et al. 2009, section 7.3). `pitchDesign: 'fit'` keeps the plain least-squares fit of
+ * pitchSensitivity.
  * @param {object} o
  * @param {object} o.rotor rotor with ratedPower [W], ratedRotorSpeed, minRotorSpeed [rad/s], gearboxRatio,
  *   drivetrainEfficiency, drivetrainInertia [kg m2]
  * @param {object} o.surface cpSurface result for the rotor
  * @param {number} [o.rho=1.225]
  * @param {number} [o.zeta=0.7] @param {number} [o.omegaN=0.6] pitch-loop design targets [-], [rad/s]
+ * @param {'region3'|'fit'} [o.pitchDesign='region3'] how s0 and thetaK are taken from the region-3 sensitivities
+ * @param {number} [o.sensitivityFloor=0.2] lower bound on |s0| as a fraction of the sensitivity at the highest
+ *   scheduled wind speed [-] ('region3' only)
  * @param {number} [o.pitchFineDeg] fine pitch [deg]; default optimum of the surface, not below 0
  * @param {number} [o.pitchRateDeg=8] pitch rate limit [deg/s] (NREL 5-MW: 8)
  * @param {number} [o.maxTorqueFactor=1.1] torque limit / rated torque [-] (NREL 5-MW: 1.1)
  * @param {number} [o.torqueRate] generator torque rate limit [N m/s]; default rated torque per 2.87 s
  *   (the NREL 5-MW ratio 43,094 N m / 15,000 N m/s)
  * @param {number} [o.filterHz=0.25] corner frequency of the generator-speed low-pass filter [Hz] (NREL 5-MW: 0.25)
- * @returns {object} controller configuration for createController, with `design` (cpMax, tsrOpt, dPdTheta0, ...)
+ * @returns {object} controller configuration for createController, with `design` (cpMax, tsrOpt, dPdTheta0 [W/rad]
+ *   and thetaKDeg [deg] as used for the gains, dPdThetaFit0 and thetaKFitDeg of the plain fit, pitchDesign, ...)
  */
 export function controllerFromRotor(o) {
   const r = o.rotor; const sf = o.surface;
@@ -388,7 +405,23 @@ export function controllerFromRotor(o) {
   const g = region2Gain({ R: sf.R, cpMax: opt.cpMax, tsrOpt: opt.tsrOpt, rho, gearboxRatio: N });
   const Pmech = r.ratedPower / eta;
   const sens = pitchSensitivity({ surface: sf, ratedPowerAero: Pmech, ratedRotorSpeed: r.ratedRotorSpeed, rho, pitchFineDeg: fine });
-  const gains = piPitchGains({ inertia: r.drivetrainInertia, omegaRated: r.ratedRotorSpeed, dPdTheta: sens.dPdTheta0, gearboxRatio: N, zeta: o.zeta, omegaN: o.omegaN });
+  const pitchDesign = o.pitchDesign ?? 'region3';
+  need(pitchDesign === 'region3' || pitchDesign === 'fit', 'pitchDesign', "must be 'region3' or 'fit'");
+  const floor = o.sensitivityFloor ?? 0.2;
+  need(floor >= 0 && floor <= 1, 'sensitivityFloor', 'must lie in [0, 1]');
+  let s0 = sens.dPdTheta0; let thetaK = sens.thetaK;
+  if (pitchDesign === 'region3' && sens.dPdTheta.length >= 3) {
+    const nP = sens.dPdTheta.length;
+    const dLast = sens.dPdTheta[nP - 1];
+    const iMid = Math.floor(nP / 2);
+    const dMid = sens.dPdTheta[iMid]; const thMid = (sens.pitchDeg[iMid] - fine) * D2R;
+    if (dLast < 0) {
+      const s0r = Math.min(s0 < 0 ? s0 : 0, floor * dLast); // the more negative of the fit and the floor
+      // thetaK from the mid-schedule point; needs the sensitivity there to exceed s0 in magnitude
+      if (s0r < 0 && thMid > 0 && dMid / s0r > 1.05) { s0 = s0r; thetaK = thMid / (dMid / s0r - 1); }
+    }
+  }
+  const gains = piPitchGains({ inertia: r.drivetrainInertia, omegaRated: r.ratedRotorSpeed, dPdTheta: s0, gearboxRatio: N, zeta: o.zeta, omegaN: o.omegaN });
   const ratedGenSpeed = r.ratedRotorSpeed * N;
   const ratedTorque = Pmech / ratedGenSpeed;
   return {
@@ -396,10 +429,11 @@ export function controllerFromRotor(o) {
     k: g.kHss, ratedGenSpeed, ratedPowerMech: Pmech, ratedTorque, minGenSpeed: (r.minRotorSpeed ?? 0) * N,
     region15Span: 0.3, slipPercent: 10, region3Fraction: 0.99, constantPower: true,
     maxTorque: (o.maxTorqueFactor ?? 1.1) * ratedTorque, torqueRate: o.torqueRate ?? ratedTorque / 2.87,
-    kp: gains.kp, ki: gains.ki, thetaK: sens.thetaK,
+    kp: gains.kp, ki: gains.ki, thetaK,
     pitchMin: fine * D2R, pitchMax: 90 * D2R, pitchRate: (o.pitchRateDeg ?? 8) * D2R, filterHz: o.filterHz ?? 0.25,
     towerDamperGain: 0, cutIn: r.cutIn, cutOut: r.cutOut,
-    design: { cpMax: opt.cpMax, tsrOpt: opt.tsrOpt, pitchFineDeg: fine, dPdTheta0: sens.dPdTheta0, thetaKDeg: sens.thetaKDeg,
+    design: { cpMax: opt.cpMax, tsrOpt: opt.tsrOpt, pitchFineDeg: fine, dPdTheta0: s0, thetaKDeg: thetaK / D2R,
+      dPdThetaFit0: sens.dPdTheta0, thetaKFitDeg: sens.thetaKDeg, pitchDesign,
       ratedWind: sens.ratedWind, zeta: o.zeta ?? 0.7, omegaN: o.omegaN ?? 0.6, kHssRpm: g.kHssRpm },
   };
 }

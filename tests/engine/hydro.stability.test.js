@@ -139,3 +139,27 @@ test('Inclining test: GM = w d / (Δ tan phi) recovered from pendulum readings',
   const r = st.incliningTest({ displacement: disp, shifts, KM: 7.5 });
   close(r.GM, 1.2, 1e-12); close(r.KG, 6.3, 1e-12); near(r.spread, 0, 1e-12);
 });
+
+test('Progressive flooding end states: foundering, capsize and equalisation are told apart; sunk keeps its meaning', () => {
+  // (a) the whole hull floods through a bottom opening: draft = 4 m + internal level, so the deck (10 m) goes under
+  // when 6 m of water (12 000 m³) is aboard — ship and water then outweigh the 20 000 m³ hull: loss of buoyancy
+  const a = st.progressiveFlooding({ mesh: barge(), mass, cog: [0, 0, 5], rho, dt: 20, tMax: 40000,
+    compartment: { box: { xMin: -50, xMax: 50, yMin: -10, yMax: 10, zMin: 0, zMax: 10 } }, opening: { point: [0, 0, 0], area: 5 } });
+  assert.ok(a.sunk && a.lostBuoyancy && !a.capsized && !a.solverFailed && !a.equalised);
+  const na = a.t.length - 1;
+  assert.ok(a.draft[na] > 9 && a.draft[na] <= 10 + 1e-6, `last draft ${a.draft[na]}`);
+  assert.ok(a.floodMass[na] / rho > 10500 && a.floodMass[na] / rho < 12000 + 1e-6);
+  near(a.heelDeg[na], 0, 1e-6);
+  // (b) a full-length wing compartment with a high centre of gravity (KG = 9 m, GM = 2 + 8.33 − 9 = 1.33 m intact):
+  // buoyancy is ample (under 2000 m³ aboard of 12 000 m³ reserve) but the ship rolls over
+  const b = st.progressiveFlooding({ mesh: barge(), mass, cog: [0, 0, 9], rho, dt: 20, tMax: 40000,
+    compartment: { box: { xMin: -50, xMax: 50, yMin: 4, yMax: 10, zMin: 0, zMax: 10 } }, opening: { point: [0, 10, 1], area: 3 } });
+  assert.ok(b.sunk && b.capsized && !b.lostBuoyancy && !b.solverFailed && !b.equalised);
+  assert.ok(Math.abs(b.capsizeHeelDeg) > 40);
+  assert.ok(mass + b.floodMass[b.t.length - 1] < 0.6 * rho * 20000);
+  // (c) the benign case reports none of the failure causes
+  const c = st.progressiveFlooding({ mesh: barge(), mass, cog: [0, 0, 5], rho, dt: 20, tMax: 6000,
+    compartment: { box: { xMin: -10, xMax: 10, yMin: -10, yMax: 10, zMin: 0, zMax: 10 } }, opening: { point: [0, 0, 0], area: 0.5, Cd: 0.6 } });
+  assert.ok(c.equalised && !c.sunk && !c.lostBuoyancy && !c.capsized && !c.solverFailed);
+  assert.equal(c.capsizeHeelDeg, null);
+});

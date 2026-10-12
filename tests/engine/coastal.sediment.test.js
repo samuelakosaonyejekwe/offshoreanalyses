@@ -248,3 +248,27 @@ test('Isbash and Shields-based rock sizing against currents', () => {
   assert.ok(sl.d > r.d);
   assert.throws(() => shieldsRockSize({ U: 8, h: 0.3, delta: 1.65 }), RangeError);
 });
+
+test('van Rijn simplified outside d50 = 0.1–2 mm: rejected by default, computed with a warning flag when strict is false', () => {
+  const o = { U: 1.5, h: 5, rhoS: 2650, rho: 1000, nu: 1e-6 };
+  // 5 mm gravel, d90 = 10 mm, coarse branch: Ucr = 8.5 × 0.005^0.6 × log10(4 × 5 / 0.01)
+  //   = 8.5 × 0.041628 × 3.30103 = 1.1680 m/s
+  assert.throws(() => vanRijnSimplified({ ...o, d50: 5e-3 }), RangeError);
+  const c = vanRijnSimplified({ ...o, d50: 5e-3, strict: false });
+  assert.equal(c.outsideValidity, true);
+  rel(c.Ucr, 8.5 * 0.005 ** 0.6 * Math.log10(2000), 1e-12);
+  rel(c.Ucr, 1.168, 1e-3);
+  // bed load by hand: Me = (1.5 − 1.1680)/√(1.65 × 9.80665 × 0.005) = 0.3320/0.28444 = 1.1671
+  //   qb = 0.005 × 1.5 × 5 × 1.1671^2.4 × (0.005/5)^1.2
+  const Me = (1.5 - c.Ucr) / Math.sqrt(1.65 * 9.80665 * 0.005);
+  rel(c.qb, 0.005 * 1.5 * 5 * Me ** 2.4 * 0.001 ** 1.2, 1e-9);
+  assert.ok(c.qs > 0 && Math.abs(c.qt - c.qb - c.qs) < 1e-18);
+  // 0.06 mm silt uses the fine branch: Ucr = 0.19 × (6e-5)^0.1 × log10(4 × 5 / 1.2e-4)
+  const f = vanRijnSimplified({ ...o, d50: 0.06e-3, strict: false });
+  assert.equal(f.outsideValidity, true);
+  rel(f.Ucr, 0.19 * (0.06e-3) ** 0.1 * Math.log10(20 / 0.12e-3), 1e-12);
+  // inside the range the flag is false and strict makes no difference
+  const a = vanRijnSimplified({ ...o, d50: 0.3e-3 }); const b = vanRijnSimplified({ ...o, d50: 0.3e-3, strict: false });
+  assert.equal(a.outsideValidity, false); assert.equal(b.outsideValidity, false); assert.equal(a.qt, b.qt);
+  assert.equal(vanRijnSimplified({ ...o, U: 0.1, d50: 5e-3, strict: false }).qt, 0);
+});

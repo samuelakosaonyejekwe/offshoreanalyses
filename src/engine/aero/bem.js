@@ -337,6 +337,18 @@ function towerRadiusAt(ts, zBelowTop) {
  * Integration along the blade is trapezoidal through the stations with zero loading at hub and tip.
  * Limits: steady, rigid, straight blades, no radial flow; deep-stall and propeller-brake states are evaluated but
  * are outside the validity of momentum theory.
+ *
+ * Parked and idling rotor. Momentum theory presupposes a rotor that extracts energy from a stream tube; a parked
+ * or slowly idling rotor (blades feathered, tip-speed ratio near zero) does not form one, and the induction
+ * iteration then returns loads that jump between solution branches as the inflow angle changes with yaw. Below
+ * the tip-speed ratio `parkedTsr` (default 0.2, below the lowest tip-speed ratio of the default cpSurface grid) the
+ * induction is therefore switched off: each element sees the
+ * geometric inflow (wind components normal and tangential to the rotor plane at its azimuth, plus Omega r), the
+ * lift and drag of its polar at that angle of attack give the forces, and the loads are averaged over at least 36
+ * azimuth positions — the mean over rotor positions of a rotor stopped at an arbitrary azimuth; `azimuthal`
+ * gives the single-blade loads per position. Tip and hub losses are not applied (F = 1) and the result carries
+ * `parked: true`. This is quasi-steady strip theory on stationary blades: no dynamic stall, no spanwise flow, and
+ * the polars must cover the full ±180 deg range. `parkedTsr: 0` restores the momentum solution everywhere.
  * @param {object} o
  * @param {object} o.rotor rotor (rotors.js createRotor)
  * @param {number} o.U undisturbed hub-height speed [m/s] (>= 0)
@@ -358,7 +370,8 @@ function towerRadiusAt(ts, zBelowTop) {
  * @param {boolean} [o.wakeRotation=true]
  * @param {boolean} [o.highThrust=true]
  * @param {boolean} [o.skewCorrection=true]
- * @returns {{thrust:number,torque:number,power:number,Cp:number,Ct:number,Cq:number,tsr:number,
+ * @param {number} [o.parkedTsr=0.2] tip-speed ratio below which the parked-rotor branch (no induction) is used [-]
+ * @returns {{thrust:number,torque:number,power:number,Cp:number,Ct:number,Cq:number,tsr:number,parked:boolean,
  *   flapMoment:number,edgeMoment:number,flapMomentMax:number,converged:boolean,
  *   spanwise:Array<{r:number,a:number,ap:number,phi:number,alpha:number,cl:number,cd:number,Np:number,Tp:number,Re:number,F:number,W:number}>,
  *   azimuthal:{psi:number[],bladeThrust:number[],bladeTorque:number[],flapMoment:number[],edgeMoment:number[]}}}
@@ -390,7 +403,10 @@ export function bemSolve(o) {
     need(ts.topDiameter > 0 && ts.baseDiameter > 0 && ts.height > 0 && ts.overhang > 0, 'towerShadow', 'topDiameter, baseDiameter, height and overhang required');
   }
   const asym = shear !== 0 || yaw !== 0 || ts !== null;
-  const nSec = o.nSectors ?? (asym ? 12 : (tilt !== 0 ? 4 : 1));
+  const parkedTsr = o.parkedTsr ?? 0.2;
+  need(parkedTsr >= 0, 'parkedTsr', 'must be >= 0');
+  const parked = o.U > 0 && o.omega * rotor.tipRadius < parkedTsr * o.U;
+  const nSec = o.nSectors ?? (parked ? 36 : (asym ? 12 : (tilt !== 0 ? 4 : 1)));
   need(Number.isInteger(nSec) && nSec >= 1, 'nSectors', 'integer >= 1 required');
   const st = rotor.stations;
   const n = st.length;
@@ -436,9 +452,17 @@ export function bemSolve(o) {
       E.Vx = V * (radial * sc + cy * cT * cc);
       E.Vy = V * (cy * sT * sa - sy * ca) + o.omega * r * cc;
       E.r = r; E.chord = s.chord; E.theta = s.twistDeg * D2R + pitch; E.polar = s.polar;
-      let phi = solvePhi();
-      if (!E_converged && o.omega > 0 && o.U > 0) allConv = false;
-      if (skewOn && E_converged && gamma > 1e-6 && E.a > 0 && E.a < 1) {
+      let phi;
+      if (parked) {
+        // stationary blade element in the geometric inflow: no induction, no tip or hub loss
+        phi = Math.atan2(E.Vx, E.Vy);
+        E.a = 0; E.ap = 0; E.F = 1;
+        E.alpha = phi - E.theta; E.cl = s.polar.clAt(E.alpha); E.cd = s.polar.cdAt(E.alpha);
+      } else {
+        phi = solvePhi();
+        if (!E_converged && o.omega > 0 && o.U > 0) allConv = false;
+      }
+      if (!parked && skewOn && E_converged && gamma > 1e-6 && E.a > 0 && E.a < 1) {
         const chi = (0.6 * E.a + 1) * gamma;
         const fac = 1 + (15 * Math.PI / 32) * (r / Rtip) * Math.tan(0.5 * chi) * (radial / inPlane);
         E.a = Math.min(0.95, E.a * fac);
@@ -489,7 +513,7 @@ export function bemSolve(o) {
   return {
     thrust, torque, power,
     Cp: has ? power / (qdyn * o.U) : 0, Ct: has ? thrust / qdyn : 0, Cq: has ? torque / (qdyn * Rrot) : 0,
-    tsr: has ? o.omega * Rrot / o.U : Infinity,
+    tsr: has ? o.omega * Rrot / o.U : Infinity, parked,
     flapMoment: flap, edgeMoment: edge, flapMomentMax: flapMax, converged: allConv, spanwise, azimuthal: az,
   };
 }

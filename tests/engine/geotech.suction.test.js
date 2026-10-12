@@ -175,3 +175,20 @@ test('drained tensile capacity in sand (Houlsby et al. 2005): closed form equals
   close(r.rapid, 100e3 + r.frictionOut + r.sCav * Math.PI * (Do - 2 * t) ** 2 / 4, 1e-12);
   close(r.drained, 100e3 + r.frictionOut + r.frictionIn, 1e-12);
 });
+
+test('suction in clay: the lid area of the required suction follows from the Houlsby & Byrne force balance (πDo²/4)', () => {
+  // Houlsby & Byrne (2005a) Eq. 5: V′ + s·πDi²/4 = h αo su πDo + h αi su πDi + (γ′h − s + Nc su)·π D t
+  // (suction acts on the lid over the inner area and also relieves the vertical stress at the skirt tip by s).
+  // Moving the s-term of the tip to the left: s·[πDi²/4 + π D t] with D = (Do + Di)/2 the mean diameter;
+  // π D t = π (Do² − Di²)/4, so the bracket is exactly πDo²/4 (their Eq. 6) — not the inner area.
+  const Do = 5; const t = 0.03; const h = 6; const su = 20e3; const gamma = 6000; const Vp = 2e5;
+  const r = s.suctionInstallClay({ Do, t, h, su: { su0: su, k: 0 }, alphaO: 0.5, alphaI: 0.5, Nc: 9, gamma, Vprime: Vp });
+  const Di = Do - 2 * t; const D = Do - t;
+  const lhs = Vp + r.s * Math.PI * Di * Di / 4;
+  const rhs = h * 0.5 * su * Math.PI * Do + h * 0.5 * su * Math.PI * Di + (gamma * h - r.s + 9 * su) * Math.PI * D * t;
+  assert.ok(Math.abs(lhs - rhs) <= 1e-12 * rhs, `Eq. 5 residual ${lhs - rhs} N`);
+  assert.ok(Math.abs(Math.PI * Di * Di / 4 + Math.PI * D * t - Math.PI * Do * Do / 4) < 1e-12);
+  assert.ok(Math.abs(r.s - (r.R - Vp) / (Math.PI * Do * Do / 4)) <= 1e-12 * r.s);
+  // dividing by the inner area instead would overstate the suction by Do²/Di² − 1 = 2.4 %
+  assert.ok(Math.abs((r.R - Vp) / (Math.PI * Di * Di / 4) / r.s - (Do / Di) ** 2) < 1e-12);
+});

@@ -439,8 +439,8 @@ export function vanRijnSuspendedLoad({ U, h, d50, d90, ks, a, sigmaS = 2.0, rhoS
   return { qs: F * U * h * ca, ca, a: aa, F, Z, Zprime: Zp, ds, ws, uStar, T: r.T };
 }
 
-function vanRijnUcr(h, d50, d90) {
-  need(d50 >= 0.1e-3 && d50 <= 2e-3, 'd50 must lie in [0.1 mm, 2 mm] for the van Rijn threshold velocity');
+function vanRijnUcr(h, d50, d90, strict = true) {
+  if (strict) need(d50 >= 0.1e-3 && d50 <= 2e-3, 'd50 must lie in [0.1 mm, 2 mm] for the van Rijn threshold velocity');
   return d50 <= 0.5e-3 ? 0.19 * Math.pow(d50, 0.1) * Math.log10((4 * h) / d90) : 8.5 * Math.pow(d50, 0.6) * Math.log10((4 * h) / d90);
 }
 
@@ -451,6 +451,11 @@ function vanRijnUcr(h, d50, d90) {
  *   Ucr = 0.19 d50^0.1 log10(4h/d90) for 0.1 <= d50 <= 0.5 mm;  8.5 d50^0.6 log10(4h/d90) for 0.5–2 mm
  * Reference: van Rijn (1984c) J. Hydraul. Eng. 110(12); Soulsby (1997) Eq. 133a–d.
  * Validity: h = 1–20 m, U = 0.5–5 m/s, d50 = 0.1–2 mm, fresh water at 15 °C in the calibration.
+ * By default a grain size outside 0.1–2 mm is rejected. With `strict: false` the formulae are evaluated anyway —
+ * the fine-sand threshold expression below 0.1 mm and the coarse-sand expression above 2 mm — and the result
+ * carries `outsideValidity: true`: an extrapolation beyond the calibration data (cohesion below about 0.06 mm
+ * and the gravel regime above 2 mm are not represented), to be used for screening only. 4h/d90 must exceed 1
+ * in either mode.
  * @param {object} o
  * @param {number} o.U [m/s]
  * @param {number} o.h [m]
@@ -460,21 +465,26 @@ function vanRijnUcr(h, d50, d90) {
  * @param {number} [o.rho] [kg/m³]
  * @param {number} [o.nu] [m²/s]
  * @param {number} [o.g] [m/s²]
- * @returns {{qb:number, qs:number, qt:number, Ucr:number}} [m²/s], threshold velocity [m/s]
+ * @param {boolean} [o.strict] reject d50 outside 0.1–2 mm (default true); false computes with a warning flag
+ * @returns {{qb:number, qs:number, qt:number, Ucr:number, outsideValidity:boolean}} [m²/s], threshold velocity
+ *   [m/s]; outsideValidity is true when d50 lies outside 0.1–2 mm (possible only with strict: false)
  */
-export function vanRijnSimplified({ U, h, d50, d90, rhoS = 2650, rho = 1025, nu = 1.0e-6, g = G }) {
+export function vanRijnSimplified({ U, h, d50, d90, rhoS = 2650, rho = 1025, nu = 1.0e-6, g = G, strict = true }) {
   need(Number.isFinite(U) && U >= 0, 'U must be >= 0');
   pos(h, 'h');
   pos(d50, 'd50');
   const D90 = d90 !== undefined ? d90 : 2 * d50;
+  pos(D90, 'd90');
   const s1 = rhoS / rho - 1;
-  const Ucr = vanRijnUcr(h, d50, D90);
-  if (U <= Ucr) return { qb: 0, qs: 0, qt: 0, Ucr };
+  const outsideValidity = !(d50 >= 0.1e-3 && d50 <= 2e-3);
+  need(4 * h > D90, 'h must exceed d90/4 for the van Rijn threshold velocity');
+  const Ucr = vanRijnUcr(h, d50, D90, strict);
+  if (U <= Ucr) return { qb: 0, qs: 0, qt: 0, Ucr, outsideValidity };
   const Dstar = dimensionlessGrainSize({ d: d50, rhoS, rho, nu, g });
   const m = Math.pow((U - Ucr) / Math.sqrt(s1 * g * d50), 2.4);
   const qb = 0.005 * U * h * m * Math.pow(d50 / h, 1.2);
   const qs = 0.012 * U * h * m * (d50 / h) * Math.pow(Dstar, -0.6);
-  return { qb, qs, qt: qb + qs, Ucr };
+  return { qb, qs, qt: qb + qs, Ucr, outsideValidity };
 }
 
 /**

@@ -114,8 +114,21 @@ function reducedPencil(A, B, q) {
 
 /**
  * Linear (eigenvalue) buckling of a frame: (K + λ Kg(N_ref)) φ = 0 with the member axial forces of a reference
- * load case from a first-order analysis. The lowest positive factors λ are found by subspace iteration on the
- * inverse pencil (−Kg) φ = (1/λ) K φ (Bathe 1996 §11.6 applied with K as the definite matrix).
+ * load case from a first-order analysis; the lowest positive factors λ are returned.
+ *
+ * Method. The pencil has factors of both signs: members in tension under the reference load buckle under the
+ * reversed load (negative λ), and for slender ties those lie much closer to zero than the wanted positive ones.
+ * Plain inverse iteration on (−Kg) φ = (1/λ) K φ converges to the factors of smallest magnitude of either sign and
+ * loses the positive ones as soon as there are more reversed-load modes below them than iteration vectors. The
+ * iteration is therefore run on the shifted operator
+ *     (K + σ Kg)⁻¹ (−Kg) φ = θ φ,   θ = 1/(λ − σ),   0 < σ < λ1,
+ * for which every positive factor has θ > 1/(λ − σ) > 0 and every negative factor |θ| < 1/σ. The shift is found
+ * from the inertia of the factorisation: K + σ Kg has as many negative pivots as there are positive factors below
+ * σ (Sylvester's law; Bathe 1996 §11.4.3, Sturm sequence check). σ is doubled from an Euler estimate of the most
+ * loaded member until a negative pivot appears and then bisected until the bracket [σ0, σ1] with zero and at
+ * least one negative pivot satisfies σ1 <= 2 σ0; σ = σ0 then makes the first positive mode dominant by
+ * θ1 >= 1/σ0. Subspace iteration with a Rayleigh–Ritz projection follows (Bathe 1996 §11.6); the subspace is
+ * enlarged when the Ritz values show a cluster of near-equal factors reaching beyond it.
  * Effective lengths are back-calculated per compressed member: Pcr = λ1 |N|, Le = π √(E I/Pcr), K = Le/L.
  * Validity: small pre-buckling displacements; tension-only / compression-only members are treated as ordinary bars.
  * @param {object} model frame model with load cases
@@ -123,89 +136,136 @@ function reducedPencil(A, B, q) {
  * @param {string} o.loadCase name of the reference load case or combination
  * @param {number} [o.nModes=3] number of buckling modes
  * @param {boolean} [o.shearDeformation=true]
- * @param {number} [o.tol=1e-9] relative tolerance on 1/λ
+ * @param {number} [o.tol=1e-9] relative tolerance on λ
  * @param {number} [o.maxIter=200]
  * @returns {{factors:number[], modes:Float64Array[], axial:number[], effectiveLengths:Array<{member:number, N:number, Pcr:number, Ley:number,
- *   Lez:number, Ky:number, Kz:number}>, converged:boolean, iterations:number, system:object, reference:object}} buckling load factors
- *   [-] ascending, modes over all dofs (max component 1), member axial forces [N], effective lengths [m] for buckling in the local x–z
- *   plane (about y: Ley, Ky) and x–y plane (Lez, Kz)
+ *   Lez:number, Ky:number, Kz:number}>, converged:boolean, iterations:number, shift:number, system:object, reference:object}} buckling
+ *   load factors [-] ascending, modes over all dofs (max component 1), member axial forces [N], effective lengths [m] for buckling in
+ *   the local x–z plane (about y: Ley, Ky) and x–y plane (Lez, Kz); shift = σ used [-]
  */
 export function bucklingAnalysis(model, { loadCase, nModes = 3, shearDeformation = true, tol = 1e-9, maxIter = 200 } = {}) {
   if (typeof loadCase !== 'string') throw new RangeError('loadCase must name a load case or combination');
   if (!Number.isInteger(nModes) || nModes < 1) throw new RangeError('nModes must be a positive integer');
   const sys = buildFrameSystem(model, { shearDeformation });
-  const fac = factorFrame(sys);
-  const ref = solveFrame(sys, fac, resolveLoads(sys, loadParts(model, loadCase)));
+  const fac0 = factorFrame(sys);
+  const ref = solveFrame(sys, fac0, resolveLoads(sys, loadParts(model, loadCase)));
   const axial = memberAxial(ref);
   let nmax = 0;
   for (const v of axial) nmax = Math.max(nmax, Math.abs(v));
   if (!(nmax > 0)) throw new Error('The reference load case produces no member axial forces: nothing can buckle.');
+  const NONE = 'No positive buckling factor: the reference load case does not compress any member critically.';
+  // Euler estimate of the factor of the most critical compressed member (pinned ends), the scale of the shift search
+  let est = Infinity;
+  for (let e = 0; e < sys.elems.length; e++) {
+    if (!(axial[e] < -1e-12 * nmax)) continue;
+    const el = sys.elems[e];
+    const I = el.truss ? 0 : Math.min(el.sec.Iy, el.sec.Iz);
+    const pe = I > 0 ? Math.PI ** 2 * el.mat.E * I / (el.L * el.L) : el.mat.E * el.sec.A;
+    est = Math.min(est, pe / -axial[e]);
+  }
+  if (!Number.isFinite(est)) throw new Error(NONE);
   const kg = frameGeometricStiffness(sys, axial).global;
   const n = sys.nFree;
   const p = Math.min(nModes, n);
-  const q = Math.min(n, Math.max(2 * p, p + 8));
-  // deterministic start vectors (no randomness needed: smooth + alternating patterns)
-  let X = [];
-  for (let j = 0; j < q; j++) {
-    const x = new Float64Array(n);
-    for (let i = 0; i < n; i++) x[i] = Math.sin((i + 1) * (j + 1) * 0.7071 + j) + (j === 0 ? 1 : 0);
-    X.push(x);
+  // number of positive factors below s (negative pivots of K + s Kg); a singular matrix counts as "at a factor"
+  const inertia = (s) => {
+    try { const f = factorFrame(sys, { add: kg, addFactor: s }); return { count: f.negativePivots, fac: f }; } catch (e) { return { count: -1, fac: null }; }
+  };
+  let s0 = 0; let s1 = 0.25 * est; let hiFound = false;
+  for (let k = 0; k < 60; k++) {
+    const t = inertia(s1);
+    if (t.count === 0) { s0 = s1; s1 *= 2; } else if (t.count > 0) { hiFound = true; break; } else s1 *= 1.0625;
   }
+  if (!hiFound) throw new Error(NONE);
+  let fac = null; let sigma = 0;
+  for (let k = 0; k < 60 && !(s0 > 0 && s1 <= 2 * s0); k++) {
+    const mid = s0 > 0 ? Math.sqrt(s0 * s1) : 0.5 * s1;
+    const t = inertia(mid);
+    if (t.count === 0) { s0 = mid; fac = t.fac; sigma = mid; } else if (t.count > 0) s1 = mid; else s1 = mid * (1 - 1e-3) + s0 * 1e-3;
+    if (s1 < 1e-9 * est) break;
+  }
+  if (!(s0 > 0)) { fac = fac0; sigma = 0; } else if (!fac || sigma !== s0) { fac = inertia(s0).fac; sigma = s0; }
+  const qMax = Math.min(n, Math.max(8 * p, p + 32));
+  let q = Math.min(n, Math.max(2 * p, p + 8));
+  // deterministic start vectors (no randomness needed: smooth + alternating patterns)
+  const startVector = (j, salt) => {
+    const x = new Float64Array(n);
+    for (let i = 0; i < n; i++) x[i] = Math.sin((i + 1) * (j + 1) * 0.7071 + j + salt) + (j === 0 && salt === 0 ? 1 : 0);
+    return x;
+  };
+  let X = [];
+  for (let j = 0; j < q; j++) X.push(startVector(j, 0));
   const negKg = (x) => { const y = elementMatVec(sys, kg, x); for (let i = 0; i < n; i++) y[i] = -y[i]; return y; };
-  let prev = null; let mu = null; let converged = false; let it = 0;
+  let prev = null; let lam = []; let converged = false; let it = 0; let lastGrow = 0;
   while (it < maxIter) {
     it++;
+    // Z = (K + σ Kg)⁻¹ (−Kg) X, so (K + σ Kg) Z = Y and the projection of the definite matrix is Zᵀ Y
     const Y = X.map(negKg);
-    const Xb = Y.map((y) => fac.solve(y));
-    const W = Xb.map(negKg);
+    const Z = Y.map((y) => fac.solve(y));
+    for (let j = 0; j < q; j++) {
+      const z = Z[j]; const y = Y[j];
+      let nr = 0;
+      for (let k = 0; k < n; k++) nr = Math.max(nr, Math.abs(z[k]));
+      if (nr > 0) { const sc = 1 / nr; for (let k = 0; k < n; k++) { z[k] *= sc; y[k] *= sc; } }
+    }
+    const W = Z.map(negKg);
     const A = Array.from({ length: q }, () => new Array(q).fill(0));
     const B = Array.from({ length: q }, () => new Array(q).fill(0));
     for (let i = 0; i < q; i++) {
       for (let j = i; j < q; j++) {
-        let a = 0; let b = 0;
-        for (let k = 0; k < n; k++) { a += Xb[i][k] * W[j][k]; b += Xb[i][k] * Y[j][k]; }
-        A[i][j] = a; A[j][i] = a; B[i][j] = b; B[j][i] = b;
+        let a = 0; let b = 0; let a2 = 0; let b2 = 0;
+        const zi = Z[i]; const zj = Z[j]; const wi = W[i]; const wj = W[j]; const yi = Y[i]; const yj = Y[j];
+        for (let k = 0; k < n; k++) { a += zi[k] * wj[k]; a2 += zj[k] * wi[k]; b += zi[k] * yj[k]; b2 += zj[k] * yi[k]; }
+        A[i][j] = 0.5 * (a + a2); A[j][i] = A[i][j]; B[i][j] = 0.5 * (b + b2); B[j][i] = B[i][j];
       }
     }
     const red = reducedPencil(A, B, q);
-    mu = red.mu;
+    const theta = red.mu;
     const Xn = [];
     for (let c = 0; c < q; c++) {
-      const x = new Float64Array(n);
+      let x;
       if (c < red.Z.length) {
+        x = new Float64Array(n);
         const z = red.Z[c];
-        for (let j = 0; j < q; j++) { const zj = z[j]; if (zj === 0) continue; const xb = Xb[j]; for (let k = 0; k < n; k++) x[k] += zj * xb[k]; }
-      } else {
-        // refill dropped directions
-        for (let k = 0; k < n; k++) x[k] = Math.cos((k + 1) * (c + 2) * 1.618 + it);
-      }
+        for (let j = 0; j < q; j++) { const zj = z[j]; if (zj === 0) continue; const zb = Z[j]; for (let k = 0; k < n; k++) x[k] += zj * zb[k]; }
+      } else x = startVector(c, it); // refill dropped directions
       let nr = 0;
       for (let k = 0; k < n; k++) nr = Math.max(nr, Math.abs(x[k]));
       if (nr > 0) for (let k = 0; k < n; k++) x[k] /= nr;
       Xn.push(x);
     }
     X = Xn;
-    if (prev) {
+    lam = [];
+    for (let c = 0; c < theta.length && theta[c] > 0; c++) {
+      if (!(theta[c] > 1e-14 * theta[0])) break;
+      lam.push(sigma + 1 / theta[c]);
+    }
+    if (prev && lam.length >= p && prev.length >= p) {
       let ok = true;
-      for (let c = 0; c < p; c++) {
-        if (!(mu[c] > 0)) break;
-        if (Math.abs(mu[c] - prev[c]) > tol * Math.abs(mu[c])) { ok = false; break; }
-      }
+      for (let c = 0; c < p; c++) if (Math.abs(lam[c] - prev[c]) > tol * Math.abs(lam[c])) { ok = false; break; }
       if (ok) { converged = true; break; }
     }
-    prev = mu.slice();
+    prev = lam.slice();
+    // a cluster of near-equal factors reaching beyond the subspace: enlarge it (see math/eigen.js subspaceIteration)
+    if (q < qMax && it >= 2 && it - lastGrow >= 2 && lam.length >= p) {
+      const top = lam.length >= q ? lam[q - 1] : Infinity;
+      if (lam[p - 1] - sigma > 0.7 * (top - sigma)) {
+        const add = Math.min(q, qMax - q);
+        for (let j = 0; j < add; j++) X.push(startVector(q + j, it));
+        q += add; lastGrow = it;
+      }
+    }
   }
   const factors = []; const modes = [];
-  for (let c = 0; c < Math.min(p, mu.length); c++) {
-    if (!(mu[c] > 1e-14 * Math.abs(mu[0]))) break;
-    factors.push(1 / mu[c]);
+  for (let c = 0; c < Math.min(p, lam.length); c++) {
+    factors.push(lam[c]);
     const full = new Float64Array(sys.nDof);
     let big = 0;
     for (let k = 0; k < n; k++) if (Math.abs(X[c][k]) > Math.abs(big)) big = X[c][k];
     for (let k = 0; k < n; k++) full[sys.eqDof[k]] = X[c][k] / big;
     modes.push(full);
   }
-  if (factors.length === 0) throw new Error('No positive buckling factor: the reference load case does not compress any member critically.');
+  if (factors.length === 0) throw new Error(NONE);
   const effectiveLengths = [];
   for (let e = 0; e < sys.elems.length; e++) {
     if (!(axial[e] < 0)) continue;
@@ -215,7 +275,7 @@ export function bucklingAnalysis(model, { loadCase, nModes = 3, shearDeformation
     const Lez = Math.PI * Math.sqrt(el.mat.E * el.sec.Iz / Pcr);
     effectiveLengths.push({ member: e, N: axial[e], Pcr, Ley, Lez, Ky: Ley / el.L, Kz: Lez / el.L });
   }
-  return { factors, modes, axial, effectiveLengths, converged, iterations: it, system: sys, reference: ref };
+  return { factors, modes, axial, effectiveLengths, converged, iterations: it, shift: sigma, system: sys, reference: ref };
 }
 
 /**
@@ -233,11 +293,20 @@ export function bucklingAnalysis(model, { loadCase, nModes = 3, shearDeformation
  * @param {number} [o.tol=1e-8] relative tolerance on member axial forces
  * @param {number} [o.maxIter=30]
  * @param {boolean} [o.shearDeformation=true]
- * @returns {{result:object, firstOrder:object, iterations:number, converged:boolean, amplification:number, system:object}} result and
- *   firstOrder as solveFrame output; amplification = max |u| second-order / first-order
+ * @param {'x'|'y'|'z'} [o.verticalAxis='z'] global axis of gravity; sway is the translation normal to it
+ * @returns {{result:object, firstOrder:object, iterations:number, converged:boolean, amplification:number,
+ *   swayAmplification:number, sway:{firstOrder:number, secondOrder:number, node:number}, system:object}} result and
+ *   firstOrder as solveFrame output; amplification = largest nodal translation of any direction, second-order /
+ *   first-order — under gravity-dominated loading this is governed by vertical sag, which P-Δ hardly changes, so it
+ *   understates the sway effect; swayAmplification = lateral (normal to verticalAxis) translation second-order /
+ *   first-order at the node with the largest first-order lateral translation, the quantity comparable to the
+ *   storey amplifier 1/(1 − 1/αcr) [-] (1 when the first-order lateral translation is negligible, below 1e-9 of the
+ *   largest translation); sway = those two lateral translations [m] and the node index
  */
-export function pDeltaAnalysis(model, { loadCase, loadFactor = 1, tol = 1e-8, maxIter = 30, shearDeformation = true } = {}) {
+export function pDeltaAnalysis(model, { loadCase, loadFactor = 1, tol = 1e-8, maxIter = 30, shearDeformation = true, verticalAxis = 'z' } = {}) {
   if (typeof loadCase !== 'string') throw new RangeError('loadCase must name a load case or combination');
+  const va = ['x', 'y', 'z'].indexOf(verticalAxis);
+  if (va < 0) throw new RangeError("verticalAxis must be 'x', 'y' or 'z'");
   const sys = buildFrameSystem(model, { shearDeformation });
   const parts = loadParts(model, loadCase).map((p) => ({ load: p.load, factor: p.factor * loadFactor }));
   const loads = resolveLoads(sys, parts);
@@ -261,9 +330,16 @@ export function pDeltaAnalysis(model, { loadCase, loadFactor = 1, tol = 1e-8, ma
     if (dmax <= tol * Math.max(nmax, 1e-30)) { converged = true; break; }
   }
   if (!converged) throw new Error('Second-order analysis did not converge: the load is probably above the elastic critical load.');
+  const h1 = (va + 1) % 3; const h2 = (va + 2) % 3;
+  const lateral = (r, i) => Math.hypot(r.displacements[6 * i + h1], r.displacements[6 * i + h2]);
+  let node = 0; let s1 = 0;
+  for (let i = 0; i < sys.nNode; i++) { const v = lateral(first, i); if (v > s1) { s1 = v; node = i; } }
+  const s2 = lateral(res, node);
   return {
     result: res, firstOrder: first, iterations: it, converged,
-    amplification: first.maxDisplacement > 0 ? res.maxDisplacement / first.maxDisplacement : 1, system: sys,
+    amplification: first.maxDisplacement > 0 ? res.maxDisplacement / first.maxDisplacement : 1,
+    swayAmplification: s1 > 1e-9 * first.maxDisplacement && s1 > 0 ? s2 / s1 : 1,
+    sway: { firstOrder: s1, secondOrder: s2, node }, system: sys,
   };
 }
 

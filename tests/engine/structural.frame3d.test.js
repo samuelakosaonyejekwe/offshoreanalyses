@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  analyzeFrame, memberDiagram, refineModel, memberAxes, beamLocalStiffness, sectionStress, buildFrameSystem,
+  analyzeFrame, memberDiagram, refineModel, memberAxes, beamLocalStiffness, sectionStress, buildFrameSystem, updateFrameSystem,
 } from '../../src/engine/structural/frame3d.js';
 import { rectSection, tubeSection, iSection } from '../../src/engine/structural/sections.js';
 
@@ -397,4 +397,96 @@ test('element stiffness and stress helpers', () => {
   const s = sectionStress({ section: tube, N: 1e6, My: 3e5, Mz: 4e5 });
   near(s.sigmaMax, 1e6 / tube.A + 5e5 / tube.Wely, 1e-12);
   assert.throws(() => analyzeFrame({ nodes: [[0, 0, 0]], members: [] }), RangeError);
+});
+
+test('sectionStress on a generic {A, Iy, Iz, J} section: finite stresses with documented extreme-fibre distances', () => {
+  // A = 0.02 m², Iy = 4e-4 m⁴, Iz = 1e-4 m⁴: radii of gyration iy = √(Iy/A) = 0.14142 m, iz = 0.07071 m
+  // default fibre distances c = √2·i: cz = 0.2 m, cy = 0.1 m → Wely = Iy/cz = 2e-3 m³, Welz = Iz/cy = 1e-3 m³
+  const gen = { A: 0.02, Iy: 4e-4, Iz: 1e-4, J: 3e-4 };
+  const s = sectionStress({ section: gen, N: 2e5, My: 1e5, Mz: -3e4, Vz: 4e4, Vy: 1e4 });
+  near(s.sigmaAxial, 1e7, 1e-12);
+  near(s.sigmaBending, 1e5 / 2e-3 + 3e4 / 1e-3, 1e-12); // 50 + 30 = 80 MPa
+  near(s.sigmaMax, 9e7, 1e-12); near(s.sigmaMin, -7e7, 1e-12);
+  near(s.tau, (4e4 + 1e4) / 0.02, 1e-12); // mean shear 2.5 MPa
+  near(s.vonMises, Math.hypot(9e7, Math.sqrt(3) * 2.5e6), 1e-12);
+  assert.equal(s.fibreAssumed, true);
+  for (const v of Object.values(s)) if (typeof v === 'number') assert.ok(Number.isFinite(v));
+  // explicit fibre distances override the default: cz = 0.25 m, cy = 0.125 m
+  const e = sectionStress({ section: { ...gen, cy: 0.125, cz: 0.25 }, My: 1e5, Mz: 3e4 });
+  near(e.sigmaBending, 1e5 * 0.25 / 4e-4 + 3e4 * 0.125 / 1e-4, 1e-12); // 62.5 + 37.5 = 100 MPa
+  assert.equal(e.fibreAssumed, false);
+  // the default is exact for a thin-walled circular tube: i = R/√2
+  const R = 0.5; const t = 1e-4; const A = 2 * Math.PI * R * t; const I = Math.PI * R ** 3 * t;
+  near(sectionStress({ section: { A, Iy: I, Iz: I, J: 2 * I }, My: 1e3 }).sigmaBending, 1e3 * R / I, 1e-12);
+  // typed sections are unaffected
+  const isec = iSection({ h: 0.4, b: 0.2, tw: 0.01, tf: 0.016 });
+  const si = sectionStress({ section: isec, My: 1e5, Vz: 1e4 });
+  near(si.sigmaBending, 1e5 / isec.Wely, 1e-12); near(si.tau, 1e4 / isec.Asz, 1e-12); assert.equal(si.fibreAssumed, false);
+  assert.throws(() => sectionStress({ section: { ...gen, cz: -1 }, My: 1 }), /cz/);
+  // a frame analysed with a generic section gives member stresses through the same route
+  const res = analyzeFrame({ nodes: [[0, 0, 0], [3, 0, 0]], members: [{ a: 0, b: 1, section: gen }],
+    supports: [{ node: 0, fix: 'fixed' }], loadCases: [{ name: 'P', nodal: [{ node: 1, F: [0, 0, -1e4] }] }] });
+  assert.ok(res);
+});
+
+test('updateFrameSystem after a release change equals a full rebuild (element records, numbering, profile, solution)', () => {
+  // two-bay portal; a hinge is introduced at end B of member 1 and member 3 becomes a truss bar
+  const s2 = iSection({ h: 0.4, b: 0.2, tw: 0.01, tf: 0.016 });
+  const base = {
+    nodes: [[0, 0, 0], [0, 0, 4], [5, 0, 4], [5, 0, 0], [10, 0, 4], [10, 0, 0]],
+    members: [{ a: 0, b: 1, section: s2 }, { a: 1, b: 2, section: s2 }, { a: 3, b: 2, section: s2 }, { a: 2, b: 4, section: s2 }, { a: 5, b: 4, section: s2 }],
+    supports: [{ node: 0, fix: 'fixed' }, { node: 3, fix: 'fixed' }, { node: 5, fix: 'fixed' }],
+    loadCases: [{ name: 'H', nodal: [{ node: 1, F: [1e4, 0, -2e4] }] }],
+  };
+  const sys0 = buildFrameSystem(base);
+  const members = base.members.slice();
+  members[1] = { ...members[1], releases: { b: [0, 0, 0, 0, 1, 1] } };
+  members[3] = { ...members[3], type: 'truss' };
+  const changedModel = { ...base, members };
+  const full = buildFrameSystem(changedModel);
+  const upd = updateFrameSystem(sys0, changedModel, [1, 3]);
+  assert.equal(upd.nFree, full.nFree);
+  assert.deepEqual(Array.from(upd.eqDof), Array.from(full.eqDof));
+  assert.deepEqual(Array.from(upd.height), Array.from(full.height));
+  assert.deepEqual(upd.autoRestrained, full.autoRestrained);
+  for (let e = 0; e < 5; e++) {
+    assert.deepEqual(Array.from(upd.elems[e].ke), Array.from(full.elems[e].ke), `member ${e}`);
+    assert.deepEqual(upd.elems[e].relIdx, full.elems[e].relIdx);
+  }
+  // unchanged members are reused, changed ones are new records
+  assert.equal(upd.elems[0], sys0.elems[0]); assert.notEqual(upd.elems[1], sys0.elems[1]);
+  // the original system is not modified
+  assert.deepEqual(sys0.elems[1].relIdx, []);
+  const a = analyzeFrame(changedModel);
+  const b = analyzeFrame(changedModel, { system: upd });
+  assert.ok(a && b);
+  assert.throws(() => updateFrameSystem(sys0, { ...base, members: members.slice(0, 4) }, [1]), RangeError);
+  assert.throws(() => updateFrameSystem(sys0, changedModel, [7]), RangeError);
+});
+
+test('self-weight of a member flagged flooded: contained water only where a buoyancy specification submerges it', () => {
+  // tube D 0.8 × 20 mm, 10 m long. Steel: 7850 × A; contained sea water: 1025 × π 0.76²/4 = 464.98 kg/m
+  const D = 0.8; const t = 0.02; const L = 10; const g = 9.80665; const rhoW = 1025; const rhoS = 7850;
+  const tube = tubeSection({ D, t });
+  const water = rhoW * Math.PI * (D - 2 * t) ** 2 / 4;
+  near(water, 464.98, 1e-4);
+  const mk = (member, selfWeight, z = 0) => ({
+    nodes: [[0, 0, z], [L, 0, z]], members: [{ a: 0, b: 1, section: tube, ...member }],
+    supports: [{ node: 0, fix: 'fixed' }, { node: 1, fix: [0, 1, 1, 0, 0, 0] }], loadCases: [{ name: 'W', selfWeight }],
+  });
+  const sumR = (m) => { const r = analyzeFrame(m).results.W; return r.reactions[0].R[2] + r.reactions[1].R[2]; };
+  // in air (no buoyancy specification): steel only, the flooded flag adds nothing
+  near(sumR(mk({ flooded: true }, {})), rhoS * tube.A * g * L, 1e-9, 'in air');
+  near(sumR(mk({ flooded: true }, {})), sumR(mk({}, {})), 1e-12);
+  // explicit request: the water stays in the member in air
+  near(sumR(mk({ flooded: true }, { floodedInAir: true })), (rhoS * tube.A + water) * g * L, 1e-9, 'floodedInAir');
+  // an explicit content density is always carried (product at 800 kg/m³)
+  near(sumR(mk({ fluidRho: 800 }, {})), (rhoS * tube.A + 800 * Math.PI * (D - 2 * t) ** 2 / 4) * g * L, 1e-9, 'fluidRho');
+  // with a buoyancy specification: above the waterline dry, below it flooded and buoyant (water in = water out)
+  near(sumR(mk({ flooded: true }, { buoyancy: { waterline: 0, rhoW } }, 5)), rhoS * tube.A * g * L, 1e-9, 'above the waterline');
+  near(sumR(mk({ flooded: true }, { buoyancy: { waterline: 0, rhoW } }, -20)), (rhoS - rhoW) * tube.A * g * L, 1e-9, 'submerged');
+  // vertical flooded leg through the waterline: 10 m submerged (steel buoyant), 5 m above (steel only, no water)
+  const leg = { nodes: [[0, 0, -10], [0, 0, 5]], members: [{ a: 0, b: 1, section: tube, flooded: true }], supports: [{ node: 0, fix: 'fixed' }],
+    loadCases: [{ name: 'W', selfWeight: { buoyancy: { waterline: 0, rhoW } } }] };
+  near(analyzeFrame(leg).results.W.reactions[0].R[2], ((rhoS - rhoW) * tube.A * 10 + rhoS * tube.A * 5) * g, 1e-9, 'piercing leg');
 });

@@ -123,7 +123,11 @@ export function verticalBearingDrained({ D, z, phiDeg, gammaSub, nGamma = 'hanse
  * Reference: DNV-RP-F114 (2017) §4.2. k_lay (maximum touchdown contact force over submerged weight) follows
  * from the lay catenary — typically 1 to 3, higher for stiff pipe in shallow water; k_dyn accounts for lay
  * vessel motion and is typically 1 to 3 on clay (site-specific; argument).
- * Validity: solution searched for 0 < z ≤ zMax (default 2D); throws if the soil cannot carry the load there.
+ * Validity: solution searched for 0 < z ≤ zMax (default 2D). If the bearing resistance at zMax is still below
+ * the load (very soft clay, heavy flooded pipe, large lay factor) the pipe is predicted to sink beyond the range
+ * of the bearing model: the static embedment is then capped at zMax and `capped` is true — the pipe is at least
+ * that deep (fully buried for zMax ≥ D) and the value is a lower bound, not an equilibrium. The dynamic factor is
+ * not applied on top of a capped depth.
  *
  * @param {object} o
  * @param {number} o.D [m]
@@ -138,7 +142,9 @@ export function verticalBearingDrained({ D, z, phiDeg, gammaSub, nGamma = 'hanse
  * @param {'hansen'|'vesic'} [o.nGamma='hansen']
  * @param {'mean'|'invert'} [o.surchargeDepth='mean']
  * @param {number} [o.zMax] search limit [m]
- * @returns {{z:number, zStatic:number, zOverD:number, V:number, geometry:object}} depths [m]; V design vertical load [N/m]
+ * @returns {{z:number, zStatic:number, zOverD:number, V:number, geometry:object, capped:boolean,
+ *   bearingAtCap:(number|null)}} depths [m]; V design vertical load [N/m]; capped = the load exceeds the bearing
+ *   resistance at zMax and the depths are held at zMax; bearingAtCap = that resistance [N/m] (null when not capped)
  */
 export function embedment({ D, W, model, kLay = 1, kDyn = 1, su0, suGrad = 0, gammaSub = 0, phiDeg, nGamma = 'hansen',
   surchargeDepth = 'mean', zMax }) {
@@ -149,7 +155,11 @@ export function embedment({ D, W, model, kLay = 1, kDyn = 1, su0, suGrad = 0, ga
   else if (model === 'drained') Q = (z) => verticalBearingDrained({ D, z, phiDeg, gammaSub, nGamma, surchargeDepth }).Qv;
   else throw new RangeError('model must be "undrained" or "drained"');
   let hi = zMax === undefined ? 2 * D : pos('zMax', zMax);
-  if (Q(hi) < V) throw new RangeError('the soil cannot carry the load within the search depth zMax');
+  const qCap = Q(hi);
+  if (!(qCap >= V)) {
+    if (!Number.isFinite(qCap)) throw new RangeError('the bearing resistance is not finite: check the soil arguments');
+    return { z: hi, zStatic: hi, zOverD: hi / D, V, geometry: contactGeometry({ D, z: hi }), capped: true, bearingAtCap: qCap };
+  }
   let lo = 0;
   for (let i = 0; i < 80; i++) {
     const mid = 0.5 * (lo + hi);
@@ -157,7 +167,7 @@ export function embedment({ D, W, model, kLay = 1, kDyn = 1, su0, suGrad = 0, ga
   }
   const zStatic = 0.5 * (lo + hi);
   const z = kDyn * zStatic;
-  return { z, zStatic, zOverD: z / D, V, geometry: contactGeometry({ D, z }) };
+  return { z, zStatic, zOverD: z / D, V, geometry: contactGeometry({ D, z }), capped: false, bearingAtCap: null };
 }
 
 /**

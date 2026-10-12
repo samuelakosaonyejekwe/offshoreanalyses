@@ -51,12 +51,15 @@ function symFlat(A, name) {
  * Symmetric eigen-decomposition of a flat row-major matrix (overwritten with the eigenvectors as columns).
  * Householder tridiagonalisation (tred2) followed by the implicit QL algorithm (tql2).
  * Returns the eigenvalues in ascending order; column k of V is the unit eigenvector of d[k].
+ * Internally the transformation matrix is held transposed (eigenvectors as rows): the Householder accumulation
+ * and the QL plane rotations then run along contiguous memory instead of striding by n, which is what governs the
+ * run time once the matrix no longer fits the first-level cache.
  */
 function symEigFlat(V, n) {
   const d = new Float64Array(n);
   const e = new Float64Array(n);
   // --- tred2 ---
-  for (let j = 0; j < n; j++) d[j] = V[(n - 1) * n + j];
+  for (let j = 0; j < n; j++) d[j] = V[j * n + n - 1];
   for (let i = n - 1; i > 0; i--) {
     let scale = 0;
     let h = 0;
@@ -64,9 +67,9 @@ function symEigFlat(V, n) {
     if (scale === 0) {
       e[i] = d[i - 1];
       for (let j = 0; j < i; j++) {
-        d[j] = V[(i - 1) * n + j];
-        V[i * n + j] = 0;
+        d[j] = V[j * n + i - 1];
         V[j * n + i] = 0;
+        V[i * n + j] = 0;
       }
     } else {
       for (let k = 0; k < i; k++) {
@@ -82,11 +85,11 @@ function symEigFlat(V, n) {
       for (let j = 0; j < i; j++) e[j] = 0;
       for (let j = 0; j < i; j++) {
         f = d[j];
-        V[j * n + i] = f;
+        V[i * n + j] = f;
         g = e[j] + V[j * n + j] * f;
         for (let k = j + 1; k <= i - 1; k++) {
-          g += V[k * n + j] * d[k];
-          e[k] += V[k * n + j] * f;
+          g += V[j * n + k] * d[k];
+          e[k] += V[j * n + k] * f;
         }
         e[j] = g;
       }
@@ -100,30 +103,30 @@ function symEigFlat(V, n) {
       for (let j = 0; j < i; j++) {
         f = d[j];
         g = e[j];
-        for (let k = j; k <= i - 1; k++) V[k * n + j] -= f * e[k] + g * d[k];
-        d[j] = V[(i - 1) * n + j];
-        V[i * n + j] = 0;
+        for (let k = j; k <= i - 1; k++) V[j * n + k] -= f * e[k] + g * d[k];
+        d[j] = V[j * n + i - 1];
+        V[j * n + i] = 0;
       }
     }
     d[i] = h;
   }
   for (let i = 0; i < n - 1; i++) {
-    V[(n - 1) * n + i] = V[i * n + i];
+    V[i * n + n - 1] = V[i * n + i];
     V[i * n + i] = 1;
     const h = d[i + 1];
     if (h !== 0) {
-      for (let k = 0; k <= i; k++) d[k] = V[k * n + i + 1] / h;
+      for (let k = 0; k <= i; k++) d[k] = V[(i + 1) * n + k] / h;
       for (let j = 0; j <= i; j++) {
         let g = 0;
-        for (let k = 0; k <= i; k++) g += V[k * n + i + 1] * V[k * n + j];
-        for (let k = 0; k <= i; k++) V[k * n + j] -= g * d[k];
+        for (let k = 0; k <= i; k++) g += V[(i + 1) * n + k] * V[j * n + k];
+        for (let k = 0; k <= i; k++) V[j * n + k] -= g * d[k];
       }
     }
-    for (let k = 0; k <= i; k++) V[k * n + i + 1] = 0;
+    for (let k = 0; k <= i; k++) V[(i + 1) * n + k] = 0;
   }
   for (let j = 0; j < n; j++) {
-    d[j] = V[(n - 1) * n + j];
-    V[(n - 1) * n + j] = 0;
+    d[j] = V[j * n + n - 1];
+    V[j * n + n - 1] = 0;
   }
   V[(n - 1) * n + n - 1] = 1;
   e[0] = 0;
@@ -172,11 +175,12 @@ function symEigFlat(V, n) {
           c = p / r;
           p = c * d[i] - s * g;
           d[i + 1] = h + s * (c * g + s * d[i]);
+          const r0 = i * n;
+          const r1 = r0 + n;
           for (let k = 0; k < n; k++) {
-            const q = k * n + i;
-            h = V[q + 1];
-            V[q + 1] = s * V[q] + c * h;
-            V[q] = c * V[q] - s * h;
+            h = V[r1 + k];
+            V[r1 + k] = s * V[r0 + k] + c * h;
+            V[r0 + k] = c * V[r0 + k] - s * h;
           }
         }
         p = (-s * s2 * c3 * el1 * e[l]) / dl1;
@@ -201,10 +205,18 @@ function symEigFlat(V, n) {
       d[k] = d[i];
       d[i] = p;
       for (let r = 0; r < n; r++) {
-        const t = V[r * n + i];
-        V[r * n + i] = V[r * n + k];
-        V[r * n + k] = t;
+        const t = V[i * n + r];
+        V[i * n + r] = V[k * n + r];
+        V[k * n + r] = t;
       }
+    }
+  }
+  // back to the documented layout: eigenvectors as columns
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const t = V[i * n + j];
+      V[i * n + j] = V[j * n + i];
+      V[j * n + i] = t;
     }
   }
   return d;
@@ -383,20 +395,32 @@ function reducedEig(Kr, Mr, q) {
 /**
  * Lowest eigenpairs of the large generalised problem K φ = λ M φ by subspace (simultaneous inverse) iteration
  * with a Rayleigh–Ritz projection in every sweep (Bathe 1996 §11.6). The caller supplies the action of K⁻¹
- * (e.g. SkylineSym.solve) and of M. The subspace holds q = min(n, max(2·nModes, nModes + 8)) vectors; convergence
- * is declared when every requested eigenvalue changes by less than tol (relative) between two sweeps.
+ * (e.g. SkylineSym.solve) and of M. The subspace starts with q = min(n, max(2·nModes, nModes + 8)) vectors;
+ * convergence is declared when every requested eigenvalue changes by less than tol (relative) between two sweeps.
+ *
+ * Clustered spectra. The error of mode k shrinks by (λ_k/λ_(q+1))² per sweep, so a group of nearly equal
+ * eigenvalues that reaches beyond the subspace (repeated members, symmetric structures) stalls the iteration:
+ * the Ritz values inside the group cannot be told apart until the subspace holds the whole group. After every
+ * sweep the rate is estimated from the Ritz values as θ_nModes/θ_q; when it exceeds `growRatio` (default 0.7,
+ * i.e. fewer than a factor two gained per sweep) the subspace is doubled with fresh random guard vectors, up to
+ * `maxSubspace` (default min(n, max(8·nModes, nModes + 64))). A group wider than that limit is not resolved:
+ * `converged` is then false and the values are accurate to about the width of the group only — raise
+ * `maxSubspace` or use a dense solver.
  * Validity: K symmetric positive definite (shift K by σM first if rigid-body modes are present, then subtract σ),
  * M symmetric positive semi-definite with rank >= nModes. Does not throw on non-convergence: check `converged`.
  * @param {{ n: number, nModes: number, solveK: (b: Float64Array) => ArrayLike<number>,
- *   mulM: (x: Float64Array) => ArrayLike<number>, tol?: number, maxIter?: number, seed?: number }} p
+ *   mulM: (x: Float64Array) => ArrayLike<number>, tol?: number, maxIter?: number, seed?: number,
+ *   maxSubspace?: number, growRatio?: number }} p
  *   n: problem order; nModes: number of lowest modes wanted; solveK(b): returns K⁻¹ b; mulM(x): returns M x
  *   (both may reuse their output buffer; the arguments must not be modified); tol: relative eigenvalue tolerance
- *   (default 1e-8); maxIter: sweep cap (default 60); seed: seed of the random starting vectors (default 1)
- * @returns {{ values: number[], vectors: Float64Array[], iterations: number, converged: boolean }} values: the
- *   nModes lowest λ ascending (ω² for K/M in SI); vectors[k]: mode shape of values[k], M-orthonormal;
- *   iterations: sweeps performed
+ *   (default 1e-8); maxIter: sweep cap (default 60); seed: seed of the random starting vectors (default 1);
+ *   maxSubspace: largest number of iteration vectors (default min(n, max(8·nModes, nModes + 64))); growRatio:
+ *   Ritz-value ratio θ_nModes/θ_q above which the subspace is enlarged, in (0, 1] (default 0.7; 1 never enlarges)
+ * @returns {{ values: number[], vectors: Float64Array[], iterations: number, converged: boolean,
+ *   subspaceSize: number }} values: the nModes lowest λ ascending (ω² for K/M in SI); vectors[k]: mode shape of
+ *   values[k], M-orthonormal; iterations: sweeps performed; subspaceSize: iteration vectors in the last sweep
  */
-export function subspaceIteration({ n, nModes, solveK, mulM, tol = 1e-8, maxIter = 60, seed = 1 } = {}) {
+export function subspaceIteration({ n, nModes, solveK, mulM, tol = 1e-8, maxIter = 60, seed = 1, maxSubspace, growRatio = 0.7 } = {}) {
   if (!Number.isInteger(n) || n < 1) throw new RangeError('subspaceIteration: n must be an integer >= 1');
   if (!Number.isInteger(nModes) || nModes < 1 || nModes > n) throw new RangeError('subspaceIteration: nModes must be an integer in 1..n');
   if (typeof solveK !== 'function') throw new RangeError('subspaceIteration: solveK must be a function');
@@ -405,6 +429,12 @@ export function subspaceIteration({ n, nModes, solveK, mulM, tol = 1e-8, maxIter
   if (!Number.isInteger(maxIter) || maxIter < 1) throw new RangeError('subspaceIteration: maxIter must be an integer >= 1');
   const p = nModes;
   let q = Math.min(n, Math.max(2 * p, p + 8));
+  if (!(growRatio > 0 && growRatio <= 1)) throw new RangeError('subspaceIteration: growRatio must lie in (0, 1]');
+  if (maxSubspace !== undefined && (!Number.isInteger(maxSubspace) || maxSubspace < p)) {
+    throw new RangeError('subspaceIteration: maxSubspace must be an integer >= nModes');
+  }
+  const qMax = Math.min(n, maxSubspace !== undefined ? Math.max(maxSubspace, q) : Math.max(8 * p, p + 64));
+  let lastGrow = 0;
   const rng = makeRng(seed);
   const apply = (fn, x, name) => {
     const y = fn(x);
@@ -498,6 +528,20 @@ export function subspaceIteration({ n, nModes, solveK, mulM, tol = 1e-8, maxIter
       }
     }
     prev = values;
+    // Slow rate (a cluster reaching beyond the subspace): add random guard vectors. Not judged in the first sweep
+    // or right after an enlargement, while the top Ritz values are still far from the eigenvalues they bound.
+    if (q < qMax && iterations >= 2 && iterations - lastGrow >= 2 && values[q - 1] > 0
+      && Math.abs(values[p - 1]) > growRatio * Math.abs(values[q - 1])) {
+      const add = Math.min(q, qMax - q);
+      for (let j = 0; j < add; j++) {
+        const x = new Float64Array(n);
+        for (let i = 0; i < n; i++) x[i] = 2 * rng.next() - 1;
+        X.push(x);
+        Y.push(apply(mulM, x, 'mulM'));
+      }
+      q += add;
+      lastGrow = iterations;
+    }
   }
   const vectors = new Array(p);
   for (let k = 0; k < p; k++) {
@@ -507,7 +551,7 @@ export function subspaceIteration({ n, nModes, solveK, mulM, tol = 1e-8, maxIter
     if (big < 0) for (let i = 0; i < n; i++) v[i] = -v[i];
     vectors[k] = v;
   }
-  return { values: Array.from(values.subarray(0, p)), vectors, iterations, converged };
+  return { values: Array.from(values.subarray(0, p)), vectors, iterations, converged, subspaceSize: X.length };
 }
 
 /**

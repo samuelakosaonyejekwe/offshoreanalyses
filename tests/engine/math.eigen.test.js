@@ -382,3 +382,63 @@ test('eigGeneral: symmetric input reproduces eigSym; badly scaled matrix is hand
   assert.throws(() => eigGeneral([[1, 2], [3]]), RangeError);
   assert.throws(() => eigGeneral([[1, NaN], [3, 4]]), RangeError);
 });
+
+test('subspaceIteration: a cluster of 40 near-equal eigenvalues wider than the starting subspace converges in a few sweeps', () => {
+  // K = diag(λ), M = I with λ_i = 1 + 1e-4 i for i < 40 and 100 + i beyond: the six lowest are 1, 1.0001, … 1.0005.
+  // With a fixed subspace of 14 vectors the rate would be (λ_6/λ_15)² = 0.998 per sweep (thousands of sweeps).
+  const n = 300; const p = 6;
+  const lam = Float64Array.from({ length: n }, (_, i) => (i < 40 ? 1 + 1e-4 * i : 100 + i));
+  const solveK = (b) => b.map((v, i) => v / lam[i]);
+  const mulM = (x) => x;
+  const r = subspaceIteration({ n, nModes: p, solveK, mulM, tol: 1e-10 });
+  assert.ok(r.converged);
+  assert.ok(r.iterations <= 20, `sweeps ${r.iterations}`);
+  assert.ok(r.subspaceSize >= 40, `subspace ${r.subspaceSize}`);
+  for (let k = 0; k < p; k++) {
+    assert.ok(Math.abs(r.values[k] - (1 + 1e-4 * k)) < 1e-9, `λ${k} = ${r.values[k]}`);
+    // eigenvector of a diagonal problem: the unit vector e_k
+    assert.ok(Math.abs(Math.abs(r.vectors[k][k]) - 1) < 1e-4, `vector ${k}`);
+  }
+  // without enlargement the same problem is reported honestly as not converged
+  const fixed = subspaceIteration({ n, nModes: p, solveK, mulM, tol: 1e-10, growRatio: 1, maxIter: 20 });
+  assert.equal(fixed.converged, false); assert.equal(fixed.subspaceSize, 14);
+  // a cluster wider than maxSubspace: not converged, values still inside the cluster
+  const capped = subspaceIteration({ n, nModes: p, solveK, mulM, tol: 1e-10, maxSubspace: 20, maxIter: 20 });
+  assert.equal(capped.converged, false); assert.equal(capped.subspaceSize, 20);
+  for (let k = 0; k < p; k++) assert.ok(capped.values[k] >= 1 - 1e-12 && capped.values[k] < 1.004);
+  assert.throws(() => subspaceIteration({ n, nModes: p, solveK, mulM, growRatio: 0 }), RangeError);
+  assert.throws(() => subspaceIteration({ n, nModes: p, solveK, mulM, maxSubspace: 3 }), RangeError);
+});
+
+test('subspaceIteration: a well-separated spectrum keeps the starting subspace and the same sweep count', () => {
+  // λ_i = (i + 1)⁴ (beam-like): θ_p/θ_q = (4/12)⁴, far below the enlargement threshold
+  const n = 120; const p = 4;
+  const lam = Float64Array.from({ length: n }, (_, i) => (i + 1) ** 4);
+  const r = subspaceIteration({ n, nModes: p, solveK: (b) => b.map((v, i) => v / lam[i]), mulM: (x) => x });
+  assert.ok(r.converged && r.iterations <= 8);
+  assert.equal(r.subspaceSize, 12);
+  for (let k = 0; k < p; k++) assert.ok(Math.abs(r.values[k] / lam[k] - 1) < 1e-10);
+});
+
+test('eigSym / eigGenSym: QL work is independent of scaling — badly scaled and clustered pencils give the same accuracy', () => {
+  // tridiagonal pencil K = tridiag(−1, 2, −1), M = tridiag(1, 4, 1)/6 (linear bar elements): λ_k = 6(1 − c)/(2 + c),
+  // c = cos(kπ/(n + 1)); scaling K by 1e±150 scales λ only
+  const n = 60;
+  const K = zeros(n, n); const M = zeros(n, n);
+  for (let i = 0; i < n; i++) { K[i][i] = 2; M[i][i] = 4 / 6; if (i + 1 < n) { K[i][i + 1] = K[i + 1][i] = -1; M[i][i + 1] = M[i + 1][i] = 1 / 6; } }
+  const exact = (k) => { const c = Math.cos((k * Math.PI) / (n + 1)); return (6 * (1 - c)) / (2 + c); };
+  for (const sc of [1, 1e-150, 1e150]) {
+    const r = eigGenSym(K.map((row) => row.map((v) => v * sc)), M);
+    for (const k of [1, 2, 30, 60]) assert.ok(Math.abs(r.values[k - 1] / (sc * exact(k)) - 1) < 1e-10, `scale ${sc}, mode ${k}`);
+  }
+  // 20 identical 3×3 blocks: every eigenvalue 20-fold; the decomposition stays orthonormal
+  const B = [[4, 1, 0], [1, 3, 1], [0, 1, 2]]; const m = 60;
+  const A = zeros(m, m);
+  for (let b = 0; b < 20; b++) for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) A[3 * b + i][3 * b + j] = B[i][j];
+  const e3 = eigSym(B).values; const e = eigSym(A);
+  for (let k = 0; k < m; k++) assert.ok(Math.abs(e.values[k] - e3[Math.floor(k / 20)]) < 1e-12);
+  for (const [a, b] of [[0, 1], [0, 19], [5, 45], [59, 58]]) {
+    let dot = 0; for (let i = 0; i < m; i++) dot += e.vectors[a][i] * e.vectors[b][i];
+    assert.ok(Math.abs(dot) < 1e-12);
+  }
+});

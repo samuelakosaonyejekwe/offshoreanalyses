@@ -177,3 +177,41 @@ test('tube hinge interaction and default capacities; P-Δ lowers the collapse lo
   assert.ok(second.ultimateLoadFactor < H1);
   near(second.ultimateLoadFactor, H1 - V * delta / L, 2e-2);
 });
+
+test('generic {A, Iy, Iz, J} section: default plastic capacities from the elastic modulus and a shape factor; pushover runs', () => {
+  // A = 0.02 m², Iy = 4e-4, Iz = 1e-4 m⁴ → Wel = I/(√2 i) = 2e-3 and 1e-3 m³; shape factor 4/π (thin-walled tube)
+  // fy = 355 MPa: Mpy = 4/π × 2e-3 × 355e6 = 904.0 kN·m, Mpz = 452.0 kN·m, Np = 7100 kN
+  const gen = { A: 0.02, Iy: 4e-4, Iz: 1e-4, J: 3e-4 };
+  const L = 4;
+  const model = (section) => ({ nodes: [[0, 0, 0], [L, 0, 0]], members: [{ a: 0, b: 1, section, capacity: { Pc: 1e12 } }],
+    supports: [{ node: 0, fix: 'fixed' }], loadCases: [{ name: 'P', nodal: [{ node: 1, F: [0, 0, -1e3] }] }] });
+  const cap = memberPlasticCapacity(buildFrameSystem(model(gen)).elems[0]);
+  const fy = cap.Np / gen.A;
+  near(cap.Mpy, 4 / Math.PI * 2e-3 * fy, 1e-12); near(cap.Mpz, 4 / Math.PI * 1e-3 * fy, 1e-12);
+  assert.equal(cap.assumedShape, true);
+  // explicit fibre distance and shape factor: Mpy = 1.12 × Iy/0.25 × fy
+  const c2 = memberPlasticCapacity(buildFrameSystem(model({ ...gen, cz: 0.25, cy: 0.1, shapeFactor: 1.12 })).elems[0]);
+  near(c2.Mpy, 1.12 * 4e-4 / 0.25 * fy, 1e-12); assert.equal(c2.assumedShape, false);
+  assert.throws(() => memberPlasticCapacity(buildFrameSystem(model({ ...gen, shapeFactor: 0.5 })).elems[0]), /shapeFactor/);
+  // typed sections keep their own plastic modulus
+  const tube = tubeSection({ D: 0.5, t: 0.02 });
+  const ct = memberPlasticCapacity(buildFrameSystem(model(tube)).elems[0]);
+  near(ct.Mpy, tube.Wply * fy, 1e-12); assert.equal(ct.assumedShape, false);
+  // tip-loaded cantilever collapses when the root moment reaches Mp: λ × 1 kN × L = Mpy
+  const r = pushoverAnalysis(model(gen), { pattern: 'P', pDelta: false });
+  near(r.ultimateLoadFactor, cap.Mpy / (1e3 * L), 1e-6);
+});
+
+test('a load pattern without any load is rejected up front, also with maxStep', () => {
+  const model = {
+    nodes: [[0, 0, 0], [4, 0, 0]], members: [{ a: 0, b: 1, section: sec, capacity: big }], supports: [{ node: 0, fix: 'fixed' }],
+    loadCases: [{ name: 'zero', nodal: [{ node: 1, F: [0, 0, 0] }] }, { name: 'P', nodal: [{ node: 1, F: [0, 0, -1e3] }] },
+      { name: 'empty' }],
+  };
+  for (const pattern of ['zero', 'empty']) {
+    assert.throws(() => pushoverAnalysis(model, { pattern, maxStep: 0.01 }), (e) => e instanceof RangeError && /applies no load/.test(e.message) && e.message.includes(pattern));
+    assert.throws(() => pushoverAnalysis(model, { pattern, base: 'P' }), /applies no load/);
+  }
+  // the same model with a real pattern: root hinge at λ × 1 kN × 4 m = Mp
+  near(pushoverAnalysis(model, { pattern: 'P', pDelta: false }).ultimateLoadFactor, Mp / 4e3, 1e-9);
+});

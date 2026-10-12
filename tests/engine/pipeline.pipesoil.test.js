@@ -58,7 +58,7 @@ test('embedment: bearing resistance at the solved depth equals the factored load
   const d = P.embedment({ D: 0.4, W: 1500, model: 'drained', phiDeg: 32, gammaSub: 9000 });
   close(P.verticalBearingDrained({ D: 0.4, z: d.zStatic, phiDeg: 32, gammaSub: 9000 }).Qv, 1500, 1e-9);
   assert.ok(P.embedment({ ...a, W: 3000, model: 'undrained' }).z > P.embedment({ ...a, W: 1500, model: 'undrained' }).z);
-  assert.throws(() => P.embedment({ D: 0.4, W: 1e7, model: 'undrained', su0: 100 }), RangeError);
+  assert.throws(() => P.embedment({ D: 0.4, W: 1e7, model: 'undrained', su0: 100, zMax: -1 }), RangeError);
 });
 
 test('axial resistance: drained mu W zeta and undrained alpha su arc', () => {
@@ -136,4 +136,24 @@ test('cover quantities: trapezoid berm geometry', () => {
   close(q.volume, 100 * q.area, 1e-12);
   close(q.mass, q.volume * 0.6 * 2650, 1e-12);
   close(q.gammaSub, 0.6 * 1625 * 9.80665, 1e-12);
+});
+
+test('embedment: a load above the bearing resistance at the search limit returns the capped depth with a flag', () => {
+  // 0.4 m pipe on 100 Pa clay under 10 MN/m: nothing the soil can offer within 2D = 0.8 m
+  const c = P.embedment({ D: 0.4, W: 1e7, model: 'undrained', su0: 100 });
+  assert.equal(c.capped, true);
+  close(c.z, 0.8); close(c.zStatic, 0.8); close(c.zOverD, 2); close(c.V, 1e7);
+  close(c.bearingAtCap, P.verticalBearingUndrained({ D: 0.4, z: 0.8, su0: 100, suGrad: 0, gammaSub: 0 }).Qv, 1e-12);
+  assert.ok(c.bearingAtCap < c.V);
+  // the dynamic factor is not applied on top of the cap; a custom search limit moves the cap
+  close(P.embedment({ D: 0.4, W: 1e7, model: 'undrained', su0: 100, kDyn: 2 }).z, 0.8);
+  close(P.embedment({ D: 0.4, W: 1e7, model: 'undrained', su0: 100, zMax: 0.5 }).z, 0.5);
+  // just below the capacity at the limit the equilibrium depth is found and approaches the cap continuously
+  const q = c.bearingAtCap;
+  const e = P.embedment({ D: 0.4, W: 0.999 * q, model: 'undrained', su0: 100 });
+  assert.equal(e.capped, false); assert.equal(e.bearingAtCap, null);
+  assert.ok(e.z < 0.8 && e.z > 0.7, `z ${e.z}`);
+  // drained model likewise
+  const d = P.embedment({ D: 0.4, W: 1e9, model: 'drained', phiDeg: 30, gammaSub: 9000 });
+  assert.equal(d.capped, true); close(d.z, 0.8);
 });

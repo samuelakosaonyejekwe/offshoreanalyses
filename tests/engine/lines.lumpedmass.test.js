@@ -192,3 +192,38 @@ test('invalid input throws RangeError', () => {
   assert.throws(() => simulateLine(m, { duration: -1, dt: 0.1 }), /duration/);
   assert.throws(() => simulateLine(m, { duration: 1, dt: 0.1, motion: { type: 'spin' } }), /motion/);
 });
+
+test('static relaxation with a cross current: converges in a bounded number of steps and balances the static drag', () => {
+  // catenary line in the x–z plane, 1 m/s current along +y. With the drag taken on the relative velocity the line
+  // could only creep sideways at about the current speed (over 100 000 pseudo-time steps for this case).
+  const U = 1.0; const d = 0.14; const Cdn = 1.2;
+  const m = buildLumpedLine({
+    anchor: [0, 0, -200], fairlead: [700, 0, 0], sections: [{ L: 800, EA: 6e8, mass: 150, d, nSeg: 40, Cdn, Cdt: 0.05, zeta: 0.02 }],
+    seabed: { z: -200, k: 3e6, mu: 0.5 }, current: { speed: U, direction: Math.PI / 2 },
+  });
+  const r = relaxLine(m);
+  assert.ok(r.converged && r.residual < 1e-7);
+  assert.ok(r.iterations < 40000, `pseudo-time steps ${r.iterations}`);
+  let ymax = 0; const N = m.N;
+  for (let i = 0; i <= N; i++) ymax = Math.max(ymax, m.r[3 * i + 1]);
+  assert.ok(ymax > 5, `lateral excursion ${ymax}`);
+  // every interior node is in equilibrium: |F| below tol × force scale
+  let fmax = 0;
+  for (let i = 1; i < N; i++) fmax = Math.max(fmax, Math.hypot(m.F[3 * i], m.F[3 * i + 1], m.F[3 * i + 2]));
+  assert.ok(fmax < 1e-6 * r.fairleadTension, `largest unbalanced node force ${fmax} N`);
+  // global balance in y: the pull of the line on its two ends equals the drag on the whole line. Seabed friction
+  // is off during relaxation, so the grounded part is loaded too: ½ρ Cdn d U² × 800 m = 68.9 kN broadside on; the
+  // line is slightly oblique to the current, hence a little less.
+  const Ry = m.F[1] + m.F[3 * N + 1];
+  const drag = 0.5 * rho * Cdn * d * U * U * 800;
+  assert.ok(Ry > 0.95 * drag && Ry < 1.0001 * drag, `lateral end reaction ${Ry} N vs broadside drag ${drag} N`);
+  // the same state is reached from the tighter tolerance (path independence of the equilibrium)
+  const m2 = buildLumpedLine({
+    anchor: [0, 0, -200], fairlead: [700, 0, 0], sections: [{ L: 800, EA: 6e8, mass: 150, d, nSeg: 40, Cdn, Cdt: 0.05, zeta: 0.02 }],
+    seabed: { z: -200, k: 3e6, mu: 0.5 }, current: { speed: U, direction: Math.PI / 2 },
+  });
+  const r2 = relaxLine(m2, { tol: 1e-9 });
+  assert.ok(rel(r.fairleadTension, r2.fairleadTension) < 1e-5);
+  // the drag on the moving line is active again afterwards (dynamic simulation unaffected)
+  assert.equal(m.dragOnMotion, true);
+});

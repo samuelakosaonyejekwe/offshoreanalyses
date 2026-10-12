@@ -18,7 +18,7 @@
 
 import { SkylineSym, reverseCuthillMcKee } from '../math/sparse.js';
 import { gaussLegendre } from '../math/quad.js';
-import { resolveSection } from './sections.js';
+import { resolveSection, fibreDistances } from './sections.js';
 
 const DOF_NAMES = ['ux', 'uy', 'uz', 'rx', 'ry', 'rz'];
 const G0 = 9.80665;
@@ -322,14 +322,44 @@ export function buildFrameSystem(model, opts = {}) {
   const shearDefault = opts.shearDeformation !== false;
   if (!model || typeof model !== 'object') throw new RangeError('model must be an object');
   const xyz = nodeArray(model.nodes);
-  const nNode = xyz.length / 3;
-  const nDof = 6 * nNode;
   if (!Array.isArray(model.members) || model.members.length === 0) throw new RangeError('model.members must not be empty');
-  const warnings = [];
   const elems = [];
   const tmp = new Float64Array(144);
+  for (let m = 0; m < model.members.length; m++) elems.push(buildElement(model, xyz, m, shearDefault, tmp));
+  return finishSystem(model, xyz, elems, opts, shearDefault);
+}
 
-  for (let m = 0; m < model.members.length; m++) {
+/**
+ * Rebuild a frame system after a change to some of its members (releases, type, section, material — not the node
+ * coordinates, supports or the number of members): the element records of the listed members are recomputed and
+ * all others are reused, then the restraints, equation numbering and skyline profile are redone. The result is
+ * identical to buildFrameSystem(model, opts) on the changed model at a fraction of the cost, which is what an
+ * event-to-event analysis needs when one hinge forms at a time.
+ * @param {object} sys system from buildFrameSystem (or from this function) for the same nodes and supports
+ * @param {object} model the changed frame model; model.members must have the same length as sys.elems
+ * @param {Iterable<number>} changed indices of the members that differ from those sys was built with
+ * @param {object} [opts] as buildFrameSystem (pass the same options sys was built with)
+ * @returns {object} system, as buildFrameSystem
+ */
+export function updateFrameSystem(sys, model, changed, opts = {}) {
+  if (!sys || !Array.isArray(sys.elems)) throw new RangeError('sys must be a system from buildFrameSystem');
+  if (!model || !Array.isArray(model.members) || model.members.length !== sys.elems.length) {
+    throw new RangeError('model.members must have as many members as the system');
+  }
+  const shearDefault = opts.shearDeformation !== false;
+  const elems = sys.elems.slice();
+  const tmp = new Float64Array(144);
+  for (const m of changed) {
+    if (!Number.isInteger(m) || m < 0 || m >= elems.length) throw new RangeError(`changed member index ${m} is out of range`);
+    elems[m] = buildElement(model, sys.xyz, m, shearDefault, tmp);
+  }
+  return finishSystem(model, sys.xyz, elems, opts, shearDefault);
+}
+
+// Element record of member m: geometry, local stiffness, release condensation and transformation to global dofs.
+function buildElement(model, xyz, m, shearDefault, tmp) {
+  const nNode = xyz.length / 3;
+  {
     const mem = model.members[m];
     const ia = mem.a; const ib = mem.b;
     if (!Number.isInteger(ia) || !Number.isInteger(ib) || ia < 0 || ib < 0 || ia >= nNode || ib >= nNode || ia === ib) {
@@ -415,11 +445,18 @@ export function buildFrameSystem(model, opts = {}) {
     for (let i = 0; i < 12; i++) for (let j = i + 1; j < 12; j++) { const s = 0.5 * (ke[i * 12 + j] + ke[j * 12 + i]); ke[i * 12 + j] = s; ke[j * 12 + i] = s; }
     const dofs = new Int32Array(12);
     for (let i = 0; i < 6; i++) { dofs[i] = 6 * ia + i; dofs[6 + i] = 6 * ib + i; }
-    elems.push({
+    return {
       index: m, a: ia, b: ib, pa, pb, L, R, T, Tc, TT, kl, ke, relIdx, krrInv, dofs, mat, sec, type, truss, phiY, phiZ,
       nonlinear: type === 'tension' || type === 'compression', member: mem,
-    });
+    };
   }
+}
+
+// Supports, automatic restraints, equation numbering and skyline profile for a set of element records.
+function finishSystem(model, xyz, elems, opts, shearDefault) {
+  const nNode = xyz.length / 3;
+  const nDof = 6 * nNode;
+  const warnings = [];
 
   // Supports and springs.
   const fixed = new Uint8Array(nDof);
@@ -724,13 +761,19 @@ function pushItem(items, e, it) { items[e].push(it); }
  *     { member, type: 'thermal', dT? [K], gradY? [K/m], gradZ? [K/m] },
  *     { member, type: 'function', fn: (s, [x,y,z]) => [fx,fy,fz] (N/m), axes?, nSeg? } ],
  *   selfWeight: { g?: [0,0,-9.80665], factor?: 1, buoyancy?: { waterline (z, m), rhoW?: 1025 },
- *                 marineGrowth?: { thickness, rho?: 1325, zTop, zBottom } },
+ *                 marineGrowth?: { thickness, rho?: 1325, zTop, zBottom }, floodedInAir?: false },
  *   acceleration: { a?: [3] (m/s²), alpha?: [3] (rad/s²), omega?: [3] (rad/s), origin?: [3] },
  *   settlements: [{ node, d: [6] }] }
  * ```
  * Self-weight uses the "marine" (buoyant-weight) method: buoyancy is a distributed force opposite to g equal
  * to the weight of displaced water (outer envelope for unflooded tubes, steel volume for flooded tubes);
- * pressure end-cap effects are not modelled. The acceleration field applies d'Alembert loads −m·a(r) with
+ * pressure end-cap effects are not modelled.
+ * Contained water of members flagged `flooded` (free-flooding legs and piles): the water is there because the
+ * member is in the sea, so it is weighed only over the part of the member below `buoyancy.waterline`. A self-weight
+ * case without a buoyancy specification is an in-air case (fabrication, load-out, lift, transport) and the
+ * flooded flag adds nothing; `floodedInAir: true` keeps the water in such a case (a lifted member that has not
+ * drained, hydrotest). A member with an explicit `fluidRho` (product, grout, ballast) always carries its
+ * contents over its whole length. The acceleration field applies d'Alembert loads −m·a(r) with
  * a(r) = a + α × r + ω × (ω × r), r measured from `origin` (transport / seafastening analysis).
  * @param {object} sys system from buildFrameSystem
  * @param {Array<{load:object, factor:number}>} parts load cases with factors
@@ -842,8 +885,9 @@ function addSelfWeight(sys, sw, fac, F, items) {
       const mass = memberMassPerLength(el, { rhoW, mgThickness: tg, mgRho: mg && mg.rho !== undefined ? mg.rho : 1325 });
       const wet = buoy && zm < buoy.waterline;
       let total = mass.total;
-      // a flooded member holds water only below the waterline
-      if (buoy && !wet && el.member.flooded && el.member.fluidRho === undefined) total -= mass.fluid;
+      // a flooded member holds sea water only where it is submerged: below the waterline of the buoyancy
+      // specification, and not at all in a case without one (in air), unless the case asks for it
+      if (!wet && !sw.floodedInAir && el.member.flooded && el.member.fluidRho === undefined) total -= mass.fluid;
       let displaced = 0; // m² of displaced water per unit length (outer envelope incl. marine growth)
       if (wet) displaced = sec.type === 'tube' ? Math.PI * (sec.D + 2 * tg) ** 2 / 4 : sec.A;
       const w = total - rhoW * displaced; // net mass per length acting along g
@@ -1385,35 +1429,45 @@ export function memberDiagram(result, member, nStations = 21) {
  * τ = T D/(2J) + 2√(Vy² + Vz²)/A (thin-wall peak shear). Other sections: σ = N/A ± My/Wely ± Mz/Welz,
  * τ = Vz/Asz + Vy/Asy + T·t/J when shear areas are available. von Mises equivalent σeq = √(σ² + 3τ²) is
  * evaluated with the peak normal and peak shear stress taken together (conservative).
+ * Generic property records {A, Iy, Iz, J} (the section of an imported frame, which carries no shape) have no
+ * section moduli: the extreme-fibre distances are then section.cz (bending about y) and section.cy (bending
+ * about z) when given, otherwise c = √2·(radius of gyration), exact for a thin-walled circular tube (see
+ * sections.fibreDistances) — `fibreAssumed` is set. Their shear stress is the mean value V/A when no shear area
+ * is given, and torsion is included only when a wall thickness (t, tf or tw) is known.
  * @param {object} o
- * @param {object} o.section section record (tubeSection, iSection, …)
+ * @param {object} o.section section record (tubeSection, iSection, …) or generic {A, Iy, Iz, J, cy?, cz?}
  * @param {number} [o.N=0] axial force [N] (tension positive)
  * @param {number} [o.Vy=0] shear [N]
  * @param {number} [o.Vz=0] shear [N]
  * @param {number} [o.T=0] torque [N·m]
  * @param {number} [o.My=0] bending moment [N·m]
  * @param {number} [o.Mz=0] bending moment [N·m]
- * @returns {{sigmaAxial:number, sigmaBending:number, sigmaMax:number, sigmaMin:number, tau:number, vonMises:number}} Pa
+ * @returns {{sigmaAxial:number, sigmaBending:number, sigmaMax:number, sigmaMin:number, tau:number, vonMises:number,
+ *   fibreAssumed:boolean}} stresses in Pa; fibreAssumed = an extreme-fibre distance was derived from the radius of
+ *   gyration
  */
 export function sectionStress({ section, N = 0, Vy = 0, Vz = 0, T = 0, My = 0, Mz = 0 }) {
   const sec = section;
   if (!sec || !(sec.A > 0)) throw new RangeError('section must be a section property record');
   const sa = N / sec.A;
-  let sb; let tau;
+  let sb; let tau; let fibreAssumed = false;
   if (sec.type === 'tube' || sec.type === 'round') {
     sb = Math.hypot(My, Mz) / sec.Wely;
     tau = Math.abs(T) * sec.D / (2 * sec.J) + (sec.type === 'tube' ? 2 : 4 / 3) * Math.hypot(Vy, Vz) / sec.A;
   } else {
-    const wy = sec.Wely || (sec.Iy / (sec.cz || NaN));
-    const wz = sec.Welz || (sec.Iz / (sec.cy || NaN));
-    sb = Math.abs(My) / wy + Math.abs(Mz) / wz;
+    const fd = fibreDistances(sec);
+    fibreAssumed = fd.assumed;
+    sb = Math.abs(My) / fd.Wely + Math.abs(Mz) / fd.Welz;
     const tmax = Math.max(sec.tf || 0, sec.tw || 0, sec.t || 0);
-    tau = (sec.Asz > 0 ? Math.abs(Vz) / sec.Asz : 0) + (sec.Asy > 0 ? Math.abs(Vy) / sec.Asy : 0)
+    // a record without any shape information gets the mean shear stress rather than none
+    const generic = sec.type === undefined && !(sec.Wely > 0) && !(sec.Welz > 0);
+    tau = (sec.Asz > 0 ? Math.abs(Vz) / sec.Asz : generic ? Math.abs(Vz) / sec.A : 0)
+      + (sec.Asy > 0 ? Math.abs(Vy) / sec.Asy : generic ? Math.abs(Vy) / sec.A : 0)
       + (sec.J > 0 && tmax > 0 ? Math.abs(T) * tmax / sec.J : 0);
   }
   const smax = sa + sb; const smin = sa - sb;
   const sAbs = Math.max(Math.abs(smax), Math.abs(smin));
-  return { sigmaAxial: sa, sigmaBending: sb, sigmaMax: smax, sigmaMin: smin, tau, vonMises: Math.sqrt(sAbs * sAbs + 3 * tau * tau) };
+  return { sigmaAxial: sa, sigmaBending: sb, sigmaMax: smax, sigmaMin: smin, tau, vonMises: Math.sqrt(sAbs * sAbs + 3 * tau * tau), fibreAssumed };
 }
 
 /**

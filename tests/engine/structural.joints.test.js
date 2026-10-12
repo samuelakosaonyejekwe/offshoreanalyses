@@ -103,3 +103,30 @@ test('allowable capacities, interaction and the 50 % rule (hand calculation, T j
   // Fyc limited to 0.8 × tensile strength
   near(apiJointCheck({ D: 1.0, T, d, t: 0.02, thetaDeg: 90, fyChord: Fy, fuChord: 400e6, P: 1e6 }).Pa, 15 * 320e6 * T * T / 1.6, 1e-12);
 });
+
+test('overstressed chord (Qf ≤ 0): zero capacity, large finite utilisation and a flag instead of a negative utilisation', () => {
+  // T joint as above. Chord yield capacity Py = π/4 (1.0² − 0.92²) × 345e6 = 41.62 MN.
+  // Y axial: Qf = 1 + 0.3 (FS Pc/Py) − 0.8 (FS Pc/Py)². With Pc = −38 MN: FS Pc/Py = −1.4608 → Qf = 1 − 0.438 − 1.707 = −1.145
+  const Fy = 345e6; const T = 0.04; const d = 0.5;
+  const Py = Math.PI / 4 * (1 - 0.92 ** 2) * Fy;
+  const x = 1.6 * -38e6 / Py;
+  assert.ok(1 + 0.3 * x - 0.8 * x * x < -1);
+  const r = apiJointCheck({ D: 1.0, T, d, t: 0.02, thetaDeg: 90, fyChord: Fy, P: -1e6, Mipb: 1e5, Mopb: 5e4, chord: { P: -38e6 } });
+  assert.equal(r.chordOverstressed, true);
+  assert.equal(r.Pa, 0); assert.equal(r.MaIpb, 0); assert.equal(r.MaOpb, 0);
+  assert.equal(r.Qf.Y, 0); assert.equal(r.Qf.moment, 0);
+  assert.equal(r.uc, 1000); assert.equal(r.ucAxial, 1000);
+  for (const c of r.checks) assert.ok(Number.isFinite(c.uc) && c.uc >= 1000, `${c.name}: ${c.uc}`);
+  assert.equal(r.minimumCapacity.ok, false);
+  assert.ok(r.warnings.some((w) => /Qf is not positive/.test(w)));
+  // even an unloaded brace is flagged: the chord itself has failed
+  const idle = apiJointCheck({ D: 1.0, T, d, t: 0.02, thetaDeg: 90, fyChord: Fy, chord: { P: -38e6 } });
+  assert.equal(idle.chordOverstressed, true); assert.equal(idle.uc, 1000);
+  // moderately loaded chord: reduced but positive capacity, ordinary utilisation, no flag
+  const ok = apiJointCheck({ D: 1.0, T, d, t: 0.02, thetaDeg: 90, fyChord: Fy, P: -1e6, chord: { P: -1.5e7 } });
+  const xo = 1.6 * -1.5e7 / Py;
+  assert.equal(ok.chordOverstressed, false);
+  near(ok.Qf.Y, 1 + 0.3 * xo - 0.8 * xo * xo, 1e-12);
+  assert.ok(ok.Pa > 0 && ok.uc > 0 && ok.uc < 1000);
+  near(ok.uc, 1e6 / ok.Pa, 1e-12);
+});

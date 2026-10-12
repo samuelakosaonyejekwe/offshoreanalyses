@@ -109,3 +109,55 @@ test('geometric stiffness matrix and effective-length helper', () => {
   near(e.K, 0.7, 1e-12);
   assert.throws(() => bucklingAnalysis(column(2, 'fixed', 'free'), {}), RangeError);
 });
+
+test('P-Δ swayAmplification isolates the lateral ratio when gravity shortening dominates the largest displacement', () => {
+  // cantilever column at 40 % of its Euler load with a small lateral load: the largest displacement is the axial
+  // shortening P L/(E A), which second-order effects do not change, so amplification ≈ 1; the lateral tip
+  // displacement is amplified by 3 (tan kL − kL)/(kL)³ = 1.643 (≈ 1/(1 − 0.4) = 1.667)
+  const P = 0.4 * Math.PI ** 2 * EI / (4 * L * L);
+  const H = 1;
+  const m = column(8, 'fixed', 'free');
+  m.loadCases = [{ name: 'PH', nodal: [{ node: 8, F: [H, 0, -P, 0, 0, 0] }] }];
+  const r = pDeltaAnalysis(m, { loadCase: 'PH', shearDeformation: false });
+  const kL = Math.sqrt(P / EI) * L;
+  const exact = 3 * (Math.tan(kL) - kL) / kL ** 3;
+  near(r.swayAmplification, exact, 5e-4);
+  assert.ok(exact > 1.6 && exact < 1.7);
+  near(r.amplification, 1, 1e-3, 'largest displacement is the vertical shortening');
+  near(r.firstOrder.maxDisplacement, P * L / (E * tube.A), 1e-6);
+  assert.equal(r.sway.node, 8);
+  near(r.sway.firstOrder, H * L ** 3 / (3 * EI), 1e-9);
+  near(r.sway.secondOrder / r.sway.firstOrder, r.swayAmplification, 1e-12);
+  // no lateral load at all: nothing to amplify
+  const g = column(8, 'fixed', 'free');
+  g.loadCases = [{ name: 'PH', nodal: [{ node: 8, F: [0, 0, -P, 0, 0, 0] }] }];
+  assert.equal(pDeltaAnalysis(g, { loadCase: 'PH', shearDeformation: false }).swayAmplification, 1);
+  assert.throws(() => pDeltaAnalysis(m, { loadCase: 'PH', verticalAxis: 'up' }), /verticalAxis/);
+});
+
+test('buckling with many slender members in tension: the positive factor is found although reversed-load modes lie closer to zero', () => {
+  // a stocky fixed–free column (D 1.0 × 40 mm, 20 m, 1 MN compression) beside 12 slender ties (D 0.1 × 5 mm, 200 kN
+  // tension), every member in 4 elements. Reversed, each tie would buckle at |λ| = π²EI/(4L²)/N = 0.0054, some 3000
+  // times nearer to zero than the column factor λ = π²EI/(2L)² / 1 MN; there are 48 such modes (two planes, two per
+  // tie resolved) against a starting subspace of 10 vectors.
+  const col = tubeSection({ D: 1.0, t: 0.04 }); const tie = tubeSection({ D: 0.1, t: 0.005 });
+  const nodes = []; const members = []; const supports = []; const nodal = [];
+  const add = (x, section, F) => {
+    const b = nodes.length;
+    for (let i = 0; i <= 4; i++) { nodes.push([x, 0, 5 * i]); if (i < 4) members.push({ a: b + i, b: b + i + 1, section }); }
+    supports.push({ node: b, fix: 'fixed' }); nodal.push({ node: b + 4, F: [0, 0, F, 0, 0, 0] });
+  };
+  add(0, col, -1e6);
+  for (let k = 0; k < 12; k++) add(5 * (k + 1), tie, 2e5);
+  const r = bucklingAnalysis({ nodes, members, supports, loadCases: [{ name: 'ref', nodal }] }, { loadCase: 'ref', nModes: 2, shearDeformation: false });
+  const exact = Math.PI ** 2 * E * col.Iy / 40 ** 2 / 1e6;
+  assert.ok(r.converged && r.iterations <= 15, `iterations ${r.iterations}`);
+  near(r.factors[0], exact, 1e-3); near(r.factors[1], exact, 1e-3); // round column: two planes
+  assert.ok(r.shift > 0 && r.shift < r.factors[0], `shift ${r.shift}`);
+  // effective length of the column elements: K L = 2 × 20 m over four 5 m elements → K = 8
+  const el = r.effectiveLengths.find((e) => e.member === 0);
+  near(el.Ley, 40, 1e-3); near(el.Ky, 8, 1e-3);
+  // all members in tension: nothing buckles
+  const pull = { nodes, members, supports, loadCases: [{ name: 'ref', nodal: nodal.map((l) => ({ node: l.node, F: [0, 0, Math.abs(l.F[2]), 0, 0, 0] })) }] };
+  assert.throws(() => bucklingAnalysis(pull, { loadCase: 'ref' }), /No positive buckling factor/);
+});

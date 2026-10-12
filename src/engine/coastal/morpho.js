@@ -21,14 +21,34 @@ const LIMITERS = {
  * One-dimensional Exner bed evolution coupled to a user-supplied transport function:
  *   (1 − p) ∂zb/∂t + ∂qs/∂x = 0
  * solved in conservation form on a uniform grid. The face flux is first-order upwind with respect to the
- * local bed-form celerity a = Δ(qs/(1 − p))/Δzb, plus (scheme 'laxWendroff') the flux-limited second-order
- * correction ½ |a| (1 − |a| Δt/Δx) φ(r) Δzb (Sweby 1984). Where Δzb vanishes the celerity direction falls
- * back to the direction of transport.
+ * bed-form celerity at the face, plus (scheme 'laxWendroff') the flux-limited second-order correction
+ * ½ |a| (1 − |a| Δt/Δx) φ(r) Δzb (Sweby 1984). Where the celerity vanishes the upwind direction falls back to
+ * the direction of transport.
+ *
+ * Celerity. The bed-form celerity is c = (∂qs/∂zb)/(1 − p) at a fixed position. With `celerity: 'local'`
+ * (default) it is estimated in every cell by one extra call of the transport function with the whole bed raised
+ * by a small δ, c_i = [qs_i(zb + δ) − qs_i(zb)] / ((1 − p) δ). The face celerity is the jump ratio
+ * Δqs/((1 − p) Δzb) between the two neighbouring cells (the exact shock speed when qs depends on zb only),
+ * limited to the range spanned by the two cell values: where the transport also varies with position (changing
+ * flow width, depth or forcing) the raw jump ratio is not a celerity at all — it is unbounded where the bed is
+ * locally level — and the cell estimate governs. `celerity: 'jump'` uses the raw jump ratio (valid only for
+ * qs = f(zb)), and a function (zb, t) → c per cell [m/s] supplies the celerity directly, e.g. when the transport
+ * model is invariant to a uniform shift of the bed.
+ *
+ * Time step (adaptive mode): Δt = cfl·Δx / max|a| over the faces; with a bed-slope term also
+ * Δt <= cfl·Δx²(1 − p) / (2 β max|qs|); and never longer than the time in which the fastest-changing cell moves
+ * by `maxBedChange`. The last limit is the floor that keeps the step finite when the celerity is zero or tiny
+ * while the bed is still changing (transport independent of the bed, supply at a boundary).
+ *
+ * Bed-slope term (optional): the face flux is reduced going up-slope and increased down-slope,
+ * qs → qs − β |qs| ∂zb/∂x, the usual gravitational correction that diffuses bed features (β = `bedSlopeBeta`,
+ * typically 1–5; Bailard 1981 gives β = 1/tan φ ≈ 1.6 for bed load).
  * Reference: Exner (1925) Sitzungsber. Akad. Wiss. Wien 134; LeVeque (2002) "Finite Volume Methods for
- * Hyperbolic Problems" §6.11–6.12; Sweby (1984) SIAM J. Numer. Anal. 21.
+ * Hyperbolic Problems" §6.11–6.12 and §16 (spatially varying flux); Sweby (1984) SIAM J. Numer. Anal. 21;
+ * Bailard (1981) J. Geophys. Res. 86(C11) (slope term).
  * Validity: quasi-steady (decoupled) morphodynamics — the flow is assumed to adapt instantly to the bed, so
  * the transport function receives the current bed and returns qs at cell centres; explicit, stable for
- * Courant number |a| Δt/Δx <= 1.
+ * Courant number |a| Δt/Δx <= 1. The transport function must not keep a reference to the bed array it is given.
  * @param {object} o
  * @param {number} o.dx cell size [m]
  * @param {ArrayLike<number>} o.zb0 initial bed elevation at cell centres [m]
@@ -39,20 +59,27 @@ const LIMITERS = {
  * @param {'upwind'|'laxWendroff'} [o.scheme] default 'laxWendroff'
  * @param {'none'|'minmod'|'vanleer'|'superbee'} [o.limiter] default 'vanleer'
  * @param {number} [o.cfl] Courant number for the adaptive step [-], default 0.8
- * @param {number} [o.dt] fixed time step [s] (overrides cfl; the last step is shortened to hit tEnd)
+ * @param {number} [o.dt] fixed time step [s] (overrides cfl and maxBedChange; the last step is shortened to hit
+ *   tEnd)
  * @param {number} [o.dtMax] upper limit on the adaptive step [s]
+ * @param {'local'|'jump'|((zb:Float64Array, t:number)=>ArrayLike<number>)} [o.celerity] celerity estimate,
+ *   default 'local' (see above); a function returns the celerity per cell [m/s]
+ * @param {number} [o.maxBedChange] largest bed-level change of any cell in one adaptive step [m]; default
+ *   cfl × max(initial bed relief, 0.001 Δx)
+ * @param {number} [o.bedSlopeBeta] bed-slope coefficient β [-], default 0 (no slope term)
  * @param {'periodic'|'zeroGradient'|{q:number|((t:number)=>number)}} [o.left] upstream boundary: periodic,
  *   zero-gradient (flux equals the edge-cell transport) or prescribed sediment flux [m²/s]
  * @param {'periodic'|'zeroGradient'|{q:number|((t:number)=>number)}} [o.right] as left
  * @param {number} [o.maxSteps] default 1e7
- * @returns {{zb:Float64Array,t:number,steps:number,courantMax:number,
+ * @returns {{zb:Float64Array,t:number,steps:number,courantMax:number,dtMin:number,dtMax:number,
  *   mass:{initial:number,final:number,boundaryNet:number,error:number,relativeError:number}}}
- *   final bed [m]; mass = solid volume per unit width above datum (1 − p) Σ zb Δx [m²], boundaryNet =
+ *   final bed [m]; courantMax = largest |a| Δt/Δx used [-]; dtMin, dtMax = smallest and largest step taken [s];
+ *   mass = solid volume per unit width above datum (1 − p) Σ zb Δx [m²], boundaryNet =
  *   time-integrated inflow minus outflow [m²], error = final − initial − boundaryNet
  */
 export function exnerEvolve({
   dx, zb0, transport, tEnd, porosity = 0.4, scheme = 'laxWendroff', limiter = 'vanleer', cfl = 0.8, dt, dtMax,
-  left = 'zeroGradient', right = 'zeroGradient', maxSteps = 1e7,
+  left = 'zeroGradient', right = 'zeroGradient', maxSteps = 1e7, celerity = 'local', maxBedChange, bedSlopeBeta = 0,
 }) {
   pos(dx, 'dx');
   need(zb0 && zb0.length >= 3, 'zb0 must have at least 3 cells');
@@ -64,6 +91,10 @@ export function exnerEvolve({
   need(phi !== undefined, 'limiter must be none, minmod, vanleer or superbee');
   need(cfl > 0 && cfl <= 1, 'cfl must lie in (0, 1]');
   if (dt !== undefined) pos(dt, 'dt');
+  if (dtMax !== undefined) pos(dtMax, 'dtMax');
+  need(celerity === 'local' || celerity === 'jump' || typeof celerity === 'function', "celerity must be 'local', 'jump' or a function");
+  if (maxBedChange !== undefined) pos(maxBedChange, 'maxBedChange');
+  need(Number.isFinite(bedSlopeBeta) && bedSlopeBeta >= 0, 'bedSlopeBeta must be >= 0');
   const periodic = left === 'periodic' || right === 'periodic';
   need(!periodic || (left === 'periodic' && right === 'periodic'), 'periodic boundaries must be set on both sides');
   const bFlux = (b, name) => {
@@ -78,8 +109,23 @@ export function exnerEvolve({
   const F = new Float64Array(n + 1); // face fluxes of solid volume [m²/s]; face i lies between cells i−1 and i
   const a = new Float64Array(n + 1);
   const dz = new Float64Array(n + 1);
+  const cc = new Float64Array(n); // cell celerity [m/s]
+  const zPert = new Float64Array(n);
   const pf = 1 / (1 - porosity);
   const second = scheme === 'laxWendroff';
+  const useCell = celerity !== 'jump';
+  let zLo = Infinity;
+  let zHi = -Infinity;
+  let zAbs = 0;
+  for (let i = 0; i < n; i++) {
+    need(Number.isFinite(z[i]), 'zb0 must be finite');
+    if (z[i] < zLo) zLo = z[i];
+    if (z[i] > zHi) zHi = z[i];
+    if (Math.abs(z[i]) > zAbs) zAbs = Math.abs(z[i]);
+  }
+  const dzLimit = maxBedChange !== undefined ? maxBedChange : cfl * Math.max(zHi - zLo, 1e-3 * dx);
+  // Perturbation for the celerity estimate: small against any depth scale, large against round-off.
+  const delta = 1e-6 * Math.max(zAbs, 1);
   const mass = () => {
     let s = 0;
     for (let i = 0; i < n; i++) s += z[i];
@@ -90,32 +136,11 @@ export function exnerEvolve({
   let t = 0;
   let steps = 0;
   let courantMax = 0;
+  let dtLo = Infinity;
+  let dtHi = 0;
   const lo = periodic ? 0 : 1;
-  const hi = periodic ? n - 1 : n - 1;
-  while (t < tEnd) {
-    need(steps < maxSteps, 'maxSteps exceeded');
-    const q = transport(z, t);
-    need(q && q.length === n, 'transport must return one value per cell');
-    let amax = 0;
-    for (let f = lo; f <= hi; f++) {
-      const il = f === 0 ? n - 1 : f - 1;
-      const d = z[f] - z[il];
-      const dq = q[f] - q[il];
-      dz[f] = d;
-      const scale = 1e-12 * (Math.abs(z[f]) + Math.abs(z[il]) + 1e-30);
-      if (Math.abs(d) > scale) a[f] = (pf * dq) / d;
-      else a[f] = 0;
-      if (Math.abs(a[f]) > amax) amax = Math.abs(a[f]);
-    }
-    let step = dt !== undefined ? dt : amax > 0 ? (cfl * dx) / amax : tEnd - t;
-    if (dtMax !== undefined && step > dtMax) step = dtMax;
-    let hit = false;
-    if (t + step >= tEnd - 1e-12 * Math.max(tEnd, 1)) {
-      step = tEnd - t;
-      hit = true;
-    }
-    const nu = (amax * step) / dx;
-    if (nu > courantMax) courantMax = nu;
+  const hi = n - 1;
+  const fluxes = (q, step) => {
     for (let f = lo; f <= hi; f++) {
       const il = f === 0 ? n - 1 : f - 1;
       const af = a[f];
@@ -125,7 +150,7 @@ export function exnerEvolve({
         // Ratio of the upwind bed jump to the local one.
         let fu = dir >= 0 ? f - 1 : f + 1;
         let r = 0;
-        let ok = true;
+        let ok = dz[f] !== 0;
         if (periodic) fu = (fu + n) % n;
         else if (fu < 1 || fu > n - 1) ok = false;
         if (ok) r = dz[fu] / dz[f];
@@ -133,6 +158,7 @@ export function exnerEvolve({
         const aa = Math.abs(af);
         flux += 0.5 * aa * (1 - (aa * step) / dx) * lim * dz[f] / pf;
       }
+      if (bedSlopeBeta > 0) flux -= bedSlopeBeta * 0.5 * (Math.abs(q[f]) + Math.abs(q[il])) * dz[f] / dx;
       F[f] = flux;
     }
     if (periodic) F[n] = F[0];
@@ -140,16 +166,97 @@ export function exnerEvolve({
       F[0] = qLeft ? qLeft(t) : q[0];
       F[n] = qRight ? qRight(t) : q[n - 1];
     }
+  };
+  while (t < tEnd) {
+    need(steps < maxSteps, 'maxSteps exceeded');
+    if (celerity === 'local') {
+      // the transport function may reuse its output buffer, so the perturbed result is consumed before the
+      // unperturbed call
+      for (let i = 0; i < n; i++) zPert[i] = z[i] + delta;
+      const qp = transport(zPert, t);
+      need(qp && qp.length === n, 'transport must return one value per cell');
+      for (let i = 0; i < n; i++) cc[i] = qp[i];
+    } else if (useCell) {
+      const cu = celerity(z, t);
+      need(cu && cu.length === n, 'celerity must return one value per cell');
+      for (let i = 0; i < n; i++) cc[i] = cu[i];
+    }
+    const q = transport(z, t);
+    need(q && q.length === n, 'transport must return one value per cell');
+    let amax = 0;
+    let qmax = 0;
+    for (let i = 0; i < n; i++) {
+      need(Number.isFinite(q[i]), 'transport returned a non-finite value');
+      if (Math.abs(q[i]) > qmax) qmax = Math.abs(q[i]);
+      if (celerity === 'local') {
+        // the difference quotient carries round-off of order 1e-9; rounding to 7 significant figures removes it,
+        // so that a uniform celerity gives a uniform Courant number
+        const c = (pf * (cc[i] - q[i])) / delta;
+        cc[i] = c === 0 || !Number.isFinite(c) ? c : Number(c.toPrecision(7));
+      }
+      if (useCell) need(Number.isFinite(cc[i]), 'celerity is not finite');
+    }
+    for (let f = lo; f <= hi; f++) {
+      const il = f === 0 ? n - 1 : f - 1;
+      const d = z[f] - z[il];
+      const dq = q[f] - q[il];
+      dz[f] = d;
+      const scale = 1e-12 * (Math.abs(z[f]) + Math.abs(z[il]) + 1e-30);
+      const level = !(Math.abs(d) > scale);
+      let af = level ? 0 : (pf * dq) / d;
+      if (useCell) {
+        const cA = cc[il];
+        const cB = cc[f];
+        if (level) af = 0.5 * (cA + cB);
+        else {
+          const w = 1e-6 * (Math.abs(cA) + Math.abs(cB));
+          const cLo = Math.min(cA, cB) - w;
+          const cHi = Math.max(cA, cB) + w;
+          af = af < cLo ? cLo : af > cHi ? cHi : af;
+        }
+      }
+      a[f] = af;
+      if (Math.abs(af) > amax) amax = Math.abs(af);
+    }
+    let step = dt !== undefined ? dt : amax > 0 ? (cfl * dx) / amax : tEnd - t;
+    if (dt === undefined && bedSlopeBeta > 0 && qmax > 0) {
+      const sd = (cfl * dx * dx) / (2 * pf * bedSlopeBeta * qmax);
+      if (step > sd) step = sd;
+    }
+    if (dtMax !== undefined && step > dtMax) step = dtMax;
+    if (t + step > tEnd) step = tEnd - t;
+    fluxes(q, step);
+    if (dt === undefined) {
+      let rate = 0;
+      for (let i = 0; i < n; i++) {
+        const r = Math.abs(F[i + 1] - F[i]);
+        if (r > rate) rate = r;
+      }
+      rate *= pf / dx; // fastest bed-level change [m/s]
+      if (rate * step > dzLimit) {
+        step = dzLimit / rate;
+        fluxes(q, step);
+      }
+    }
+    let hit = false;
+    if (t + step >= tEnd - 1e-12 * Math.max(tEnd, 1)) {
+      step = tEnd - t;
+      hit = true;
+    }
+    const nu = (amax * step) / dx;
+    if (nu > courantMax) courantMax = nu;
     const c = (step * pf) / dx;
     for (let i = 0; i < n; i++) z[i] -= c * (F[i + 1] - F[i]);
     boundaryNet += step * (F[0] - F[n]);
     t = hit ? tEnd : t + step;
     steps++;
+    if (step < dtLo) dtLo = step;
+    if (step > dtHi) dtHi = step;
   }
   const mf = mass();
   const error = mf - m0 - boundaryNet;
   return {
-    zb: z, t, steps, courantMax,
+    zb: z, t, steps, courantMax, dtMin: steps > 0 ? dtLo : 0, dtMax: dtHi,
     mass: { initial: m0, final: mf, boundaryNet, error, relativeError: Math.abs(m0) > 0 ? error / Math.abs(m0) : error },
   };
 }

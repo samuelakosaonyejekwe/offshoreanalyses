@@ -21,20 +21,31 @@ function checkBounds(bounds) {
  * outer iteration uses the chosen global method (differential evolution, particle swarm, simulated annealing,
  * genetic algorithm) or Nelder–Mead; later iterations are warm-started with Nelder–Mead. Mixed-integer designs
  * are handled by `integer` flags (variables rounded inside the objective, i.e. a derivative-free MINLP heuristic).
+ * Stopping and feasibility use the same tolerance: the outer loop ends when the largest constraint violation is
+ * within `feasTol` and the objective has changed by less than tol·(1 + |f|) since the previous outer iteration,
+ * and `feasible` is reported against that same `feasTol`. The multiplier method approaches an active constraint
+ * from the infeasible side with a residual that shrinks geometrically, so the iteration budget `outerIter` must
+ * be large enough for the residual to pass under `feasTol`; `converged` is false when the budget ran out first.
  * Ref: Hestenes (1969) and Powell (1969) (method of multipliers); Nocedal & Wright, Numerical Optimization, 2nd
  * ed., ch. 17; Storn & Price (1997) for DE.
  * @param {{objective: (x: number[]) => number, bounds: [number, number][], ineq?: ((x: number[]) => number)[],
  *   eq?: ((x: number[]) => number)[], method?: 'de' | 'pso' | 'sa' | 'ga' | 'nm', scheme?: 'auglag' | 'penalty',
  *   integer?: boolean[], x0?: number[], seed?: number, outerIter?: number, penalty?: number, tol?: number,
- *   maxGen?: number}} o constraints in the objective's natural units (scale them to order one for best behaviour)
- * @returns {{x: number[], f: number, feasible: boolean, maxViolation: number, ineqValues: number[],
+ *   feasTol?: number, maxGen?: number}} o constraints in the objective's natural units (scale them to order one
+ *   for best behaviour); outerIter = maximum number of outer iterations (default 30, the loop stops earlier on
+ *   convergence); tol = relative objective tolerance (default 1e-6); feasTol = largest accepted constraint
+ *   violation in the constraints' units (default max(tol, 1e-6))
+ * @returns {{x: number[], f: number, feasible: boolean, converged: boolean, maxViolation: number, ineqValues: number[],
  *   eqValues: number[], multipliers: {ineq: number[], eq: number[]}, history: {iter: number, f: number,
  *   maxViolation: number, penalty: number}[], innerHistory: number[]}}
  */
 export function constrainedMinimise({ objective, bounds, ineq = [], eq = [], method = 'de', scheme = 'auglag', integer, x0, seed = 1,
-  outerIter = 8, penalty = 10, tol = 1e-6, maxGen = 150 }) {
+  outerIter = 30, penalty = 10, tol = 1e-6, feasTol, maxGen = 150 }) {
   if (typeof objective !== 'function') throw new RangeError('objective must be a function');
   checkBounds(bounds);
+  requireNumber('outerIter', outerIter, { min: 1, integer: true }); requireNumber('tol', tol, { gt: 0 });
+  const fTol = feasTol ?? Math.max(tol, 1e-6);
+  requireNumber('feasTol', fTol, { gt: 0 });
   const n = bounds.length;
   const snap = (x) => (integer ? x.map((v, j) => (integer[j] ? Math.round(v) : v)) : x);
   let lam = new Array(ineq.length).fill(0); let nu = new Array(eq.length).fill(0); let mu = penalty;
@@ -51,7 +62,7 @@ export function constrainedMinimise({ objective, bounds, ineq = [], eq = [], met
   };
   const viol = (x) => { let v = 0; for (const g of ineq) v = Math.max(v, g(x)); for (const h of eq) v = Math.max(v, Math.abs(h(x))); return Math.max(0, v); };
   let x = x0 ? Array.from(x0) : bounds.map((b) => 0.5 * (b[0] + b[1]));
-  const history = []; let innerHistory = []; let prevViol = Infinity;
+  const history = []; let innerHistory = []; let prevViol = Infinity; let converged = false;
   for (let k = 0; k < outerIter; k++) {
     let r;
     if (k === 0 && method !== 'nm') {
@@ -70,13 +81,15 @@ export function constrainedMinimise({ objective, bounds, ineq = [], eq = [], met
       for (let i = 0; i < ineq.length; i++) lam[i] = Math.max(0, lam[i] + mu * ineq[i](xs));
       for (let j = 0; j < eq.length; j++) nu[j] += mu * eq[j](xs);
     }
-    if (v <= tol && k > 0 && Math.abs(history[k].f - history[k - 1].f) <= tol * (1 + Math.abs(history[k].f))) break;
-    if (ineq.length + eq.length === 0) break;
-    if (v > 0.25 * prevViol || scheme === 'penalty') mu *= scheme === 'penalty' ? 10 : 4;
+    if (v <= fTol && k > 0 && Math.abs(history[k].f - history[k - 1].f) <= tol * (1 + Math.abs(history[k].f))) { converged = true; break; }
+    if (ineq.length + eq.length === 0) { converged = true; break; }
+    // quadratic penalty: the residual on an active constraint is multiplier/mu, so mu grows only while the
+    // violation is above the tolerance (growing it further only worsens the conditioning of the inner problem)
+    if (scheme === 'penalty') { if (v > fTol) mu = Math.min(mu * 10, 1e14); } else if (v > 0.25 * prevViol && v > 0) mu = Math.min(mu * 4, 1e14);
     prevViol = v;
   }
   const xs = snap(x); const v = viol(xs);
-  return { x: xs, f: objective(xs), feasible: v <= Math.max(tol, 1e-6), maxViolation: v, ineqValues: ineq.map((g) => g(xs)),
+  return { x: xs, f: objective(xs), feasible: v <= fTol, converged, maxViolation: v, ineqValues: ineq.map((g) => g(xs)),
     eqValues: eq.map((h) => h(xs)), multipliers: { ineq: lam, eq: nu }, history, innerHistory };
 }
 

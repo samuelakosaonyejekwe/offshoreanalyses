@@ -344,17 +344,26 @@ export function layerThermalResistance({ rhoT, innerDiameter, thickness }) {
   return (rhoT / TWO_PI) * Math.log(1 + (2 * thickness) / innerDiameter);
 }
 
+// Upper end of the published curve for the SL/SA geometric factor (IEC 60287-2-1 Fig. 6).
+const SL_X_MAX = 0.15;
+
 /**
  * Geometric factor Ḡ for the fillers and bedding of SL and SA type cables (curve fit of IEC 60287-2-1 Fig. 6,
  * §4.1.3.2): Ḡ = 2π·(0.00022619 + 2.11429·X − 20.4762·X²) for 0 < X ≤ 0.03 and
  * Ḡ = 2π·(0.0142108 + 1.17533·X − 4.49737·X² + 10.6352·X³) for 0.03 < X ≤ 0.15,
  * where X is the thickness of material between sheaths and armour as a fraction of the sheath outer diameter.
  * Then T2 = ρT/(6π)·Ḡ.
+ * Validity: the published curve ends at X = 0.15 and the fit is not extrapolated; a thicker bedding needs T2 from
+ * a field solution, supplied directly.
  * @param {number} X thickness ratio (0 … 0.15)
  * @returns {number} geometric factor Ḡ
  */
 export function geometricFactorSL(X) {
-  if (!(X >= 0 && X <= 0.15)) throw new RangeError('X: thickness ratio must be within 0–0.15 (supply T2 directly otherwise)');
+  if (!(X >= 0 && X <= SL_X_MAX)) {
+    throw new RangeError(`X: thickness ratio ${Number.isFinite(X) ? X.toPrecision(3) : X} is outside 0–${SL_X_MAX}, the range of `
+      + 'IEC 60287-2-1 Fig. 6 for the bedding of SL-type cables (thickness between sheaths and armour over sheath outer diameter); '
+      + 'reduce the bedding thickness or supply T2 directly');
+  }
   if (X === 0) return 0;
   if (X <= 0.03) return TWO_PI * (0.00022619 + 2.11429 * X - 20.4762 * X * X);
   return TWO_PI * (0.0142108 + 1.17533 * X - 4.49737 * X * X + 10.6352 * X * X * X);
@@ -750,6 +759,11 @@ export function cableGeometry(c) {
     if (cores === 3) {
       // Fillers between the cores are treated with the bedding through the geometric factor Ḡ.
       if (c.T2 === undefined) {
+        if (tb > SL_X_MAX * coreDiameter) {
+          throw new RangeError(`cable.bedding.thickness: ${(tb * 1e3).toFixed(1)} mm exceeds ${SL_X_MAX} × core diameter `
+            + `(${(SL_X_MAX * coreDiameter * 1e3).toFixed(1)} mm), the limit of the IEC 60287-2-1 Fig. 6 geometric factor for `
+            + 'three-core SL-type cables; reduce the bedding thickness or supply cable.T2 (K·m/W) directly');
+        }
         T2 = ((bed ? bed.rhoT : 0) / (6 * Math.PI)) * geometricFactorSL(tb / coreDiameter) + Tjacket / 3;
       }
     } else {

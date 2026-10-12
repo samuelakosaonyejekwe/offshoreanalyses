@@ -192,12 +192,20 @@ export function classifyJoint(braces) {
   return out;
 }
 
+// Utilisation reported when the chord load factor leaves the joint without capacity.
+const OVERSTRESSED_UC = 1000;
+
 /**
  * Allowable capacities and interaction check of a simple tubular joint (API RP 2A-WSD §4.3):
  * Pa = Qu Qf Fyc T²/(FS sinθ), Ma = Qu Qf Fyc T² d/(FS sinθ) (Eq. 4.3-1a/b); interaction
  * |P/Pa| + (M/Ma)²ipb + |M/Ma|opb ≤ 1.0 (Eq. 4.3-5); minimum capacity: the joint should develop at least 50 % of the
  * effective strength of the brace (§4.2.3). Mixed classification uses the weighted average of the K, X and Y axial
  * capacities (§4.3.2). Fyc is limited to 0.8 of the chord tensile strength when `fuChord` is given.
+ * Overstressed chord: Qf = 1 + C1 (FS Pc/Py) − C2 (FS Mipb/Mp) − C3 A² turns zero and then negative when the
+ * chord's own utilisation A is high enough. A negative factor would give negative capacities and, through
+ * |P|/Pa, a negative — apparently safe — utilisation. The joint has no capacity left in that state: Qf is
+ * floored at zero, the affected capacities are zero, the corresponding utilisation terms and the interaction
+ * value are set to 1000 (a large finite number that ranks and plots), and `chordOverstressed` is true.
  * @param {object} o
  * @param {number} o.D chord outer diameter [m]
  * @param {number} o.T chord wall thickness [m]
@@ -216,7 +224,9 @@ export function classifyJoint(braces) {
  * @param {number} [o.FS=1.6] safety factor [-]
  * @param {number} [o.braceStrength] effective brace strength for the 50 % rule [N]; default A_brace·Fyb
  * @returns {{geometry:object, Qu:object, Qf:object, Pa:number, MaIpb:number, MaOpb:number, uc:number, ucAxial:number, ucIpb:number, ucOpb:number,
- *   minimumCapacity:{required:number, provided:number, ok:boolean}, checks:Array, warnings:string[]}} capacities [N, N·m], utilisations [-]
+ *   minimumCapacity:{required:number, provided:number, ok:boolean}, checks:Array, warnings:string[], chordOverstressed:boolean}}
+ *   capacities [N, N·m] (never negative), utilisations [-] (finite); Qf as floored at zero; chordOverstressed = a
+ *   chord load factor was not positive
  */
 export function apiJointCheck({
   D, T, d, t, thetaDeg, fyChord, fuChord, fyBrace, classification = { Y: 1 }, gap, P = 0, Mipb = 0, Mopb = 0, chord = {},
@@ -239,6 +249,7 @@ export function apiJointCheck({
   const base = Fyc * T * T / (FS * Math.sin(theta));
   const Qu = {}; const Qf = {};
   let Pa = 0;
+  let chordOverstressed = false;
   for (const [ty, fr] of [['K', fK], ['X', fX], ['Y', fY]]) {
     if (!(fr > 0)) continue;
     let Qg = 1;
@@ -247,29 +258,36 @@ export function apiJointCheck({
       Qg = qGap({ gapRatio: gap / D, gamma, tau, fyBrace: fyb, fyChord: Fyc });
     }
     Qu[ty] = quApi({ type: ty, load, beta, gamma, Qg });
-    Qf[ty] = qfApi({ type: ty, load: 'axial', beta, Pc: chord.P || 0, Mipb: chord.Mipb || 0, Mopb: chord.Mopb || 0, Py, Mp, FS }).Qf;
+    Qf[ty] = Math.max(qfApi({ type: ty, load: 'axial', beta, Pc: chord.P || 0, Mipb: chord.Mipb || 0, Mopb: chord.Mopb || 0, Py, Mp, FS }).Qf, 0);
+    if (!(Qf[ty] > 0)) chordOverstressed = true;
     Pa += (fr / fsum) * Qu[ty] * Qf[ty] * base;
   }
   Qu.ipb = quApi({ type: 'Y', load: 'ipb', beta, gamma });
   Qu.opb = quApi({ type: 'Y', load: 'opb', beta, gamma });
-  Qf.moment = qfApi({ type: 'Y', load: 'moment', beta, Pc: chord.P || 0, Mipb: chord.Mipb || 0, Mopb: chord.Mopb || 0, Py, Mp, FS }).Qf;
+  Qf.moment = Math.max(qfApi({ type: 'Y', load: 'moment', beta, Pc: chord.P || 0, Mipb: chord.Mipb || 0, Mopb: chord.Mopb || 0, Py, Mp, FS }).Qf, 0);
+  if (!(Qf.moment > 0)) chordOverstressed = true;
   const MaIpb = Qu.ipb * Qf.moment * base * d;
   const MaOpb = Qu.opb * Qf.moment * base * d;
-  if (!(Pa > 0) || !(MaIpb > 0)) warnings.push('Chord utilisation is so high that the chord load factor Qf is not positive.');
-  const ucAxial = Math.abs(P) / Pa;
-  const ucIpb = Math.abs(Mipb) / MaIpb;
-  const ucOpb = Math.abs(Mopb) / MaOpb;
-  const uc = ucAxial + ucIpb * ucIpb + ucOpb;
+  if (chordOverstressed) {
+    warnings.push('Chord utilisation is so high that the chord load factor Qf is not positive: the joint has no capacity '
+      + `and the utilisation is reported as ${OVERSTRESSED_UC}.`);
+  }
+  // a capacity of zero cannot carry anything: the term is the overstress marker, not a division by zero
+  const term = (load, cap) => (cap > 0 ? Math.abs(load) / cap : OVERSTRESSED_UC);
+  const ucAxial = term(P, Pa);
+  const ucIpb = term(Mipb, MaIpb);
+  const ucOpb = term(Mopb, MaOpb);
+  const uc = chordOverstressed ? OVERSTRESSED_UC : ucAxial + ucIpb * ucIpb + ucOpb;
   const dbi = d - 2 * t;
   const braceCap = braceStrength === undefined ? Math.PI / 4 * (d * d - dbi * dbi) * fyb : pos('braceStrength', braceStrength);
   // the 50 % rule compares ultimate values: allowable × FS against half of the brace strength
   const provided = Pa * FS;
   const checks = [
     { name: 'Joint interaction', uc, ref: 'API RP 2A-WSD Eq. 4.3-5' },
-    { name: 'Minimum joint capacity (50 % of brace strength)', uc: 0.5 * braceCap / provided, ref: 'API RP 2A-WSD §4.2.3' },
+    { name: 'Minimum joint capacity (50 % of brace strength)', uc: provided > 0 ? 0.5 * braceCap / provided : OVERSTRESSED_UC, ref: 'API RP 2A-WSD §4.2.3' },
   ];
   return {
     geometry: geo, Qu, Qf, Pa, MaIpb, MaOpb, uc, ucAxial, ucIpb, ucOpb,
-    minimumCapacity: { required: 0.5 * braceCap, provided, ok: provided >= 0.5 * braceCap }, checks, warnings,
+    minimumCapacity: { required: 0.5 * braceCap, provided, ok: provided >= 0.5 * braceCap }, checks, warnings, chordOverstressed,
   };
 }

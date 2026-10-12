@@ -434,35 +434,94 @@ export function rotorAveragingFilter(f, o) {
   return out;
 }
 
+// Synthesis step of rotorEffectiveTurbulence [s]: Nyquist 5 Hz, far above the band the rotor average passes.
+const RET_DT0 = 0.1;
+
 /**
  * Rotor-effective turbulent wind speed generated directly in the frequency domain: single-point Kaimal spectrum
  * multiplied by the rotor-averaging filter, random phases. A fast substitute for the grid synthesis when only the
  * rotor-effective speed is needed (no information on shear fluctuation or blade-resolved turbulence).
+ *
+ * The realisation depends on the seed and the duration only, not on the output step. The series is synthesised
+ * on a fixed grid — step 0.1 s, length the next power of two covering the duration (so the inverse FFT is a
+ * radix-2 transform whatever the request), frequencies m/T0 with T0 that padded length — and then resampled to
+ * `dt`: steps of 0.1/2^k s by zero-padding the spectrum (exact band-limited interpolation), multiples of the
+ * synthesis step by picking samples, anything else by linear interpolation of the next finer 0.1/2^k s series.
+ * Two runs that differ only in dt therefore see the same wind, which is what a time-step convergence check needs.
+ * The returned window is recentred on Vhub and rescaled to the variance of the whole synthesised period (the
+ * spectral sum), both evaluated on the 0.1 s synthesis grid; when duration/0.1 s is a power of two the window is
+ * the whole period and neither correction does anything.
  * @param {object} o
  * @param {number} o.Vhub [m/s] @param {number} o.sigma1 [m/s] @param {number} o.hubHeight [m] @param {number} o.R [m]
  * @param {number} o.duration [s] @param {number} o.dt [s] @param {number} o.seed
  * @param {boolean} [o.scaleToSigma=true] scale so that the underlying point spectrum carries sigma1^2 within the
  *   represented band (see synthesizeWindField)
- * @returns {{t:Float64Array, u:Float64Array, sigmaEff:number}} speed (mean Vhub) [m/s]; standard deviation of the
- *   rotor-effective fluctuation [m/s]
+ * @returns {{t:Float64Array, u:Float64Array, sigmaEff:number}} speed (mean Vhub) [m/s] at t = 0, dt, 2 dt ...
+ *   (an even number of samples, round(duration/dt)); sample standard deviation of the returned series [m/s]
+ *   (equal to the root of the spectral sum on the 0.1 s grid, and within a few 1e-4 of it at other steps)
  */
 export function rotorEffectiveTurbulence(o) {
+  need(o && o.duration > 0 && o.dt > 0, 'duration/dt', 'must be > 0');
   const kp = kaimalParams({ hubHeight: o.hubHeight, sigma1: o.sigma1 });
   const n = evenCount(o.duration, o.dt);
-  const df = 1 / (n * o.dt);
-  const fr = new Float64Array(n / 2);
-  for (let m = 0; m < n / 2; m++) fr[m] = m * df;
+  // fixed synthesis grid
+  let n0 = 2;
+  while (n0 * RET_DT0 < o.duration * (1 - 1e-12)) n0 *= 2;
+  const df = 1 / (n0 * RET_DT0);
+  const half = n0 / 2;
+  const fr = new Float64Array(half);
+  for (let m = 0; m < half; m++) fr[m] = m * df;
   const H2 = rotorAveragingFilter(fr, { R: o.R, Vhub: o.Vhub, Lc: kp.Lc });
+  const Sk = new Float64Array(half);
   let band = 0;
-  for (let m = 1; m < n / 2; m++) band += kaimalSpectrum(m * df, { Vhub: o.Vhub, sigma: o.sigma1, L: kp.u.L }) * df;
+  for (let m = 1; m < half; m++) { Sk[m] = kaimalSpectrum(fr[m], { Vhub: o.Vhub, sigma: o.sigma1, L: kp.u.L }); band += Sk[m] * df; }
   const sc2 = (o.scaleToSigma ?? true) && band > 0 ? o.sigma1 * o.sigma1 / band : 1;
-  const s = synthesizeSeries({
-    spectrum: (f) => sc2 * kaimalSpectrum(f, { Vhub: o.Vhub, sigma: o.sigma1, L: kp.u.L }) * H2[Math.min(n / 2 - 1, Math.round(f / df))],
-    duration: o.duration, dt: o.dt, seed: o.seed,
-  });
-  const u = new Float64Array(n);
-  for (let i = 0; i < n; i++) u[i] = o.Vhub + s.x[i];
-  return { t: s.t, u, sigmaEff: Math.sqrt(s.variance) };
+  // finer output grid by zero-padding: step RET_DT0 / pad <= dt
+  let pad = 1;
+  while (RET_DT0 / pad > o.dt * (1 + 1e-9)) pad *= 2;
+  const nf = n0 * pad;
+  const dtf = RET_DT0 / pad;
+  const rng = makeRng(o.seed ?? 1);
+  const re = new Float64Array(nf); const im = new Float64Array(nf);
+  for (let m = 1; m < half; m++) {
+    const amp = Math.sqrt(0.5 * sc2 * Sk[m] * H2[m] * df) * nf;
+    const ph = TWO_PI * rng.next();
+    re[m] = amp * Math.cos(ph); im[m] = amp * Math.sin(ph);
+    re[nf - m] = re[m]; im[nf - m] = -im[m];
+  }
+  const xf = ifft(re, im).re;
+  // Mean and variance of the window, taken on the synthesis grid so that they are the same for every output step.
+  // The window is recentred on Vhub and rescaled to the variance of the full period (the spectral sum), which a
+  // window shorter than the period would otherwise miss in part.
+  const nWin = Math.max(2, Math.min(n0, Math.round(o.duration / RET_DT0)));
+  let mean = 0; let target = 0;
+  for (let i = 0; i < nWin; i++) mean += xf[i * pad];
+  mean /= nWin;
+  let varW = 0;
+  for (let i = 0; i < nWin; i++) { const d = xf[i * pad] - mean; varW += d * d; }
+  varW /= nWin;
+  for (let m = 1; m < half; m++) target += sc2 * Sk[m] * H2[m] * df;
+  const gain = varW > 0 ? Math.sqrt(target / varW) : 1;
+  const u = new Float64Array(n); const t = new Float64Array(n);
+  const ratio = o.dt / dtf;
+  const step = Math.round(ratio);
+  const whole = Math.abs(ratio - step) < 1e-9 * ratio;
+  for (let i = 0; i < n; i++) {
+    t[i] = i * o.dt;
+    let v;
+    if (whole) v = xf[(i * step) % nf];
+    else {
+      const x = i * ratio; const j = Math.floor(x); const w = x - j;
+      v = xf[j % nf] + w * (xf[(j + 1) % nf] - xf[j % nf]);
+    }
+    u[i] = o.Vhub + gain * (v - mean);
+  }
+  let mu = 0;
+  for (let i = 0; i < n; i++) mu += u[i];
+  mu /= n;
+  let vs = 0;
+  for (let i = 0; i < n; i++) vs += (u[i] - mu) ** 2;
+  return { t, u, sigmaEff: Math.sqrt(vs / n) };
 }
 
 /**

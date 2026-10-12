@@ -121,3 +121,26 @@ test('Rayleigh damping: coefficients reproduce the target ratios; mass matrices 
   const sys = buildFrameSystem(beam(2, 'pinned', 'pinned'));
   near(frameMass(sys).structuralMass, m * L, 1e-12);
 });
+
+test('clustered modes: 12 near-identical cantilever columns (24 near-equal first modes) converge in a few sweeps to the closed form', () => {
+  // column c has height H_c = 10 (1 + 0.001 c/12); first cantilever mode f = 1.8751² /(2π H²) √(EI/m), twice per
+  // column (two bending planes). The four lowest modes are the two tallest columns.
+  const N = 12; const ne = 4;
+  const nodes = []; const members = []; const supports = [];
+  const H = (c) => 10 * (1 + 0.001 * c / N);
+  for (let c = 0; c < N; c++) {
+    const b = nodes.length;
+    for (let i = 0; i <= ne; i++) { nodes.push([4 * c, 0, H(c) * i / ne]); if (i < ne) members.push({ a: b + i, b: b + i + 1, section: tube }); }
+    supports.push({ node: b, fix: 'fixed' });
+  }
+  const r = modalAnalysis({ nodes, members, supports }, { nModes: 4, shearDeformation: false });
+  assert.ok(r.converged);
+  assert.ok(r.iterations > 0 && r.iterations <= 25, `sweeps ${r.iterations}`);
+  const f = (c) => 1.875104 ** 2 / (2 * Math.PI * H(c) ** 2) * Math.sqrt(EI / m);
+  // rotary inertia of the consistent mass and the 4-element mesh keep the result within 0.1 % of Euler–Bernoulli
+  near(r.frequencies[0], f(11), 1e-3); near(r.frequencies[1], f(11), 1e-3);
+  near(r.frequencies[2], f(10), 1e-3); near(r.frequencies[3], f(10), 1e-3);
+  // the pair of a round column is exactly degenerate and neighbouring columns differ by 2 × 0.001/12 = 1.67e-4
+  near(r.frequencies[1], r.frequencies[0], 1e-8);
+  near(r.frequencies[0] / r.frequencies[2], (H(10) / H(11)) ** 2, 1e-7);
+});

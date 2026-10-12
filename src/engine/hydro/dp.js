@@ -41,7 +41,13 @@ function inSector(a, sector) {
  *    at Tmax in its current direction, a tunnel/fixed thruster at its limit, an azimuth thruster pointing into
  *    a forbidden sector constrained to the nearest sector edge) and the remaining demand is re-allocated,
  *    until no limits are violated or no free thrusters remain. If the demand cannot be met, the largest
- *    achievable fraction of it (same direction, by bisection) is allocated and `feasible` is false.
+ *    achievable fraction of it (same direction, resolved to 1e-4 of the demand) is allocated and `feasible` is
+ *    false. That search bisects on the fraction (the feasibility of the active-set allocation is not a smooth
+ *    function of the demand, so it cannot be extrapolated) and costs about log2(1/fractionTol) further
+ *    allocations, 14 at the default resolution. Callers that only need to know whether the demand can be met
+ *    pass `fraction: false`: the search is skipped and the saturated allocation of the full demand is returned
+ *    with demandFraction = NaN — one allocation instead of 15 (dpCapability does this). A coarser `fractionTol`
+ *    shortens the search when the fraction is wanted but not to four digits.
  * Reference: Fossen (2011) Handbook of Marine Craft Hydrodynamics and Motion Control §12.3 (control
  * allocation, generalised inverse and constrained allocation); Sørdalen (1997) Optimal thrust allocation for
  * marine vessels, Control Eng. Practice 5(9). The bounded method is feasible-seeking, not a certified global
@@ -54,21 +60,25 @@ function inSector(a, sector) {
  * @param {{Fx:number, Fy:number, Mz:number}} o.demand N, N, N·m (vessel frame)
  * @param {string} [o.method='bounded']
  * @param {number[]} [o.disabled] indices of failed thrusters
+ * @param {boolean} [o.fraction=true] when the demand is infeasible, search for the largest deliverable fraction
+ * @param {number} [o.fractionTol=1e-4] resolution of that search, as a fraction of the demand
  * @returns {{thrusters:{name:string, T:number, angleDeg:number, Tx:number, Ty:number, utilisation:number}[],
  *   achieved:{Fx:number, Fy:number, Mz:number}, residual:{Fx:number, Fy:number, Mz:number}, feasible:boolean,
  *   maxUtilisation:number, demandFraction:number, iterations:number}} thrust N (signed for tunnel/fixed), direction
  *   deg, components N; demandFraction = delivered fraction of the demand (1 when feasible)
  */
-export function allocateThrust({ thrusters, demand, method = 'bounded', disabled = [] }) {
+export function allocateThrust({ thrusters, demand, method = 'bounded', disabled = [], fraction = true, fractionTol = 1e-4 }) {
   const th = checkThrusters(thrusters);
   if (!demand || !Number.isFinite(demand.Fx + demand.Fy + demand.Mz)) throw new RangeError('demand must have finite Fx, Fy, Mz');
   if (method !== 'bounded' && method !== 'pinv') throw new RangeError("method must be 'bounded' or 'pinv'");
+  if (!(fractionTol > 0 && fractionTol < 1)) throw new RangeError('fractionTol must lie in (0, 1)');
   const full = allocateCore(th, demand, method, disabled);
   full.demandFraction = 1;
   if (method === 'pinv' || full.feasible) return full;
+  if (!fraction) { full.demandFraction = NaN; return full; }
   // demand beyond the capability: deliver the largest achievable fraction of it, in the demanded direction
   let lo = 0; let hi = 1; let best = null;
-  for (let i = 0; i < 30 && hi - lo > 1e-4; i++) {
+  for (let i = 0; i < 30 && hi - lo > fractionTol; i++) {
     const f = 0.5 * (lo + hi);
     const r = allocateCore(th, { Fx: f * demand.Fx, Fy: f * demand.Fy, Mz: f * demand.Mz }, method, disabled);
     if (r.feasible) { lo = f; best = r; } else hi = f;
@@ -221,10 +231,16 @@ export function dpCapability({ thrusters, envForce, directionsDeg, vMax = 50, fa
   needPos(vMax, 'vMax');
   if (!(maxUtilisation > 0 && maxUtilisation <= 1)) throw new RangeError('maxUtilisation must be within (0, 1]');
   const th = thrusters.map((t) => ({ ...t, Tmax: t.Tmax * maxUtilisation, Tmin: t.Tmin === undefined ? undefined : t.Tmin * maxUtilisation }));
+  const checked = checkThrusters(th);
   const dirs = directionsDeg || Array.from({ length: 36 }, (_, i) => 10 * i);
   const cases = failures === 'single' ? th.map((_, i) => [i]) : failures === 'none' ? [] : failures;
   const limit = (dir, disabled) => {
-    const ok = (v) => allocateThrust({ thrusters: th, demand: envForce(v, dir), disabled }).feasible;
+    // only feasibility matters here: the search for the deliverable fraction of an infeasible demand is skipped
+    const ok = (v) => {
+      const demand = envForce(v, dir);
+      if (!demand || !Number.isFinite(demand.Fx + demand.Fy + demand.Mz)) throw new RangeError('envForce must return finite Fx, Fy, Mz');
+      return allocateCore(checked, demand, 'bounded', disabled).feasible;
+    };
     if (ok(vMax)) return vMax;
     if (!ok(0)) return 0;
     let lo = 0; let hi = vMax;

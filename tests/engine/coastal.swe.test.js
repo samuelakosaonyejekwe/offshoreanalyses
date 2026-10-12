@@ -275,3 +275,42 @@ test('input validation', () => {
   assert.throws(() => solveSwe1d({ dx: 1, zb, eta0: 1, tEnd: 1, left: { type: 'sponge' } }), RangeError);
   assert.throws(() => damBreakAnalytic({ hL: 1, hR: 2, x: 0, t: 1 }), RangeError);
 });
+
+test('discharge boundary on an initially dry bed delivers exactly the prescribed hydrograph volume', () => {
+  // sin² hydrograph of peak q0 over T: ∫q dt = q0·T/2 = 0.05 × 3600 / 2 = 90 m²
+  const T = 3600; const q0 = 0.05; const n = 50; const dx = 20;
+  const hydro = (t) => (t <= 0 || t >= T ? 0 : q0 * Math.sin((Math.PI * t) / T) ** 2);
+  for (const slope of [0, 0.001]) {
+    const zb = Float64Array.from({ length: n }, (_, i) => slope * (i + 0.5) * dx);
+    const r = solveSwe1d({ dx, zb, h0: new Float64Array(n), tEnd: 1.5 * T, manning: 0.03, left: { type: 'discharge', q: hydro },
+      right: { type: 'wall' }, dtMax: 5 });
+    const exact = (q0 * T) / 2;
+    assert.ok(Math.abs(r.volume.boundaryNet / exact - 1) < 1e-5, `boundaryNet ${r.volume.boundaryNet} vs ${exact}`);
+    assert.ok(Math.abs((r.volume.final - r.volume.initial) / exact - 1) < 1e-5);
+    assert.ok(Math.abs(r.volume.error) < 1e-9 && r.volume.clipped === 0);
+    assert.ok(r.dtMax <= 5 + 1e-9);
+  }
+  // constant inflow on a wet bed: boundaryNet = q·t to round-off
+  const w = solveSwe1d({ dx: 1, zb: new Float64Array(200), h0: new Float64Array(200).fill(1), tEnd: 60,
+    left: { type: 'discharge', q: 0.5 }, right: { type: 'wall' } });
+  assert.ok(Math.abs(w.volume.boundaryNet - 30) < 1e-10);
+});
+
+test('dry start with a time-varying inflow: the first step is limited without output times, and dtMax caps every step', () => {
+  // linear ramp to 0.5 m²/s over 30 s then constant to 60 s: ∫q dt = 0.5 × (15 + 30) = 22.5 m²
+  const n = 200; const zb = new Float64Array(n);
+  const base = { dx: 1, zb, h0: new Float64Array(n), tEnd: 60, manning: 0.02,
+    left: { type: 'discharge', q: (t) => 0.5 * Math.min(t / 30, 1) }, right: { type: 'wall' } };
+  const r = solveSwe1d(base);
+  assert.ok(r.steps > 100, `steps ${r.steps}`);
+  // dry-bed limit cfl·dx/√(g·dx) = 0.45 / √9.80665 = 0.1437 s; later steps follow the Courant condition
+  assert.ok(r.dtMax < 1, `dtMax ${r.dtMax}`);
+  assert.ok(Math.abs(r.volume.boundaryNet - 22.5) < 1e-3, `boundaryNet ${r.volume.boundaryNet}`);
+  const c = solveSwe1d({ ...base, dtMax: 0.05 });
+  assert.ok(c.dtMax <= 0.05 + 1e-9 && c.steps >= 1199, `dtMax ${c.dtMax}, steps ${c.steps}`);
+  assert.ok(Math.abs(c.volume.boundaryNet - 22.5) < 1e-4);
+  assert.throws(() => solveSwe1d({ ...base, dtMax: 0 }), /dtMax/);
+  // a closed dry basin has nothing to resolve: one step to the end, as before
+  const d = solveSwe1d({ dx: 1, zb, h0: new Float64Array(n), tEnd: 10 });
+  assert.equal(d.steps, 1);
+});

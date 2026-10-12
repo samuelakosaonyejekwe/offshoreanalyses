@@ -128,8 +128,12 @@ export function catenaryInitialGuess({ X, Z, L, w, EA }) {
 
 /**
  * Solve X(H, V) = X, Z(H, V) = Z for the fairlead tension components of a line whose end position is given by a
- * forward (shooting) function. Damped Newton in (ln H, V) with a central-difference Jacobian; if Newton stalls a
- * nested bisection is used (Z is monotonic in V at fixed H, and X is monotonic in H along Z = const), followed by
+ * forward (shooting) function. Damped Newton in (ln H, V) with a central-difference Jacobian. A step can carry
+ * the iterate into the region where the whole line lies on the seabed (V below the lift-off value): there the
+ * end position does not depend on V, the Jacobian is singular and Newton has no direction. The iterate is then
+ * put back on the curve Z(H, V) = Z at its current H by a one-dimensional bisection in V (Z is monotonic in V)
+ * and Newton continues from that point, where the line reaches the fairlead and the Jacobian is regular. Only if
+ * that also fails is the nested bisection used (X is monotonic in H along Z = const), followed by
  * a Newton polish. A slack line (X not larger than the span reachable with zero horizontal tension) is detected
  * and returned with H = Hmin and slack = true.
  * @param {(H:number, V:number, out:{X:number,Z:number}) => void} fwd forward function filling out.X, out.Z [m]
@@ -185,6 +189,7 @@ export function solveShooting(fwd, o) {
     fwd(Math.exp(lh), V, out); evals++;
     let r1 = out.X - X, r2 = out.Z - Z;
     let f = hypot(r1, r2);
+    let restores = 0;
     for (let it = 0; it < maxIter && f > tol; it++) {
       const eh = 1e-6;
       const dv = 1e-6 * Math.max(Math.abs(V), 1e-3 * scaleF);
@@ -196,7 +201,15 @@ export function solveShooting(fwd, o) {
       const a12 = (xq - out.X) / (2 * dv), a22 = (zq - out.Z) / (2 * dv);
       evals += 4;
       const det = a11 * a22 - a12 * a21;
-      if (!(Math.abs(det) > 0) || !Number.isFinite(det)) break;
+      // singular (or, relative to its entries, numerically singular) Jacobian: restore Z at this H and go on
+      const degenerate = !(Math.abs(det) > 1e-12 * (Math.abs(a11 * a22) + Math.abs(a12 * a21))) || !Number.isFinite(det);
+      if (degenerate) {
+        if (restores++ >= 4) break;
+        V = innerV(Math.exp(lh), Math.max(V, 0));
+        fwd(Math.exp(lh), V, out); evals++;
+        r1 = out.X - X; r2 = out.Z - Z; f = hypot(r1, r2);
+        continue;
+      }
       let dl = -(a22 * r1 - a12 * r2) / det;
       let dV = -(-a21 * r1 + a11 * r2) / det;
       if (Math.abs(dl) > 2.5) { const c = 2.5 / Math.abs(dl); dl *= c; dV *= c; }
@@ -300,7 +313,8 @@ function validate(o) {
  * @returns {object} H, V, T [N] and angle [rad from horizontal] at the fairlead; anchorH, anchorV, anchorT [N],
  *   anchorAngle [rad from horizontal] and upliftAngle [rad from the seabed]; groundedLength, suspendedLength
  *   (unstretched) [m]; touchdownX, touchdownZ [m]; stretchedLength [m]; stiffness = [[dH/dX, dH/dZ],
- *   [dV/dX, dV/dZ]] [N/m]; slack, converged flags; profile {s, x, z, T} when nProfile > 0.
+ *   [dV/dX, dV/dZ]] [N/m]; slack, converged flags; evaluations = forward (shooting) evaluations used by the
+ *   solve [-]; profile {s, x, z, T} when nProfile > 0.
  */
 export function solveCatenary(o) {
   validate(o);
@@ -329,7 +343,7 @@ export function solveCatenary(o) {
   const fwd = (H, V, out) => { forward(H, V, p, st); out.X = st.X; out.Z = st.Z; };
   const scaleF = wz * L;
 
-  let H, V, slack = false, residual = 0;
+  let H, V, slack = false, residual = 0, evaluations = 0;
   if (X <= 1e-10 * L && !(seabed && L > Zs)) {
     // Vertical line (taut, or hanging in a bight when there is no seabed): H = 0 and V follows from the
     // Z equation alone, which is monotonic in V.
@@ -353,7 +367,7 @@ export function solveCatenary(o) {
     const r = solveShooting(fwd, {
       X, Z: Zs, H0: g.H, V0: g.V, scaleL: L, scaleF, Hmax: 1e3 * (scaleF + EA), checkSlack,
     });
-    H = r.H; V = r.V; slack = r.slack; residual = r.residual;
+    H = r.H; V = r.V; slack = r.slack; residual = r.residual; evaluations = r.iterations;
   }
   forward(H, V, p, st);
 
@@ -394,7 +408,7 @@ export function solveCatenary(o) {
     touchdownX: grounded ? Math.min(st.Lbs * p.cosB, X) : 0, touchdownZ: grounded ? Math.min(st.Lbs * p.cosB, X) * p.tanB : 0,
     stretchedLength: st.Lbs + st.Ls + intT / EA,
     stiffness: [[k11, sg * k12], [sg * k21, k22]],
-    slack, converged: true, residual,
+    slack, converged: true, residual, evaluations,
     params: { ...p, H, V, Ls: st.Ls, LB: st.LB, V0: st.V0, Lbs: st.Lbs },
   };
   if (o.nProfile > 0) sol.profile = catenaryProfile(sol, o.nProfile);

@@ -182,3 +182,75 @@ test('invalid input throws RangeError naming the argument', () => {
   assert.throws(() => solveRodStatic({ sections: [{ length: -1, EA: 1, EI: 1, w: 0 }] }), /sections\[0\]\.length/);
   assert.throws(() => solveRodStatic({ sections: [] }), RangeError);
 });
+
+test('seabed friction is active with mu alone (kt defaults to kn) and off with kt = 0', () => {
+  // as the pulled on-bottom line above: mobilised length F/(μ w) = 40e3/(0.5 × 1000) = 80 m
+  const w = 1000, mu = 0.5, L = 200, F = 40e3;
+  const base = { sections: [{ length: L, EA: 1e9, EI: 1e4, w }], nElem: 200, endA: { x: 0, z: 0 }, endB: { Fx: F }, nSteps: 10 };
+  const r = solveRodStatic({ ...base, seabed: { z: 0, kn: 1e6, mu } });
+  assert.ok(rel(r.Te[160], F - mu * w * 40) < 0.03, `${r.Te[160]}`);
+  assert.ok(Math.abs(r.Te[60]) < 0.03 * F, `tension beyond the mobilised length ${r.Te[60]}`);
+  assert.ok(rel(r.friction[190], -mu * w) < 0.01);
+  // identical to giving kt = kn explicitly
+  const e = solveRodStatic({ ...base, seabed: { z: 0, kn: 1e6, mu, kt: 1e6 } });
+  assert.ok(Math.abs(e.Te[160] - r.Te[160]) < 1e-6 * F);
+  // kt = 0: frictionless, the whole pull reaches the fixed end
+  const f = solveRodStatic({ ...base, seabed: { z: 0, kn: 1e6, mu, kt: 0 } });
+  assert.ok(rel(f.Te[60], F) < 1e-3 && rel(-f.endA.Fx, F) < 1e-6);
+  assert.equal(f.friction[190], 0);
+  assert.throws(() => solveRodStatic({ ...base, seabed: { z: 0, kn: 1e6, mu: -0.1 } }), /seabed\.mu/);
+});
+
+test('harmonic response at touchdown: frozen contact peaks at the contact edge; touchdownSmoothing sweeps the static curvature', () => {
+  // steel catenary: w = 800 N/m, h = 300 m, H = 60 kN (a = 75 m), EI = 2e7 N·m² → λ = √(EI/H) = 18.3 m
+  const w = 800, h = 300, H = 60e3, a = H / w, EI = 2e7;
+  const S = Math.sqrt(h * (h + 2 * a)), Xs = a * Math.asinh(S / a), Lb = 250, L = S + Lb;
+  const r = solveRodStatic({
+    sections: [{ length: L, EA: 5e9, EI, w, m: 120, ma: 60, D: 0.3, Cdn: 1.0, Cdt: 0.01 }], nElem: 300,
+    endA: { x: 0, z: 0 }, endB: { x: Lb + Xs, z: h }, seabed: { z: 0, kn: 1e6 }, initial: 'cable',
+  });
+  assert.ok(r.converged);
+  const opts = { omega: 2 * Math.PI / 12, end: 'B', xAmp: 1.0 };
+  const frozen = rodHarmonicResponse(r, opts);
+  const travel = 1.5;
+  const sm = rodHarmonicResponse(r, { ...opts, touchdownSmoothing: { travel } });
+  assert.equal(sm.touchdown.length, 1);
+  const td = sm.touchdown[0];
+  assert.ok(Math.abs(td.s - Lb) < 3 * td.lambda, `touchdown at ${td.s}, grounded length ${Lb}`);
+  assert.ok(rel(td.lambda, Math.sqrt(EI / H)) < 0.05, `lambda ${td.lambda}`);
+  // the frozen arrays are returned unchanged
+  for (let k = 0; k < frozen.s.length; k++) assert.equal(sm.momentAmpFrozen[k], frozen.momentAmp[k]);
+  // frozen contact: the largest dynamic moment sits in the touchdown zone, concentrated at the contact edge
+  let kMax = 0; let inZone = [];
+  for (let k = 0; k < frozen.s.length; k++) {
+    if (frozen.momentAmp[k] > frozen.momentAmp[kMax]) kMax = k;
+    if (frozen.s[k] >= td.from && frozen.s[k] <= td.to) inZone.push(k);
+  }
+  assert.ok(Math.abs(kMax - td.node) <= 2, `frozen peak at node ${kMax}, touchdown node ${td.node}`);
+  // smoothed: half the range of the static |curvature| over s ± travel, checked at the touchdown node by hand
+  const kap = Array.from(r.curvature, Math.abs);
+  const ds = L / 300; let mn = Infinity; let mx = -Infinity;
+  for (let q = -4; q <= 4; q++) {
+    const x = (td.s + travel * q / 4) / ds; const i = Math.floor(x); const v = kap[i] + (kap[i + 1] - kap[i]) * (x - i);
+    mn = Math.min(mn, v); mx = Math.max(mx, v);
+  }
+  assert.ok(rel(sm.curvatureAmp[td.node], 0.5 * (mx - mn)) < 1e-9);
+  assert.ok(rel(sm.momentAmp[td.node], EI * 0.5 * (mx - mn)) < 1e-9);
+  // bounded by half the largest static curvature, and proportional to the travel while it is small
+  const smMax = Math.max(...inZone.map((k) => sm.momentAmp[k]));
+  assert.ok(smMax > 0 && smMax <= 0.5 * EI * Math.max(...kap) * (1 + 1e-9));
+  const half = rodHarmonicResponse(r, { ...opts, touchdownSmoothing: { travel: travel / 2 } });
+  const halfMax = Math.max(...inZone.map((k) => half.momentAmp[k]));
+  assert.ok(halfMax / smMax > 0.4 && halfMax / smMax < 0.6, `ratio ${halfMax / smMax}`);
+  // outside the zone nothing changes; tension is never touched
+  for (let k = 0; k < frozen.s.length; k++) {
+    if (frozen.s[k] < td.from || frozen.s[k] > td.to) assert.equal(sm.momentAmp[k], frozen.momentAmp[k]);
+    assert.equal(sm.tensionAmp[k], frozen.tensionAmp[k]);
+  }
+  // no travel, no bending variation in the zone
+  const zero = rodHarmonicResponse(r, { ...opts, touchdownSmoothing: { travel: 0 } });
+  assert.equal(zero.momentAmp[td.node], 0);
+  assert.equal(frozen.touchdown, undefined);
+  assert.throws(() => rodHarmonicResponse(r, { ...opts, touchdownSmoothing: { travel: -1 } }), /travel/);
+  assert.throws(() => rodHarmonicResponse(r, { ...opts, touchdownSmoothing: true }), /touchdownSmoothing/);
+});

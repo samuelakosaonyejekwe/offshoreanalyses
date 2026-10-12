@@ -202,3 +202,33 @@ test('API RP 2A-LRFD column curve and cosine interaction; dispatcher', () => {
   assert.equal(tubularMemberCheck({ section: g, fy, L, forces: { N } }).governing.ref.startsWith('ISO 19902'), true);
   assert.throws(() => tubularMemberCheck({ code: 'XYZ', section: g, fy, L, forces: {} }), RangeError);
 });
+
+test('beyond the Euler load the beam-column utilisation is large but finite and flagged (ISO, API LRFD, API WSD)', () => {
+  // D = 0.3 m, t = 10 mm, L = 30 m, K = 1: r = √(D² + d²)/4 = √(0.09 + 0.0784)/4 = 0.10259 m, KL/r = 292.4
+  // fe = π² E/(KL/r)² = π² × 2.05e11 / 85513 = 23.66 MPa; A = π/4 (0.3² − 0.28²) = 9.111e-3 m² → Ne = 215.6 kN
+  const base = { D: 0.3, t: 0.01, fy: 355e6, E, L: 30 };
+  const r = Math.sqrt(0.3 ** 2 + 0.28 ** 2) / 4; const A = Math.PI / 4 * (0.3 ** 2 - 0.28 ** 2);
+  const Ne = Math.PI ** 2 * E / (30 / r) ** 2 * A;
+  near(Ne, 215.6e3, 2e-3);
+  for (const fn of [isoTubularCheck, apiLrfdTubularCheck, apiWsdTubularCheck]) {
+    const below = fn({ ...base, N: -0.5 * Ne, My: 5e3 });
+    assert.equal(below.beyondEuler, false);
+    for (const mom of [5e3, 0]) {
+      const over = fn({ ...base, N: -1.5 * Ne, My: mom });
+      assert.equal(over.beyondEuler, true, fn.name);
+      for (const c of over.checks) assert.ok(Number.isFinite(c.uc), `${fn.name}: ${c.name} = ${c.uc}`);
+      assert.ok(Number.isFinite(over.governing.uc) && over.governing.uc > 1);
+      assert.ok(over.warnings.some((w) => /Euler/.test(w)));
+      if (mom > 0) assert.ok(over.governing.uc > 10 && over.governing.uc > 5 * below.governing.uc, `${fn.name}: ${over.governing.uc}`);
+    }
+    assert.equal(fn({ ...base, N: 1.5 * Ne, My: 5e3 }).beyondEuler, false);
+  }
+  // with hydrostatic pressure as well (ISO §13.4.3 path)
+  const h = isoTubularCheck({ ...base, N: -1.5 * Ne, My: 5e3, p: 0.2e6 });
+  assert.equal(h.beyondEuler, true);
+  for (const c of h.checks) assert.ok(Number.isFinite(c.uc), `${c.name} = ${c.uc}`);
+  // just below the Euler load the amplification is the code expression: 1/(1 − 0.9) = 10
+  const j = isoTubularCheck({ ...base, N: -0.9 * Ne, My: 5e3 });
+  const sb = 5e3 / j.strengths.Ze; const sc = 0.9 * Ne / A;
+  near(uc(j, 'Compression + bending (beam-column)'), 1.18 * sc / j.strengths.fc + 1.05 / j.strengths.fb * 0.85 * sb * 10, 1e-9);
+});

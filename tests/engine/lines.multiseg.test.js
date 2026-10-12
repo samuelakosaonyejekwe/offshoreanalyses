@@ -147,3 +147,26 @@ test('invalid definitions throw RangeError', () => {
   assert.throws(() => solveMultiSegment({ X: 10, Z: 5, segments: [] }), /segments/);
   assert.throws(() => solveMultiSegment({ X: 10, Z: 5, segments: [{ L: 10, w: 1, EA: 1e6 }], points: [{ junction: 1, weight: 1 }] }), /junction/);
 });
+
+test('nearly slack chain–wire–chain line: Newton recovers from the all-grounded region without the nested bisection', () => {
+  // 400 m chain (2500 N/m) + 450 m wire (600 N/m, CB 0.3) + 170 m chain (1900 N/m), fairlead 160 m above the anchor.
+  // The line is slack up to X = 860.03 m (860 m on the seabed + 160 m hanging). Just beyond, the starting guess
+  // sends the first Newton step below the lift-off value of V, where the end position does not depend on V
+  // (singular Jacobian); the nested bisection used before costs about 15 000 forward evaluations.
+  const line = compileLine({ segments: [{ L: 400, w: 2500, EA: 8e8, CB: 0 }, { L: 450, w: 600, EA: 6e8, CB: 0.3 }, { L: 170, w: 1900, EA: 8e8, CB: 0 }] });
+  for (const X of [870, 880]) {
+    const r = solveMultiSegment({ X, Z: 160, line });
+    assert.ok(!r.slack && r.converged);
+    assert.ok(r.evaluations < 1500, `X = ${X}: ${r.evaluations} forward evaluations`);
+    assert.ok(r.residual < 1e-8, `residual ${r.residual}`);
+    // vertical equilibrium of the suspended part: V = weight of the suspended length
+    assert.ok(r.groundedLength > 800 && r.groundedLength < 860);
+    assert.ok(r.H > 0 && r.V > 3.0e5 && r.V < 3.3e5);
+  }
+  // reference values of the nested-bisection path (unchanged to solver tolerance)
+  const a = solveMultiSegment({ X: 870, Z: 160, line });
+  assert.ok(Math.abs(a.H / 4934.7694 - 1) < 1e-6 && Math.abs(a.V / 308835.734 - 1) < 1e-8, `H ${a.H}, V ${a.V}`);
+  // a warm start from the neighbouring solution lands on the same answer
+  const b = solveMultiSegment({ X: 880, Z: 160, line, guess: { H: a.H, V: a.V } });
+  assert.ok(Math.abs(b.H / 13071.0308 - 1) < 1e-6);
+});

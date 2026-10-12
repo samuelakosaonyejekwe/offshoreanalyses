@@ -180,3 +180,47 @@ test('importanceSampling: small probability of a linear limit state (beta = 4, p
   close(auto.pf, withDp.pf, 1e-9 * pf + 1e-12);
   assert.throws(() => importanceSampling(g, vars, { designPoint: { R: 1 } }), /designPoint\.S/);
 });
+
+test('FORM on a kinked series limit state g = min(3 − u1, 3 − u2): finds β = 3 on a branch, not the corner at β = 3√2', () => {
+  // failure domain {u1 > 3} ∪ {u2 > 3}: nearest point (3, 0) or (0, 3), β = 3. From the origin the central
+  // difference averages the two branches and plain HL-RF lands on the corner (3, 3), β = 4.243, pf 100 times low.
+  const vars = { a: { dist: 'normal', mean: 0, std: 1 }, b: { dist: 'normal', mean: 0, std: 1 } };
+  const r = form((x) => Math.min(3 - x.a, 3 - x.b), vars);
+  assert.ok(r.converged);
+  assert.ok(Math.abs(r.beta - 3) < 1e-6, `beta ${r.beta}`);
+  assert.equal(r.nonSmooth, false);
+  assert.ok(r.restarts > 0);
+  assert.ok(Math.abs(Math.hypot(...r.u) - 3) < 1e-6 && Math.min(Math.abs(r.u[0]), Math.abs(r.u[1])) < 1e-6);
+  // with the restarts switched off the corner is still returned, but flagged as lying on a kink
+  const plain = form((x) => Math.min(3 - x.a, 3 - x.b), vars, { restarts: false });
+  assert.ok(Math.abs(plain.beta - 3 * Math.SQRT2) < 1e-6); assert.equal(plain.nonSmooth, true);
+  // unequal branches, kink away from the path: unchanged behaviour, no restarts
+  const s = form((x) => Math.min(3 - x.a, 3.2 - x.b), vars);
+  assert.ok(Math.abs(s.beta - 3) < 1e-6); assert.equal(s.restarts, 0); assert.equal(s.nonSmooth, false);
+});
+
+test('FORM with a zero central gradient at the origin (g = 3 − |u1| − 0.5|u2|) searches from displaced points: β = 3', () => {
+  const vars = { a: { dist: 'normal', mean: 0, std: 1 }, b: { dist: 'normal', mean: 0, std: 1 } };
+  const g = (x) => 3 - Math.abs(x.a) - 0.5 * Math.abs(x.b);
+  const r = form(g, vars);
+  assert.ok(r.converged && Math.abs(Math.abs(r.beta) - 3) < 1e-6, `beta ${r.beta}`);
+  assert.throws(() => form(g, vars, { restarts: false }), /zero or non-finite gradient/);
+  // a limit state that really does not depend on the variables still throws
+  assert.throws(() => form(() => 1, vars), /zero or non-finite gradient/);
+});
+
+test('FORM on a parallel-system corner g = max(3 − u1, 3 − u2): the design point is the kink itself and is flagged', () => {
+  // failure needs u1 > 3 and u2 > 3: nearest point (3, 3), β = 3√2; exact pf = Φ(−3)² = 1.82e-6
+  const vars = { a: { dist: 'normal', mean: 0, std: 1 }, b: { dist: 'normal', mean: 0, std: 1 } };
+  const r = form((x) => Math.max(3 - x.a, 3 - x.b), vars, { maxIter: 30 });
+  assert.ok(Math.abs(r.beta - 3 * Math.SQRT2) < 1e-5, `beta ${r.beta}`);
+  assert.equal(r.nonSmooth, true);
+});
+
+test('FORM on smooth limit states is unaffected by the kink handling: no restarts, same evaluation count', () => {
+  // R lognormal(mean 10, cov 0.1), S normal(5, 1)
+  const r = form((x) => x.R - x.S, { R: { dist: 'lognormal', mean: 10, cov: 0.1 }, S: { dist: 'normal', mean: 5, std: 1 } });
+  assert.ok(r.converged); assert.equal(r.restarts, 0); assert.equal(r.nonSmooth, false);
+  // one G at the start, then 2n per gradient and one per accepted step
+  assert.ok(r.evaluations <= 1 + (r.iterations + 1) * 4 + r.iterations * 12);
+});

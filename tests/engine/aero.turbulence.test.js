@@ -244,3 +244,33 @@ test('peak factor (Davenport) and gust factor by hand', () => {
   close(gustFactor(0.12, 3.5), 1.42, 1e-12);
   assert.throws(() => peakFactor(0.001, 10), RangeError);
 });
+
+test('rotorEffectiveTurbulence: the realisation depends on seed and duration only, not on the output time step', () => {
+  const o = { Vhub: 12, sigma1: 1.8, hubHeight: 100, R: 63, seed: 3, duration: 630 };
+  const a = rotorEffectiveTurbulence({ ...o, dt: 0.1 });
+  const b = rotorEffectiveTurbulence({ ...o, dt: 0.05 });
+  const c = rotorEffectiveTurbulence({ ...o, dt: 0.025 });
+  assert.equal(a.u.length, 6300); assert.equal(b.u.length, 12600); assert.equal(c.u.length, 25200);
+  // common instants carry the same wind speed
+  let d = 0;
+  for (let i = 0; i < 6300; i++) d = Math.max(d, Math.abs(a.u[i] - b.u[2 * i]), Math.abs(a.u[i] - c.u[4 * i]));
+  assert.ok(d < 1e-9, `largest difference at common instants ${d} m/s`);
+  // the finer series interpolates smoothly between them (band limited to 5 Hz): mid-points lie close to the mean of the neighbours
+  let e = 0;
+  for (let i = 0; i < 6299; i++) e = Math.max(e, Math.abs(b.u[2 * i + 1] - 0.5 * (a.u[i] + a.u[i + 1])));
+  assert.ok(e < 0.2, `largest mid-point deviation ${e} m/s`);
+  // a step that is not 0.1/2^k s is interpolated from the same synthesis; a coarser one picks its samples
+  const g = rotorEffectiveTurbulence({ ...o, dt: 0.04 });
+  for (const tq of [10, 100, 400]) close(g.u[Math.round(tq / 0.04)], c.u[Math.round(tq / 0.025)], 2e-3);
+  const h = rotorEffectiveTurbulence({ ...o, dt: 0.5 });
+  for (let i = 0; i < 1260; i += 97) close(h.u[i], a.u[5 * i], 1e-9);
+  // mean Vhub and the standard deviation of the spectral sum, whatever the step
+  let m = 0; for (const v of a.u) m += v; close(m / a.u.length, 12, 1e-9);
+  rel(a.sigmaEff, c.sigmaEff, 1e-3); assert.ok(a.sigmaEff > 0.4 * 1.8 && a.sigmaEff < 1.8);
+  // seed and duration do change it; the same call is reproducible
+  assert.ok(Math.abs(rotorEffectiveTurbulence({ ...o, seed: 4, dt: 0.1 }).u[500] - a.u[500]) > 1e-3);
+  assert.deepEqual(Array.from(rotorEffectiveTurbulence({ ...o, dt: 0.1 }).u.subarray(0, 50)), Array.from(a.u.subarray(0, 50)));
+  // a duration that is a power of two times 0.1 s is the whole period of the synthesis: exact spectral variance
+  const p2 = rotorEffectiveTurbulence({ ...o, duration: 819.2, dt: 0.1 });
+  assert.equal(p2.u.length, 8192); rel(Math.sqrt(variance(p2.u)), p2.sigmaEff, 1e-9);
+});

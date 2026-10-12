@@ -150,6 +150,7 @@ function forward(H, V, c) {
  *   means the sag bend would penetrate the seabed); stiffness [[dH/dX, dH/dZ], [dV/dX, dV/dZ]] [N/m];
  *   segments[] with name, Ttop, Tbottom [N], angleTop, angleBottom [rad from horizontal], Vtop, Vbottom [N],
  *   groundedLength, suspendedLength [m]; junctions[] with index, weight, Vabove, Vbelow [N]; slack flag;
+ *   evaluations = number of forward (shooting) evaluations used by the solve [-];
  *   profile {s, x, z, T, seg} when nProfile > 0.
  */
 export function solveMultiSegment(o) {
@@ -235,7 +236,7 @@ export function solveMultiSegment(o) {
     anchorH: aH, anchorV: aV, anchorT: hypot(aH, aV), upliftAngle: (aH > 0 || aV !== 0) ? Math.atan2(aV, aH) : 0,
     groundedLength: grounded, suspendedLength: suspended, touchdownX: Math.min(tdx, X),
     stretchedLength: c.Ltot + st.stretch, sagClearance: minClr === Infinity ? null : minClr,
-    stiffness: K, segments, junctions, slack: r.slack, converged: true, residual: r.residual,
+    stiffness: K, segments, junctions, slack: r.slack, converged: true, residual: r.residual, evaluations: r.iterations,
   };
   if (o.nProfile > 0) sol.profile = profile(c, H, X, Z, o.nProfile, r.slack);
   return sol;

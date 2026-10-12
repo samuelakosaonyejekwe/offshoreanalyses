@@ -242,3 +242,26 @@ test('PI loop in region 3 behaves like the designed second-order system: damped 
   assert.ok(un / pk < 0.35, `undershoot ratio ${un / pk}`);
   rel(r.rotorSpeed[8000], rotor.ratedRotorSpeed, 1e-3);
 });
+
+test('controllerFromRotor designs the pitch loop on region 3: gains near the NREL 5-MW baseline, not on the vanishing fine-pitch sensitivity', () => {
+  const d = cfg.design;
+  assert.equal(d.pitchDesign, 'region3');
+  // published baseline with its own polars: Kp = 0.0188 s, Ki = 0.0081, thetaK = 6.3 deg; this planform and BEM: about 0.026, 0.011, 7 deg
+  assert.ok(cfg.kp > 0.015 && cfg.kp < 0.035, `Kp ${cfg.kp}`);
+  assert.ok(cfg.ki > 0.006 && cfg.ki < 0.015, `Ki ${cfg.ki}`);
+  assert.ok(d.thetaKDeg > 4 && d.thetaKDeg < 10, `thetaK ${d.thetaKDeg} deg`);
+  rel(cfg.ki / cfg.kp, 0.6 / 1.4, 1e-12);
+  // the model s0 (1 + theta/thetaK) reproduces the sensitivity of the middle region-3 point and s0 is floored at 20 % of the cut-out value
+  const s = pitchSensitivity({ surface, ratedPowerAero: 5e6 / 0.944, ratedRotorSpeed: rotor.ratedRotorSpeed, pitchFineDeg: d.pitchFineDeg });
+  const iMid = Math.floor(s.U.length / 2); const last = s.dPdTheta[s.U.length - 1];
+  rel(d.dPdTheta0 * (1 + (s.pitchDeg[iMid] - d.pitchFineDeg) / d.thetaKDeg), s.dPdTheta[iMid], 1e-9);
+  rel(d.dPdTheta0, Math.min(s.dPdTheta0, 0.2 * last), 1e-12);
+  // the plain fit is kept for reference and is several times smaller in magnitude, with a thetaK near 1 deg
+  rel(d.dPdThetaFit0, s.dPdTheta0, 1e-12);
+  const fit = controllerFromRotor({ rotor, surface, pitchDesign: 'fit' });
+  rel(fit.design.dPdTheta0, s.dPdTheta0, 1e-12); rel(fit.thetaK, s.thetaK, 1e-12);
+  assert.ok(fit.kp > 3 * cfg.kp, `fit Kp ${fit.kp} vs region-3 Kp ${cfg.kp}`);
+  assert.throws(() => controllerFromRotor({ rotor, surface, pitchDesign: 'rated' }), RangeError);
+  // everything else in the configuration is independent of the pitch design
+  rel(fit.k, cfg.k, 1e-15); rel(fit.ratedTorque, cfg.ratedTorque, 1e-15);
+});

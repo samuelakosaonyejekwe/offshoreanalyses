@@ -124,3 +124,31 @@ test('group block failure in clay: perimeter shear plus base bearing versus sum 
   close(r.efficiency, 31.25 / 36);
   assert.equal(groupBlockCapacityClay({ B: 5, W: 5, L: 20, suShaft: 50e3, suBase: 50e3, nPiles: 9, Qsingle: 2e6 }).governs, 'individual');
 });
+
+test('loose sand: outside API Table 1 by default; allowLooseSand uses the lowest class and flags the result as screening', () => {
+  const profile = createProfile([{ type: 'sand', top: 0, thickness: 40, gammaSub: 9000, phiDeg: 28, Dr: 0.25 }]);
+  const pile = { profile, L: 20, D: 1.0, t: 0.025 };
+  assert.throws(() => axialCapacity(pile), (e) => e instanceof RangeError && /loose sand/.test(e.message) && /allowLooseSand/.test(e.message));
+  assert.throws(() => apiSandParameters({ type: 'sand', Dr: 0.1 }), RangeError);
+  const p = apiSandParameters({ type: 'sand', Dr: 0.25 }, { allowLooseSand: true });
+  assert.equal(p.beta, 0.29); assert.equal(p.fLim, 67e3); assert.equal(p.Nq, 12); assert.equal(p.qLim, 3e6);
+  assert.equal(p.screening, true); assert.match(p.warning, /loose sand/); assert.match(p.category, /medium-dense sand-silt/);
+  // hand calculation, lowest class: f = 0.29 σ′v = 0.29 × 9 z kPa = 2.61 z kPa (67 kPa limit not reached: 52.2 kPa at 20 m)
+  //   Qfo = π D ∫ f dz = π × 1.0 × 2.61 × 20²/2 = 1639.9 kN; q = 12 × 180 = 2160 kPa (< 3 MPa)
+  const c = axialCapacity({ ...pile, allowLooseSand: true });
+  assert.equal(c.screening, true); assert.equal(c.warnings.length, 1); assert.match(c.warnings[0], /Screening value only/);
+  close(c.Qfo, Math.PI * 1.0 * 2.61e3 * 200, 1e-9);
+  close(c.qTip, 12 * 180e3, 1e-12);
+  // medium-dense sand is unaffected by the option and carries no flag
+  const md = createProfile([{ type: 'sand', top: 0, thickness: 40, gammaSub: 9000, phiDeg: 33, Dr: 0.5 }]);
+  const a = axialCapacity({ ...pile, profile: md }); const b = axialCapacity({ ...pile, profile: md, allowLooseSand: true });
+  assert.equal(a.screening, false); assert.deepEqual(a.warnings, []); close(b.Qc, a.Qc, 1e-15); assert.equal(b.screening, false);
+  assert.ok(c.Qfo < a.Qfo, 'the substituted class is weaker than medium-dense sand');
+  // the flag follows through the wrappers
+  const curve = capacityVsPenetration({ profile, D: 1.0, t: 0.025, Lmin: 5, Lmax: 20, step: 5, allowLooseSand: true });
+  assert.equal(curve.screening, true); assert.equal(curve.L.length, 4);
+  const req = requiredPenetration({ profile, D: 1.0, t: 0.025, load: 1e6, allowLooseSand: true });
+  assert.ok(req.found && req.screening && req.warnings.length === 1);
+  assert.equal(unitResistanceAt(profile, 10, { allowLooseSand: true }).screening, true);
+  assert.equal(apiSandParameters({ type: 'sand', Dr: 0.5 }, { allowLooseSand: true }).screening, undefined);
+});

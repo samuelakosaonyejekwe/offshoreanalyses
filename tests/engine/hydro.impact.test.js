@@ -29,7 +29,7 @@ test('DNV-RP-C205 slamming pressure coefficients and Campbell–Weynberg cylinde
   close(im.slammingPressureCoefficient({ shape: 'flat' }), 2 * Math.PI, 1e-15);
   close(im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 30 }), 2.5 / Math.tan(30 * DEG) ** 1.1, 1e-15);
   close(im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 45 }), 2.5, 1e-12);
-  assert.throws(() => im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 10 }), RangeError);
+  assert.throws(() => im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 95 }), RangeError);
   close(im.cylinderSlamCoefficient({ s: 0, D: 1 }), 5.15, 1e-15);
   close(im.cylinderSlamCoefficient({ s: 1, D: 1 }), 5.15 * (1 / 20 + 0.107), 1e-12);
   close(im.cylinderSlamCoefficient({ s: 0.1, D: 2 }), 5.15 * (2 / 3.9 + 0.00535), 1e-12);
@@ -83,4 +83,34 @@ test('Wave-in-deck silhouette force and VIM screening (hand calculations)', () =
   close(v.Ur, 6, 1e-12); assert.ok(v.lockIn); close(v.amplitude, 15, 1e-12); close(v.UrResonance, 5, 1e-12);
   close(v.sheddingPeriod, 30 / (0.2 * 1.2), 1e-12);
   assert.ok(!im.vimScreening({ U: 0.4, Tn: 150, D: 30 }).lockIn);
+});
+
+test('slamming pressure coefficient between 4° and 15° deadrise: linear interpolation between 2π and 2.5/tan(15°)^1.1', () => {
+  // end values: 2π = 6.2832 at 4°; tan 15° = 0.26795, 0.26795^1.1 = 0.23489, 2.5/0.23489 = 10.643 at 15°
+  const c15 = 2.5 / Math.tan(15 * DEG) ** 1.1;
+  close(c15, 10.643, 1e-3);
+  close(im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 4 }), 2 * Math.PI, 1e-12);
+  // midpoint 9.5°: (6.2832 + 10.643)/2 = 8.463
+  close(im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 9.5 }), 0.5 * (2 * Math.PI + c15), 1e-12);
+  close(im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 10 }), 2 * Math.PI + (6 / 11) * (c15 - 2 * Math.PI), 1e-12);
+  // continuous at 15° and flat-bottom value below 4°
+  close(im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 15 - 1e-9 }), im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 15 }), 1e-8);
+  close(im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: 2 }), 2 * Math.PI, 1e-15);
+  assert.throws(() => im.slammingPressureCoefficient({ shape: 'wedge', deadriseDeg: -1 }), RangeError);
+  assert.throws(() => im.slammingPressureCoefficient({ shape: 'flat', deadriseDeg: 10 }), RangeError);
+});
+
+test('slamming and deck-wetness probability at zero variance (calm water) are zero, not an error', () => {
+  const s = im.slammingProbability({ m0r: 0, m0v: 0, d: 5, L: 150 });
+  assert.equal(s.probability, 0); assert.equal(s.ratePerHour, 0); assert.equal(s.emergenceProbability, 0);
+  close(s.vThreshold, 0.093 * Math.sqrt(9.80665 * 150), 1e-12);
+  assert.equal(im.slammingProbability({ m0r: 4, m0v: 0, d: 5, vThreshold: 3 }).probability, 0);
+  assert.equal(im.slammingProbability({ m0r: 0, m0v: 3, d: 5, vThreshold: 3 }).ratePerHour, 0);
+  const w = im.deckWetnessProbability({ m0r: 0, m2r: 0, freeboard: 6 });
+  assert.equal(w.probability, 0); assert.equal(w.ratePerHour, 0);
+  assert.equal(im.deckWetnessProbability({ m0r: 0, freeboard: 6 }).ratePerHour, null);
+  // the limit is continuous: a very small variance already gives a vanishing probability
+  assert.ok(im.deckWetnessProbability({ m0r: 1e-3, freeboard: 6 }).probability < 1e-300);
+  assert.throws(() => im.slammingProbability({ m0r: -1, m0v: 3, d: 5, L: 150 }), RangeError);
+  assert.throws(() => im.deckWetnessProbability({ m0r: -1, freeboard: 6 }), RangeError);
 });

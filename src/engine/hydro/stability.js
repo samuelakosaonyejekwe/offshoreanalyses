@@ -339,6 +339,14 @@ function floodLevel(cmesh, volume, draft, heel, trim) {
  * Reference: Bernoulli's equation for an orifice with a discharge coefficient (Torricelli's law) and
  * hydrostatic equilibrium. Quasi-static: no sloshing, air compression, inertia of the flow or transient roll;
  * a single compartment and opening.
+ * End states. The march stops when the levels equalise (`equalised`) or when no equilibrium is found for the
+ * flooded ship. `sunk` is set in every such case, as it always was; the cause is reported separately:
+ *  - `lostBuoyancy`: ship plus floodwater weigh more than the whole closed hull can displace — foundering;
+ *  - `capsized`: buoyancy is sufficient but the only equilibrium found (searched from heel guesses of ±45°, ±90°,
+ *    ±135° and 180° about the last state) lies beyond 40° of heel or trim from upright;
+ *  - `solverFailed`: buoyancy is sufficient and no equilibrium was found at all, or one exists near the last
+ *    attitude that the step-to-step solve missed — a numerical failure, not a prediction: shorten dt.
+ * Exactly one of the three is true when `sunk` is true.
  * @param {object} o
  * @param {object} o.mesh intact hull, closed surface, m
  * @param {number} o.mass kg (intact)
@@ -351,8 +359,11 @@ function floodLevel(cmesh, volume, draft, heel, trim) {
  * @param {number} [o.rho=1025] kg/m³
  * @param {number} [o.g=9.80665] m/s²
  * @returns {{t:number[], floodMass:number[], draft:number[], heelDeg:number[], trimDeg:number[], level:number[],
- *   head:number[], flow:number[], equalised:boolean, sunk:boolean, timeToEqualise:number|null}} s, kg, m, deg, deg,
- *   internal water level relative to the sea surface m, driving head m, inflow m³/s
+ *   head:number[], flow:number[], equalised:boolean, sunk:boolean, lostBuoyancy:boolean, capsized:boolean,
+ *   solverFailed:boolean, capsizeHeelDeg:number|null, timeToEqualise:number|null}} s, kg, m, deg, deg,
+ *   internal water level relative to the sea surface m, driving head m, inflow m³/s; sunk = no equilibrium found
+ *   for the flooded ship (any cause), split into lostBuoyancy / capsized / solverFailed (see above);
+ *   capsizeHeelDeg = heel of the capsized equilibrium, deg
  */
 export function progressiveFlooding({ mesh, mass, cog, compartment, opening, dt, tMax, rho = 1025, g = G }) {
   needPos(mass, 'mass'); needPos(dt, 'dt'); needPos(tMax, 'tMax');
@@ -361,7 +372,29 @@ export function progressiveFlooding({ mesh, mass, cog, compartment, opening, dt,
   if (!(Cd > 0 && Cd <= 1)) throw new RangeError('opening.Cd must be within (0, 1]');
   const [c] = compartmentMeshes([compartment]);
   const vMax = c.permeability * clipIntegrals(c.mesh, 1e5, 0, 0).V;
-  const out = { t: [], floodMass: [], draft: [], heelDeg: [], trimDeg: [], level: [], head: [], flow: [], equalised: false, sunk: false, timeToEqualise: null };
+  const out = { t: [], floodMass: [], draft: [], heelDeg: [], trimDeg: [], level: [], head: [], flow: [], equalised: false, sunk: false,
+    lostBuoyancy: false, capsized: false, solverFailed: false, capsizeHeelDeg: null, timeToEqualise: null };
+  const hullVolume = clipIntegrals(mesh, 1e5, 0, 0).V;
+  // why did the equilibrium solve fail for total mass mt with centre of gravity cg, coming from state s0?
+  const classify = (mt, cg, s0) => {
+    out.sunk = true;
+    if (mt >= rho * hullVolume * (1 - 1e-6)) { out.lostBuoyancy = true; return; }
+    const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    let near = false;
+    // towards the side the ship is already heeling to first
+    const sg = s0.heel < 0 ? -1 : 1;
+    for (const dh of [sg * Math.PI / 4, sg * Math.PI / 2, sg * 0.75 * Math.PI, Math.PI, -sg * Math.PI / 4, -sg * Math.PI / 2, -sg * 0.75 * Math.PI]) {
+      let eq;
+      try { eq = solveEquilibrium({ mesh, mass: mt, cog: cg, rho, guess: { heel: s0.heel + dh, trim: s0.trim } }); } catch (err) { continue; }
+      if (!eq || !eq.converged) continue;
+      const heel = wrapPi(eq.heel); const trim = wrapPi(eq.trim);
+      if (Math.abs(heel) > 40 * DEG || Math.abs(trim) > 40 * DEG) { out.capsized = true; out.capsizeHeelDeg = heel / DEG; return; }
+      near = true;
+    }
+    // an upright-range equilibrium exists (near) or nothing was found: either way the march failed numerically
+    out.solverFailed = true;
+    return near;
+  };
   let mw = 0;
   let st = solveEquilibrium({ mesh, mass, cog, rho });
   if (!st.converged) throw new Error('Intact equilibrium did not converge');
@@ -377,8 +410,8 @@ export function progressiveFlooding({ mesh, mass, cog, compartment, opening, dt,
         try {
           eq = solveEquilibrium({ mesh, mass: mt, cog: cg, rho, guess: { heel: st.heel, trim: st.trim, draft: st.draft } });
           if (!eq.converged) eq = solveEquilibrium({ mesh, mass: mt, cog: cg, rho, guess: { heel: st.heel, trim: st.trim } });
-        } catch (err) { out.sunk = true; break; }
-        if (!eq.converged) { out.sunk = true; break; }
+        } catch (err) { classify(mt, cg, st); break; }
+        if (!eq.converged) { classify(mt, cg, st); break; }
         st = eq;
         cw = floodLevel(c.mesh, mw / (rho * c.permeability), st.draft, st.heel, st.trim).centroidBody;
       }

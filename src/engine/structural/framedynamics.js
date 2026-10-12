@@ -248,15 +248,39 @@ export function cqcCoefficient(wi, wj, zi, zj = zi) {
 }
 
 /**
+ * Matrix of CQC correlation coefficients ρij of a set of modes (see cqcCoefficient), for reuse over many response
+ * quantities: the coefficients depend on the modes only, not on the response being combined.
+ * @param {ArrayLike<number>} omegas modal circular frequencies [rad/s]
+ * @param {number|ArrayLike<number>} [zeta=0.05] modal damping ratio(s) [-]
+ * @returns {Float64Array} ρ, n×n row-major, symmetric with unit diagonal [-]
+ */
+export function cqcMatrix(omegas, zeta = 0.05) {
+  const n = omegas.length;
+  const z = (i) => (typeof zeta === 'number' ? zeta : zeta[i]);
+  const rho = new Float64Array(n * n);
+  for (let i = 0; i < n; i++) {
+    rho[i * n + i] = 1;
+    for (let j = i + 1; j < n; j++) {
+      const c = cqcCoefficient(omegas[i], omegas[j], z(i), z(j));
+      rho[i * n + j] = c;
+      rho[j * n + i] = c;
+    }
+  }
+  return rho;
+}
+
+/**
  * Combine modal peak responses: SRSS √(Σ rᵢ²) or CQC √(Σᵢ Σⱼ ρᵢⱼ rᵢ rⱼ).
  * @param {object} o
  * @param {ArrayLike<number>} o.peaks signed modal peak values of one response quantity
- * @param {ArrayLike<number>} [o.omegas] modal circular frequencies [rad/s] (CQC)
+ * @param {ArrayLike<number>} [o.omegas] modal circular frequencies [rad/s] (CQC, unless rho is given)
  * @param {number|ArrayLike<number>} [o.zeta=0.05] modal damping ratio(s) [-] (CQC)
  * @param {'SRSS'|'CQC'} [o.method='CQC']
+ * @param {ArrayLike<number>} [o.rho] precomputed correlation matrix from cqcMatrix (n×n row-major); when
+ *   combining many response quantities of the same modes, pass it instead of omegas / zeta
  * @returns {number} combined peak (non-negative)
  */
-export function combineModal({ peaks, omegas, zeta = 0.05, method = 'CQC' }) {
+export function combineModal({ peaks, omegas, zeta = 0.05, method = 'CQC', rho }) {
   const n = peaks.length;
   let s = 0;
   if (method === 'SRSS') {
@@ -264,6 +288,18 @@ export function combineModal({ peaks, omegas, zeta = 0.05, method = 'CQC' }) {
     return Math.sqrt(s);
   }
   if (method !== 'CQC') throw new RangeError('method must be "SRSS" or "CQC"');
+  if (rho) {
+    if (rho.length !== n * n) throw new RangeError('rho must be an n×n matrix matching peaks');
+    for (let i = 0; i < n; i++) {
+      const pi = peaks[i];
+      if (pi === 0) continue;
+      let t = 0;
+      const row = i * n;
+      for (let j = i + 1; j < n; j++) t += rho[row + j] * peaks[j];
+      s += pi * (pi + 2 * t);
+    }
+    return Math.sqrt(Math.max(s, 0));
+  }
   if (!omegas || omegas.length !== n) throw new RangeError('omegas must match peaks for CQC');
   const z = (i) => (typeof zeta === 'number' ? zeta : zeta[i]);
   for (let i = 0; i < n; i++) {
@@ -326,7 +362,10 @@ export function responseSpectrumAnalysis(modal, { spectrum, directions = ['x', '
   const perDirection = {};
   const modalInfo = modal.periods.map((T, k) => ({ mode: k + 1, period: T, Sa: {} }));
   const peaks = new Float64Array(nm);
-  const comb = (get) => { for (let k = 0; k < nm; k++) peaks[k] = get(k); return combineModal({ peaks, omegas, zeta, method: combination }); };
+  if (combination !== 'CQC' && combination !== 'SRSS') throw new RangeError('combination must be "CQC" or "SRSS"');
+  // the correlation coefficients depend on the modes only: one matrix serves every dof, member force and direction
+  const rho = combination === 'CQC' ? cqcMatrix(omegas, zeta) : undefined;
+  const comb = (get) => { for (let k = 0; k < nm; k++) peaks[k] = get(k); return combineModal({ peaks, omegas, zeta, method: combination, rho }); };
   for (const dn of directions) {
     const d = DIRS.indexOf(dn);
     if (d < 0) throw new RangeError(`direction "${dn}" is not x, y or z`);

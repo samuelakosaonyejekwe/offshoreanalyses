@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   sdofResponse, responseSpectrum, dynamicAmplification, ec8Spectrum, EC8_SPECTRUM_PARAMETERS, isoSeismicSpectrum, cqcCoefficient,
-  combineModal, combineDirections, responseSpectrumAnalysis, modalTimeHistory, directTimeHistory, harmonicResponse,
+  combineModal, combineDirections, responseSpectrumAnalysis, cqcMatrix, modalTimeHistory, directTimeHistory, harmonicResponse,
   spectrumCompatibleAccelerogram, campbellDiagram,
 } from '../../src/engine/structural/framedynamics.js';
 import { modalAnalysis } from '../../src/engine/structural/framemodal.js';
@@ -227,4 +227,32 @@ test('Campbell diagram: 1× critical speed 60 f, interference inside the ±10 % 
   assert.ok(!c.interferences.some((x) => x.mode === 1 && x.order === 2));
   const ok = campbellDiagram({ naturalFrequencies: [80], orders: [1, 2], speedMin: 1200, speedMax: 1700, margin: 0.1 });
   assert.ok(ok.ok);
+});
+
+test('CQC correlation matrix is computed once and reproduces the pairwise combination', () => {
+  const omegas = [5, 5.2, 9, 14, 14.1, 30];
+  const peaks = [1.5, -0.8, 0.6, 0.3, 0.25, -0.1];
+  const rho = cqcMatrix(omegas, 0.05);
+  assert.equal(rho.length, 36);
+  for (let i = 0; i < 6; i++) {
+    assert.equal(rho[i * 6 + i], 1);
+    for (let j = 0; j < 6; j++) {
+      assert.equal(rho[i * 6 + j], rho[j * 6 + i]);
+      if (i !== j) near(rho[i * 6 + j], cqcCoefficient(omegas[i], omegas[j], 0.05), 1e-12);
+    }
+  }
+  // equal damping: ρ = 8ζ²(1 + r) r^1.5 / [(1 − r²)² + 4ζ² r (1 + r)²]; r = 5.2/5 = 1.04, ζ = 0.05 → 0.8658
+  const r = 1.04;
+  near(rho[1], 8 * 0.0025 * (1 + r) * r ** 1.5 / ((1 - r * r) ** 2 + 4 * 0.0025 * r * (1 + r) ** 2), 1e-12);
+  near(rho[1], 0.8658, 1e-3);
+  const direct = combineModal({ peaks, omegas, zeta: 0.05 });
+  near(combineModal({ peaks, rho }), direct, 1e-13);
+  // hand value of the double sum
+  let s = 0;
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) s += rho[i * 6 + j] * peaks[i] * peaks[j];
+  near(direct, Math.sqrt(s), 1e-13);
+  // per-mode damping
+  const z = [0.02, 0.05, 0.05, 0.03, 0.03, 0.08];
+  near(combineModal({ peaks, rho: cqcMatrix(omegas, z) }), combineModal({ peaks, omegas, zeta: z }), 1e-13);
+  assert.throws(() => combineModal({ peaks, rho: new Float64Array(4) }), RangeError);
 });

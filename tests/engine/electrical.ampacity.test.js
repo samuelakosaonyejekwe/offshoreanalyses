@@ -376,3 +376,14 @@ test('invalid input is rejected with RangeError naming the argument', () => {
   assert.throws(() => rateCable({ cable: single, installation: { type: 'buried', depth: 1, rhoSoil: 1 }, system: ac }), /ambientC/);
   assert.throws(() => cableGeometry({ cores: 2, conductor: { material: 'Cu', area: 1e-4 }, insulation: { material: 'xlpe', thickness: 0.01 } }), /cores/);
 });
+
+test('three-core bedding thicker than 0.15 × core diameter: the error names the bedding thickness and the limit; T2 override still works', () => {
+  // core diameter = 33.7 + 2·(1.5 + 15 + 1.5 + 2.5 + 2.5) = 79.7 mm → limit 0.15 × 79.7 = 11.96 mm
+  const thick = { ...threeCore, bedding: { thickness: 0.015, rhoT: 6 } };
+  assert.throws(() => cableGeometry(thick), (e) => e instanceof RangeError && /cable\.bedding\.thickness/.test(e.message)
+    && /0\.15/.test(e.message) && /12\.0 mm/.test(e.message) && /T2/.test(e.message));
+  assert.throws(() => geometricFactorSL(0.2), /0–0\.15.*IEC 60287-2-1/);
+  // just inside the limit, and with T2 supplied directly, the geometry is built
+  assert.ok(cableGeometry({ ...threeCore, bedding: { thickness: 0.0119, rhoT: 6 } }).T2 > 0);
+  rel(cableGeometry({ ...thick, T2: 0.05 }).T2, 0.05, 1e-12);
+});

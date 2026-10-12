@@ -614,6 +614,40 @@ export function tubularByName(name) {
 }
 
 /**
+ * Extreme-fibre distances and elastic section moduli of a section property record, for stress recovery.
+ * Uses, in order: the record's own moduli Wely / Welz; its fibre distances cz (for bending about y, measured
+ * along z) and cy (for bending about z); otherwise — a generic record {A, Iy, Iz, J} as produced by a frame
+ * import, which carries no shape — the distances are taken from the radii of gyration as c = √2·i,
+ * cz = √(2 Iy/A), cy = √(2 Iz/A). That is exact for a thin-walled circular tube (i = R/√2) and is flagged by
+ * `assumed`: it overstates the stress of an I-section about its strong axis (c ≈ 1.2 i) by about 15 % and
+ * understates that of a solid rectangle (c = √3·i) by 18 %. Supply cy and cz when the shape is known.
+ * Reference: elastic beam theory, σ = M c / I (e.g. Timoshenko & Gere, Mechanics of Materials).
+ * @param {object} sec section property record with A [m²], Iy, Iz [m⁴] and optionally Wely, Welz [m³], cy, cz [m]
+ * @returns {{cy:number, cz:number, Wely:number, Welz:number, assumed:boolean}} fibre distances [m], elastic
+ *   moduli [m³]; assumed = at least one distance came from the radius of gyration
+ */
+export function fibreDistances(sec) {
+  if (!sec || !(sec.A > 0) || !(sec.Iy > 0) || !(sec.Iz > 0)) throw new RangeError('section must have positive A, Iy and Iz');
+  for (const k of ['cy', 'cz']) {
+    if (sec[k] !== undefined && !(sec[k] > 0 && Number.isFinite(sec[k]))) throw new RangeError(`section.${k} must be a positive finite number`);
+  }
+  let assumed = false;
+  let Wely; let cz;
+  if (sec.Wely > 0) { Wely = sec.Wely; cz = sec.cz > 0 ? sec.cz : sec.Iy / Wely; }
+  else {
+    if (sec.cz > 0) cz = sec.cz; else { cz = Math.sqrt(2 * sec.Iy / sec.A); assumed = true; }
+    Wely = sec.Iy / cz;
+  }
+  let Welz; let cy;
+  if (sec.Welz > 0) { Welz = sec.Welz; cy = sec.cy > 0 ? sec.cy : sec.Iz / Welz; }
+  else {
+    if (sec.cy > 0) cy = sec.cy; else { cy = Math.sqrt(2 * sec.Iz / sec.A); assumed = true; }
+    Welz = sec.Iz / cy;
+  }
+  return { cy, cz, Wely, Welz, assumed };
+}
+
+/**
  * Resolve a section description into a property record usable by frame3d: accepts a property record
  * ({A, Iy, Iz, J, ...}) unchanged, or a typed description ({type:'tube', D, t}, {type:'I', h, b, tw, tf, r},
  * {type:'box'|'rhs'|'rect'|'round'|'channel'|'angle'|'tee'|'weldedI', ...}).

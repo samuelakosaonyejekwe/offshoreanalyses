@@ -234,18 +234,23 @@ export function faradayElectricField({ B, f, radius }) {
  * approximation): Zm = ωμ0/8 + j·ωμ0/(2π)·ln(De/d), De = 658.87·sqrt(ρ/f).
  * Valid for separations d much smaller than De (at 50 Hz in seawater De ≈ 45 m, in soil of 100 Ω·m ≈ 930 m);
  * for d approaching De the full Carson series or a field solution is needed.
+ * At d ≥ De the first-term expression has no meaning (its reactance turns negative): the victim lies outside
+ * the equivalent earth-return loop, the coupling is taken as zero and `beyondReturnDepth` is set, so a screening
+ * sweep over distance runs through instead of stopping. The result is therefore discontinuous at d = De (the
+ * resistive term ωμ0/8 is dropped there); do not rely on values close to De.
  * @param {object} o
  * @param {number} o.d separation of the two conductors, m
  * @param {number} o.f frequency, Hz
  * @param {number} [o.rhoEarth=1] resistivity of the return medium, Ω·m
- * @returns {{Zm:{re:number, im:number}, De:number}} Ω/m; De in m
+ * @returns {{Zm:{re:number, im:number}, De:number, beyondReturnDepth:boolean}} Zm in Ω/m (zero when d ≥ De);
+ *          De in m; beyondReturnDepth true when d ≥ De
  */
 export function mutualImpedance({ d, f, rhoEarth = 1 }) {
   pos(d, 'd'); pos(f, 'f'); pos(rhoEarth, 'rhoEarth');
   const De = 658.87 * Math.sqrt(rhoEarth / f);
-  if (d >= De) throw new RangeError('d: separation must be smaller than the equivalent return depth De');
+  if (d >= De) return { Zm: cx(0, 0), De, beyondReturnDepth: true };
   const w = TWO_PI * f;
-  return { Zm: cx((w * MU0) / 8, ((w * MU0) / TWO_PI) * Math.log(De / d)), De };
+  return { Zm: cx((w * MU0) / 8, ((w * MU0) / TWO_PI) * Math.log(De / d)), De, beyondReturnDepth: false };
 }
 
 /**
@@ -256,24 +261,31 @@ export function mutualImpedance({ d, f, rhoEarth = 1 }) {
  * Voltage: for an insulated section earthed at one end, V = E·L; for a long uniformly coated pipeline the
  * maximum voltage is limited to about E/|γ| at a discontinuity, where γ is the propagation constant of the
  * pipeline–earth circuit (argument; typically 0.1–1 per km for well-coated pipelines).
+ * Conductors farther from the victim than the earth-return depth De = 658.87·sqrt(ρ/f) contribute nothing
+ * (see mutualImpedance); `beyondReturnDepth` counts them.
  * @param {object} o
  * @param {{d:number, I:number|{re:number, im:number}}[]} o.conductors distance to the victim (m) and current (A)
  * @param {number} o.f frequency, Hz @param {number} [o.rhoEarth=1] Ω·m
  * @param {number} o.length length of parallelism, m
  * @param {number} [o.screeningFactor=1] reduction by earthed screening conductors (0–1)
  * @param {number} [o.gamma] magnitude of the victim's propagation constant, 1/m (for the long-line limit)
- * @returns {{E:number, voltageInsulated:number, voltageLongLine:number, voltage:number}} V/m and V (rms);
- *          `voltage` is the smaller of the two estimates when gamma is given
+ * @returns {{E:number, voltageInsulated:number, voltageLongLine:number, voltage:number, beyondReturnDepth:number}}
+ *          V/m and V (rms); `voltage` is the smaller of the two estimates when gamma is given;
+ *          beyondReturnDepth = number of conductors at d ≥ De, treated as uncoupled
  */
 export function inducedVoltage({ conductors, f, rhoEarth = 1, length, screeningFactor = 1, gamma }) {
   nonNeg(length, 'length');
   if (!(screeningFactor >= 0 && screeningFactor <= 1)) throw new RangeError('screeningFactor: must be in [0, 1]');
-  let e = cx(0, 0);
-  for (const c of conductors) e = cadd(e, cmul(mutualImpedance({ d: c.d, f, rhoEarth }).Zm, toCx(c.I)));
+  let e = cx(0, 0); let beyondReturnDepth = 0;
+  for (const c of conductors) {
+    const m = mutualImpedance({ d: c.d, f, rhoEarth });
+    if (m.beyondReturnDepth) beyondReturnDepth++;
+    e = cadd(e, cmul(m.Zm, toCx(c.I)));
+  }
   const E = cabs(e) * screeningFactor;
   const voltageInsulated = E * length;
   const voltageLongLine = gamma > 0 ? E / gamma : Infinity;
-  return { E, voltageInsulated, voltageLongLine, voltage: Math.min(voltageInsulated, voltageLongLine) };
+  return { E, voltageInsulated, voltageLongLine, voltage: Math.min(voltageInsulated, voltageLongLine), beyondReturnDepth };
 }
 
 /**

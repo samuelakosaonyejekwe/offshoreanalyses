@@ -142,3 +142,30 @@ test('armour take-off and scour effect on overburden (hand)', () => {
   close(s.globalScour({ Dref: 2, kG: 0.4, localScour: 2.6 }).total, 3.4, 1e-12);
   close(s.largeStructureScour({ Lref: 30, kS: 0.05, KC: 0.5, DoverL: 0.2 }).S, 1.5, 1e-12);
 });
+
+test('pile scour regimes: a current with small waves gets the steady-current value, not the low-KC tail of the wave formula', () => {
+  // large monopile, D = 8 m: Um = 0.2 m/s, T = 8 s → KC = 0.2; Uc = 1 m/s → Ucw = 1/1.2 = 0.833
+  //   bare formula: A = 0.03 + 0.75 × 0.833^2.6 = 0.497, B = 6 e^(−3.917) = 0.119 → S/D = 1.3 (1 − e^(−0.497 × 0.081)) = 0.051
+  const KC = s.keuleganCarpenter(0.2, 8, 8); const Ucw = 1 / 1.2;
+  close(KC, 0.2, 1e-12);
+  const r = s.pileScour({ KC, Ucw });
+  assert.equal(r.regime, 'current-dominated'); close(r.SoverD, 1.3, 1e-14);
+  close(r.formulaSoverD, 1.3 * (1 - Math.exp(-(0.03 + 0.75 * Ucw ** 2.6) * (KC - 6 * Math.exp(-4.7 * Ucw)))), 1e-12);
+  assert.ok(r.formulaSoverD < 0.06);
+  const legacy = s.pileScour({ KC, Ucw, fallback: false });
+  assert.equal(legacy.regime, 'formula'); close(legacy.SoverD, r.formulaSoverD, 1e-15);
+  close(s.pileScour({ KC, Ucw, nSigma: 1 }).SoverD, 2.0, 1e-14);
+  // waves below their threshold with a moderate current (Ucw = 0.3: B = 6 e^(−1.41) = 1.465 > KC = 1)
+  const b = s.pileScour({ KC: 1, Ucw: 0.3 });
+  assert.equal(b.regime, 'current-below-wave-threshold'); close(b.SoverD, 1.3, 1e-14); assert.equal(b.formulaSoverD, 0);
+  // unchanged regimes
+  assert.equal(s.pileScour({ KC: 3 }).regime, 'no-wave-scour'); assert.equal(s.pileScour({ KC: 3 }).SoverD, 0);
+  assert.equal(s.pileScour({ KC: 20 }).regime, 'wave');
+  const wc = s.pileScour({ KC: 10, Ucw: 0.5 });
+  assert.equal(wc.regime, 'wave-current'); close(wc.SoverD, wc.formulaSoverD, 1e-15);
+  assert.equal(s.pileScour({ Ucw: 1 }).regime, 'steady-current'); assert.equal(s.pileScour().regime, 'steady-current');
+  // the threshold is an argument
+  assert.equal(s.pileScour({ KC: 10, Ucw: 0.75, currentDominatedUcw: 0.8 }).regime, 'wave-current');
+  // the regimes join without a drop: at the threshold the formula is already close to the steady value for KC ≳ 10
+  assert.ok(s.pileScour({ KC: 10, Ucw: 0.69 }).SoverD > 1.2 && s.pileScour({ KC: 10, Ucw: 0.7 }).SoverD === 1.3);
+});

@@ -125,3 +125,23 @@ test('flex joint, connector envelope (diamond envelope gives T/Tr + M/Mr) and fa
   assert.ok(rel(f.stressRange, S) < 1e-12);
   assert.ok(rel(f.damage, 1e6 / (1e12 * (S / 1e6) ** -3)) < 1e-12);
 });
+
+test('DNV combined loading with net internal pressure at or above burst: finite utilisation and burstExceeded', () => {
+  const pb = C.burstPressureDnv({ D, t, fy, fu });
+  const g = 1.14 * 1.15;
+  // 20 % above the burst resistance with some bending and tension: uc = γSC γm (Ted/Tk)² + 1.2² (no bending term)
+  const over = C.combinedLoadingDnv({ D, t, fy, fu, pld: 1.2 * pb, MF: 1e5, TeF: 5e5 });
+  assert.equal(over.burstExceeded, true); assert.equal(over.mode, 'internal');
+  assert.ok(Number.isFinite(over.uc));
+  assert.ok(rel(over.uc, g * (1.1 * 5e5 / over.Tk) ** 2 + 1.44) < 1e-12, `uc ${over.uc}`);
+  for (const v of Object.values(over)) if (typeof v === 'number') assert.ok(Number.isFinite(v));
+  // exactly at burst with no tension: uc = 1; the expression is continuous from below
+  assert.ok(rel(C.combinedLoadingDnv({ D, t, fy, fu, pld: pb, MF: 1e5 }).uc, 1) < 1e-12);
+  const below = C.combinedLoadingDnv({ D, t, fy, fu, pld: 0.999999 * pb, MF: 1e5 });
+  assert.equal(below.burstExceeded, false);
+  assert.ok(Math.abs(below.uc - 1) < 5e-3, `just below burst ${below.uc}`);
+  // utilisation grows with the overpressure; external pressure reduces the net pressure
+  assert.ok(C.combinedLoadingDnv({ D, t, fy, fu, pld: 2 * pb }).uc > over.uc);
+  assert.equal(C.combinedLoadingDnv({ D, t, fy, fu, pld: 1.2 * pb, pe: 0.5 * pb }).burstExceeded, false);
+  assert.equal(C.combinedLoadingDnv({ D, t, fy, fu, MF: 1e5 }).burstExceeded, false);
+});

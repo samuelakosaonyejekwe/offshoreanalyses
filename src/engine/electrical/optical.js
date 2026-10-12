@@ -238,7 +238,9 @@ export function stepIndexFibre({ coreRadius, n1, n2, wavelengthNm }) {
  * @returns {number} refractive index at r
  */
 export function refractiveIndexProfile({ r, coreRadius, n1, delta, g = Infinity }) {
-  nonNeg(r, 'r'); pos(coreRadius, 'coreRadius'); pos(n1, 'n1'); pos(g, 'g');
+  nonNeg(r, 'r'); pos(coreRadius, 'coreRadius'); pos(n1, 'n1');
+  // Infinity is the documented default (step profile), so it must pass the positivity check
+  if (g !== Infinity) pos(g, 'g');
   if (!(delta > 0 && delta < 0.5)) throw new RangeError('delta: must be in (0, 0.5)');
   if (r >= coreRadius) return n1 * Math.sqrt(1 - 2 * delta);
   const x = g === Infinity ? 0 : Math.pow(r / coreRadius, g);

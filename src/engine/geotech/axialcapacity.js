@@ -26,6 +26,10 @@ export const API_SAND_TABLE = Object.freeze({
   'very dense sand': Object.freeze({ beta: 0.56, fLim: 115e3, Nq: 50, qLim: 12e6 }),
 });
 
+// Densities for which the table gives no values, and the class substituted for them on request.
+const LOOSE_CLASSES = ['very loose sand', 'loose sand', 'very loose sand-silt', 'loose sand-silt'];
+const LOWEST_SAND_CLASS = 'medium-dense sand-silt';
+
 /**
  * Density description from relative density: very loose 0–15 %, loose 15–35 %, medium dense 35–65 %,
  * dense 65–85 %, very dense 85–100 %.
@@ -45,12 +49,20 @@ export function densityDescription(Dr) {
 /**
  * API sand design parameters for a layer. Priority: explicit layer.beta/fLim/Nq/qLim, then layer.apiSand (a key
  * of API_SAND_TABLE), then the density description from layer.Dr with 'sand' or (for silt) 'sand-silt'.
- * Reference: API RP 2GEO (2011) Table 1. Validity: throws for densities the table does not cover.
+ * Reference: API RP 2GEO (2011) Table 1. Validity: throws for densities the table does not cover (very loose and
+ * loose sand, loose sand-silt), for which the standard asks for CPT-based methods or site-specific data.
+ * With `allowLooseSand: true` such a layer is given the lowest tabulated class instead, 'medium-dense sand-silt'
+ * (β = 0.29, fLim = 67 kPa, Nq = 12, qLim = 3 MPa), and the result carries `screening: true` with a `warning`:
+ * the table does not support these values for loose material, the true resistance is probably lower, and the
+ * figure serves only to let a screening calculation run to the end.
  * @param {object} layer layer record (soilprofile.js)
- * @returns {{ beta: number, fLim: number, Nq: number, qLim: number, category: string }} β [-], fLim [Pa], Nq [-],
- *   qLim [Pa], category label
+ * @param {{ allowLooseSand?: boolean }} [o] allowLooseSand: substitute the lowest tabulated class for a density
+ *   the table does not cover (default false)
+ * @returns {{ beta: number, fLim: number, Nq: number, qLim: number, category: string, screening?: boolean,
+ *   warning?: string }} β [-], fLim [Pa], Nq [-], qLim [Pa], category label; screening and warning only when the
+ *   lowest class was substituted
  */
-export function apiSandParameters(layer) {
+export function apiSandParameters(layer, o = {}) {
   if (layer.beta !== undefined && layer.fLim !== undefined && layer.Nq !== undefined && layer.qLim !== undefined) {
     return { beta: layer.beta, fLim: layer.fLim, Nq: layer.Nq, qLim: layer.qLim, category: 'user' };
   }
@@ -60,7 +72,15 @@ export function apiSandParameters(layer) {
     key = `${densityDescription(layer.Dr)} ${layer.type === 'silt' ? 'sand-silt' : 'sand'}`;
   }
   const row = API_SAND_TABLE[key];
-  if (!row) throw new RangeError(`layer: API RP 2GEO Table 1 has no design parameters for '${key}'; supply beta, fLim, Nq and qLim`);
+  if (!row) {
+    if (o.allowLooseSand && LOOSE_CLASSES.includes(key)) {
+      return { ...API_SAND_TABLE[LOWEST_SAND_CLASS], category: `${LOWEST_SAND_CLASS} (substituted for ${key})`, screening: true,
+        warning: `API RP 2GEO Table 1 has no design parameters for ${key}; the lowest tabulated class (${LOWEST_SAND_CLASS}) was used. `
+          + 'Screening value only: the resistance of loose material is probably lower — use a CPT-based method or site-specific parameters for design.' };
+    }
+    throw new RangeError(`layer: API RP 2GEO Table 1 has no design parameters for '${key}'; supply beta, fLim, Nq and qLim`
+      + (LOOSE_CLASSES.includes(key) ? ', or pass allowLooseSand: true for a screening value from the lowest tabulated class' : ''));
+  }
   return { ...row, category: key };
 }
 
@@ -83,8 +103,11 @@ export function clayAlpha(psi) {
  * Reference: API RP 2GEO (2011) §8.1 (API RP 2A-WSD §6.4.2–6.4.3).
  * @param {object} profile soil profile
  * @param {number} z depth below original mudline [m]
- * @param {{ betaFactor?: number }} [o] betaFactor [-] multiplier on β (1.25 for full-displacement piles; default 1)
- * @returns {{ f: number, q: number, type: string, sigmaV: number, alpha?: number, beta?: number }} f, q, sigmaV [Pa]
+ * @param {{ betaFactor?: number, allowLooseSand?: boolean }} [o] betaFactor [-] multiplier on β (1.25 for
+ *   full-displacement piles; default 1); allowLooseSand: see apiSandParameters (default false)
+ * @returns {{ f: number, q: number, type: string, sigmaV: number, alpha?: number, beta?: number,
+ *   screening?: boolean, warning?: string }} f, q, sigmaV [Pa]; screening / warning when the lowest sand class was
+ *   substituted for loose material
  */
 export function unitResistanceAt(profile, z, o = {}) {
   const betaFactor = o.betaFactor ?? 1;
@@ -103,9 +126,11 @@ export function unitResistanceAt(profile, z, o = {}) {
     const alpha = sigmaV > 0 ? clayAlpha(pr.su / sigmaV) : 0;
     return { f: alpha * pr.su, q: 9 * pr.su, type: 'clay', sigmaV, alpha };
   }
-  const s = apiSandParameters(pr.layer);
+  const s = apiSandParameters(pr.layer, { allowLooseSand: o.allowLooseSand });
   const beta = s.beta * betaFactor;
-  return { f: Math.min(beta * sigmaV, s.fLim), q: Math.min(s.Nq * sigmaV, s.qLim), type: 'sand', sigmaV, beta };
+  const out = { f: Math.min(beta * sigmaV, s.fLim), q: Math.min(s.Nq * sigmaV, s.qLim), type: 'sand', sigmaV, beta };
+  if (s.screening) { out.screening = true; out.warning = s.warning; }
+  return out;
 }
 
 const GX = [-Math.sqrt(0.6), 0, Math.sqrt(0.6)];
@@ -135,19 +160,30 @@ function slices(profile, L, dz) {
  * setupFactor multiplies shaft friction (ageing / set-up, or a reduction for driving disturbance); it is an
  * engineering input, 1 by default.
  * Reference: API RP 2GEO (2011) §8.1–8.2 (API RP 2A-WSD §6.4–6.5). Validity: static capacity of driven pipe
- * piles in siliceous soils; pile weight, cyclic degradation and group effects are not included.
+ * piles in siliceous soils; pile weight, cyclic degradation and group effects are not included. Loose and very
+ * loose sand layers are outside the API table and throw; `allowLooseSand: true` lets the calculation run with the
+ * lowest tabulated class for those layers and marks the result `screening: true` with `warnings` (not for design).
  * @param {{ profile: object, L: number, D: number, t: number, closedEnded?: boolean, plugMode?: string,
  *   internalFrictionFactor?: number, tensionFactor?: number, setupFactor?: number, betaFactor?: number,
  *   dz?: number }} o profile; L [m] penetration below original mudline; D [m] outer diameter; t [m] wall thickness;
  *   closedEnded [bool]; plugMode 'auto'|'plugged'|'unplugged' (default 'auto' = smaller end bearing);
  *   internalFrictionFactor [-] inner/outer unit friction ratio (default 1); tensionFactor [-] (default 1);
- *   setupFactor [-] (default 1); betaFactor [-] (default 1); dz [m] integration slice (default 0.25)
+ *   setupFactor [-] (default 1); betaFactor [-] (default 1); dz [m] integration slice (default 0.25);
+ *   allowLooseSand [bool] (default false)
  * @returns {object} { L [m], Qfo, Qfi, QpPlugged, QpUnplugged, Qp, Qc, Qt [N], plugged [bool], qTip [Pa],
  *   z [m] slice mid-depths, f [Pa] unit friction at mid-depths (incl. setupFactor), QfoCum [N] cumulative outer
- *   friction at slice bottoms }
+ *   friction at slice bottoms, screening [bool] true when a loose layer was given the lowest tabulated class,
+ *   warnings [string[]] }
  */
 export function axialCapacity(o) {
-  const { profile, L, D, t, closedEnded = false, plugMode = 'auto', internalFrictionFactor = 1, tensionFactor = 1, setupFactor = 1, betaFactor = 1, dz = 0.25 } = o;
+  const { profile, L, D, t, closedEnded = false, plugMode = 'auto', internalFrictionFactor = 1, tensionFactor = 1, setupFactor = 1, betaFactor = 1, dz = 0.25,
+    allowLooseSand = false } = o;
+  const warnings = [];
+  const at = (zz) => {
+    const u = unitResistanceAt(profile, zz, { betaFactor, allowLooseSand });
+    if (u.screening && !warnings.includes(u.warning)) warnings.push(u.warning);
+    return u;
+  };
   pos('L', L); pos('D', D); pos('t', t); pos('dz', dz);
   pos('internalFrictionFactor', internalFrictionFactor, true); pos('tensionFactor', tensionFactor, true); pos('setupFactor', setupFactor, true);
   if (t >= D / 2) throw new RangeError('t: must be less than D/2');
@@ -159,13 +195,13 @@ export function axialCapacity(o) {
   for (const [a, b] of slices(profile, L, dz)) {
     const h = b - a, mid = 0.5 * (a + b);
     let s = 0;
-    for (let g = 0; g < 3; g++) s += GW[g] * unitResistanceAt(profile, mid + 0.5 * h * GX[g], { betaFactor }).f;
+    for (let g = 0; g < 3; g++) s += GW[g] * at(mid + 0.5 * h * GX[g]).f;
     integral += 0.5 * h * s * setupFactor;
-    z.push(mid); f.push(unitResistanceAt(profile, mid, { betaFactor }).f * setupFactor); QfoCum.push(integral * Math.PI * D);
+    z.push(mid); f.push(at(mid).f * setupFactor); QfoCum.push(integral * Math.PI * D);
   }
   const Qfo = integral * Math.PI * D;
   const Qfi = closedEnded ? 0 : integral * Math.PI * Di * internalFrictionFactor;
-  const qTip = unitResistanceAt(profile, Math.min(L, profile.depth), { betaFactor }).q;
+  const qTip = at(Math.min(L, profile.depth)).q;
   const QpPlugged = (qTip * Math.PI * D * D) / 4;
   const QpUnplugged = closedEnded ? QpPlugged : (qTip * Math.PI * (D * D - Di * Di)) / 4 + Qfi;
   let plugged;
@@ -173,7 +209,8 @@ export function axialCapacity(o) {
   else if (plugMode === 'unplugged') plugged = false;
   else plugged = QpPlugged <= QpUnplugged;
   const Qp = plugged ? QpPlugged : QpUnplugged;
-  return { L, Qfo, Qfi, QpPlugged, QpUnplugged, Qp, Qc: Qfo + Qp, Qt: tensionFactor * Qfo, plugged, qTip, z, f, QfoCum };
+  return { L, Qfo, Qfi, QpPlugged, QpUnplugged, Qp, Qc: Qfo + Qp, Qt: tensionFactor * Qfo, plugged, qTip, z, f, QfoCum,
+    screening: warnings.length > 0, warnings };
 }
 
 /**
@@ -181,19 +218,21 @@ export function axialCapacity(o) {
  * Reference: see axialCapacity.
  * @param {object} o axialCapacity options without L, plus Lmin [m] (default D), Lmax [m] (default profile depth),
  *   step [m] (default 1)
- * @returns {{ L: number[], Qc: number[], Qt: number[], Qfo: number[], Qp: number[], plugged: boolean[] }}
- *   L [m]; capacities [N]
+ * @returns {{ L: number[], Qc: number[], Qt: number[], Qfo: number[], Qp: number[], plugged: boolean[],
+ *   screening: boolean, warnings: string[] }} L [m]; capacities [N]; screening / warnings as axialCapacity (any
+ *   penetration)
  */
 export function capacityVsPenetration(o) {
   const Lmin = o.Lmin ?? o.D, Lmax = o.Lmax ?? o.profile.depth, step = o.step ?? 1;
   pos('step', step);
   if (!(Lmax > Lmin && Lmin > 0)) throw new RangeError('Lmax: must exceed Lmin > 0');
-  const out = { L: [], Qc: [], Qt: [], Qfo: [], Qp: [], plugged: [] };
+  const out = { L: [], Qc: [], Qt: [], Qfo: [], Qp: [], plugged: [], screening: false, warnings: [] };
   const n = Math.ceil((Lmax - Lmin) / step - 1e-9);
   for (let i = 0; i <= n; i++) {
     const L = Math.min(Lmin + i * step, Lmax);
     const c = axialCapacity({ ...o, L });
     out.L.push(L); out.Qc.push(c.Qc); out.Qt.push(c.Qt); out.Qfo.push(c.Qfo); out.Qp.push(c.Qp); out.plugged.push(c.plugged);
+    if (c.screening) { out.screening = true; for (const w of c.warnings) if (!out.warnings.includes(w)) out.warnings.push(w); }
   }
   return out;
 }
@@ -210,8 +249,9 @@ export function capacityVsPenetration(o) {
  * @param {object} o axialCapacity options without L, plus load [N] (> 0), mode 'compression'|'tension',
  *   safetyFactor [-] (default 1), resistanceFactor [-] (default 1), Lmin [m], Lmax [m], step [m] (default 1),
  *   tol [m] (default 0.01)
- * @returns {{ L: number, capacity: number, designResistance: number, found: boolean }} L [m] required penetration
- *   (Lmax if not found); capacity and designResistance [N] at L
+ * @returns {{ L: number, capacity: number, designResistance: number, found: boolean, screening: boolean,
+ *   warnings: string[] }} L [m] required penetration (Lmax if not found); capacity and designResistance [N] at L;
+ *   screening / warnings as axialCapacity at that penetration
  */
 export function requiredPenetration(o) {
   const { load, mode = 'compression', safetyFactor = 1, resistanceFactor = 1, step = 1, tol = 0.01 } = o;
@@ -219,7 +259,10 @@ export function requiredPenetration(o) {
   if (mode !== 'compression' && mode !== 'tension') throw new RangeError("mode: must be 'compression' or 'tension'");
   const Lmin = o.Lmin ?? o.D, Lmax = o.Lmax ?? o.profile.depth;
   const R = (L) => { const c = axialCapacity({ ...o, L }); return ((mode === 'compression' ? c.Qc : c.Qt) * resistanceFactor) / safetyFactor; };
-  const done = (L, found) => { const d = R(L); return { L, capacity: (d * safetyFactor) / resistanceFactor, designResistance: d, found }; };
+  const done = (L, found) => {
+    const d = R(L); const c = axialCapacity({ ...o, L });
+    return { L, capacity: (d * safetyFactor) / resistanceFactor, designResistance: d, found, screening: c.screening, warnings: c.warnings };
+  };
   if (R(Lmin) >= load) return done(Lmin, true);
   let a = Lmin;
   while (a < Lmax - 1e-12) {

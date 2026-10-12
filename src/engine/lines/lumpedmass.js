@@ -109,7 +109,7 @@ export function buildLumpedLine(o) {
     T: new Float64Array(N), len: new Float64Array(N), ux: new Float64Array(N), uy: new Float64Array(N), uz: new Float64Array(N),
     Fbed: new Float64Array(nn),
     allowCompression: !!o.allowCompression, waterLevel: o.waterLevel ?? 0,
-    frictionOn: true, wavesOn: true, time: 0, hNow: 1,
+    frictionOn: true, wavesOn: true, dragOnMotion: true, time: 0, hNow: 1,
   };
   let k = 0, sAcc = 0, cmax = 0, dtc = Infinity;
   const junctionNode = [0];
@@ -309,7 +309,9 @@ function accel(m, t, r, v, a) {
       Ax = ah * wave.cx; Ay = ah * wave.cy; Az = -wave.A * wave.om * wave.om * sh * ct;
     }
     // Morison drag on the relative velocity, split into tangential and normal parts
-    const rx = Ux - v[j], ry = Uy - v[j + 1], rz = Uz - v[j + 2];
+    // (during static relaxation the drag is that of the fluid on the line at rest: see relaxLine)
+    const vs = m.dragOnMotion ? 1 : 0;
+    const rx = Ux - vs * v[j], ry = Uy - vs * v[j + 1], rz = Uz - vs * v[j + 2];
     const rt = rx * qx + ry * qy + rz * qz;
     const nx = rx - rt * qx, ny = ry - rt * qy, nz = rz - rt * qz;
     const nmag = Math.sqrt(nx * nx + ny * ny + nz * nz);
@@ -362,6 +364,11 @@ function endTension(m, nd) {
  * equations of motion are integrated with the fairlead held still (waves and seabed friction switched off, the
  * steady current kept) and all velocities are reset to zero whenever the kinetic energy passes a peak, until the
  * largest unbalanced node force is below tol times the force scale.
+ * The pseudo-motion is a numerical device, so the fluid drag is evaluated for the line at rest in the current
+ * (the static drag load) and not on the relative velocity: with the relative velocity a line that has to swing
+ * a long way out of its starting plane — a cross current — can only creep there at about the current speed,
+ * through tens of seconds of pseudo-time, while kinetic damping alone removes the energy in a few oscillations.
+ * The equilibrium found is the same (all velocities are zero there).
  * Reference: Day (1965) / Barnes (1999) dynamic relaxation with kinetic damping.
  * @param {object} model model from buildLumpedLine (updated in place: positions set to the static state)
  * @param {object} [o]
@@ -382,6 +389,8 @@ export function relaxLine(model, o = {}) {
   const { N, r, v, a } = m;
   const wOn = m.wavesOn, fOn = m.frictionOn;
   m.wavesOn = false; m.frictionOn = false;
+  const dOn = m.dragOnMotion;
+  m.dragOnMotion = false;
   v.fill(0);
   let kePrev = 0, it = 0, resid = Infinity, converged = false, fresh = true;
   let wmax = 0;
@@ -418,7 +427,7 @@ export function relaxLine(model, o = {}) {
   }
   v.fill(0);
   accel(m, 0, r, v, a);
-  m.wavesOn = wOn; m.frictionOn = fOn;
+  m.wavesOn = wOn; m.frictionOn = fOn; m.dragOnMotion = dOn;
   const td = touchdown(m);
   m.Tstatic = Float64Array.from(m.T);
   m.staticFairlead = endTension(m, N);

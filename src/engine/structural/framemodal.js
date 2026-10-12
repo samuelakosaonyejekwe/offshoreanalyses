@@ -179,7 +179,10 @@ export function massInfluence(sys, mass) {
 /**
  * Natural frequencies, mode shapes, participation factors and effective modal masses of a frame.
  * K φ = ω² M φ is solved for the lowest modes by subspace iteration (Bathe 1996 §11.6), or by the dense
- * generalised symmetric solver for small systems; the modes are M-orthonormal. Participation factor for direction d: Γ = φᵀ M r_d with r_d the rigid-body unit translation;
+ * generalised symmetric solver for small systems; the modes are M-orthonormal. Groups of nearly equal
+ * frequencies (repeated or symmetric members) are handled by enlarging the iteration subspace until it spans the
+ * group (math/eigen.js subspaceIteration); `converged` is false only if a group wider than eight times nModes
+ * remains unresolved on a model too large for the dense solver. Participation factor for direction d: Γ = φᵀ M r_d with r_d the rigid-body unit translation;
  * effective modal mass Γ² (Chopra, Dynamics of Structures, §13.2).
  * @param {object} model frame model (see frame3d.buildFrameSystem)
  * @param {object} [o]
@@ -224,6 +227,18 @@ export function modalAnalysis(model, {
     }
   }
   if (!eig) eig = subspaceIteration({ n, nModes: p, solveK: fac.solve, mulM: mass.mulM, tol, maxIter: 200 });
+  if (!eig.converged && n <= 1200) {
+    // a cluster of near-equal modes wider than the iteration subspace: the dense solver resolves it directly
+    try {
+      const K = assembleDense(sys, sys.elems.map((e) => e.ke), true);
+      const M = assembleDense(sys, mass.mats, false);
+      for (let q = 0; q < n; q++) M[q][q] += mass.nodeDiag[sys.eqDof[q]];
+      const d = eigGenSym(K, M, { nModes: p });
+      eig = { values: d.values, vectors: d.vectors, converged: true, iterations: eig.iterations };
+    } catch (e) {
+      if (!(e instanceof RangeError)) throw e;
+    }
+  }
   const dirs = ['x', 'y', 'z'];
   const Mr = [];
   const totalMass = {};

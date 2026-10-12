@@ -24,10 +24,16 @@
  */
 
 import {
-  buildFrameSystem, factorFrame, solveFrame, resolveLoads, loadParts,
+  buildFrameSystem, updateFrameSystem, factorFrame, solveFrame, resolveLoads, loadParts,
 } from './frame3d.js';
 import { frameGeometricStiffness } from './framebuckling.js';
 import { isoTubularStrengths } from './tubular.js';
+import { fibreDistances } from './sections.js';
+
+// Plastic-to-elastic modulus ratio assumed for a section given only by {A, Iy, Iz, J}: 4/π, the thin-walled
+// circular tube, consistent with the extreme-fibre distance assumed for such records (sections.fibreDistances).
+// Rolled I-sections are 1.10–1.18 about the strong axis and about 1.5 about the weak axis; a solid rectangle is 1.5.
+const DEFAULT_SHAPE_FACTOR = 4 / Math.PI;
 
 /**
  * Plastic capacities of a member used by the pushover analysis. `member.capacity` ({Np, Mpy, Mpz, Pc, Pt, Pj})
@@ -35,8 +41,15 @@ import { isoTubularStrengths } from './tubular.js';
  * ISO 19902 column curve fc = (1 − 0.278 λ²) fyc (λ ≤ 1.34), 0.9 fyc/λ² otherwise, with λ = (K L/(π r))√(fyc/E),
  * K = member.K (default 1) and L = member.bucklingLength (default the member length); local buckling reduction
  * fyc for tubes per §13.2.3.3. Pj is an optional joint capacity that caps both Pt and Pc.
+ * A section that carries no plastic modulus gets Wpl = shapeFactor × Wel: Wel is the record's own elastic modulus,
+ * or I/c with the fibre distance section.cz / section.cy, or — for a generic {A, Iy, Iz, J} record of an imported
+ * frame — I/c with c = √2·(radius of gyration) (sections.fibreDistances). shapeFactor is section.shapeFactor when
+ * given (≥ 1), otherwise 4/π = 1.273 for a generic record (the thin-walled tube, consistent with the assumed fibre
+ * distance) and 1.0 (first yield, as before) for a typed section that has an elastic modulus only.
+ * `assumedShape` reports that the moment capacities rest on the tube assumption.
  * @param {object} elem element record from buildFrameSystem
- * @returns {{Np:number, Mpy:number, Mpz:number, Pt:number, Pc:number, Pj:number, tube:boolean}} forces [N], moments [N·m]
+ * @returns {{Np:number, Mpy:number, Mpz:number, Pt:number, Pc:number, Pj:number, tube:boolean, assumedShape:boolean}}
+ *   forces [N], moments [N·m]
  */
 export function memberPlasticCapacity(elem) {
   const sec = elem.sec; const mat = elem.mat; const mem = elem.member;
@@ -44,8 +57,19 @@ export function memberPlasticCapacity(elem) {
   const cap = mem.capacity || {};
   const tube = sec.type === 'tube';
   const Np = cap.Np !== undefined ? cap.Np : sec.A * fy;
-  const wy = sec.Wply || sec.Wely || (sec.cz ? sec.Iy / sec.cz : NaN);
-  const wz = sec.Wplz || sec.Welz || (sec.cy ? sec.Iz / sec.cy : NaN);
+  const needY = cap.Mpy === undefined && cap.Mp === undefined;
+  const needZ = cap.Mpz === undefined && cap.Mp === undefined;
+  let wy = sec.Wply; let wz = sec.Wplz; let assumedShape = false;
+  if ((needY && !(wy > 0)) || (needZ && !(wz > 0))) {
+    if (!(fy > 0)) throw new RangeError(`member ${elem.index}: material.fy must be positive`);
+    if (sec.shapeFactor !== undefined && !(sec.shapeFactor >= 1 && Number.isFinite(sec.shapeFactor))) {
+      throw new RangeError(`member ${elem.index}: section.shapeFactor must be >= 1`);
+    }
+    const fd = fibreDistances(sec);
+    const k = (hasModulus) => (sec.shapeFactor !== undefined ? sec.shapeFactor : hasModulus ? 1 : DEFAULT_SHAPE_FACTOR);
+    if (!(wy > 0)) { wy = k(sec.Wely > 0 || sec.cz > 0) * fd.Wely; if (needY && !(sec.Wely > 0) && !(sec.cz > 0)) assumedShape = true; }
+    if (!(wz > 0)) { wz = k(sec.Welz > 0 || sec.cy > 0) * fd.Welz; if (needZ && !(sec.Welz > 0) && !(sec.cy > 0)) assumedShape = true; }
+  }
   const Mpy = cap.Mpy !== undefined ? cap.Mpy : (cap.Mp !== undefined ? cap.Mp : wy * fy);
   const Mpz = cap.Mpz !== undefined ? cap.Mpz : (cap.Mp !== undefined ? cap.Mp : wz * fy);
   let Pc = cap.Pc;
@@ -62,7 +86,7 @@ export function memberPlasticCapacity(elem) {
   const Pj = cap.Pj !== undefined ? cap.Pj : (mem.jointCapacity !== undefined ? mem.jointCapacity : Infinity);
   const Pt = cap.Pt !== undefined ? cap.Pt : Np;
   if (![Np, Mpy, Mpz, Pc, Pt].every((v) => v > 0)) throw new RangeError(`member ${elem.index}: plastic capacities must be positive`);
-  return { Np, Mpy, Mpz, Pt, Pc, Pj, tube };
+  return { Np, Mpy, Mpz, Pt, Pc, Pj, tube, assumedShape };
 }
 
 /**
@@ -124,6 +148,7 @@ function withReleases(mem, hingeA, hingeB, axial) {
  *   N:number}>, displacements:Float64Array, capacities:object[], control:{node:number, dof:number}}}
  *   status: 'collapse' | 'collapse-under-base-load' | 'max-load-factor' | 'max-events' | 'no-further-events';
  *   redundancyFactor = λult / λ at the first member failure
+ * @throws {RangeError} when the pattern applies no load at all (nothing to scale)
  */
 export function pushoverAnalysis(model, {
   pattern, base, control, pDelta = true, postBucklingRatio = 0.4, designFactor = 1, maxEvents = 500, maxLoadFactor = Infinity,
@@ -142,6 +167,19 @@ export function pushoverAnalysis(model, {
   }));
   const u = new Float64Array(sys0.nDof);
   const patternParts = loadParts(model, pattern);
+  const baseParts = base ? loadParts(model, base) : null;
+  const noLoad = `pattern "${pattern}" applies no load: a pushover needs a non-zero load pattern to scale `
+    + '(check the load case name, its factors and that its loads are not all zero)';
+  {
+    // A pattern without any load has no response to scale: no event can ever be reached, and with maxStep the
+    // analysis would step the load factor without end.
+    const pl = resolveLoads(sys0, patternParts);
+    let any = false;
+    for (let g = 0; g < sys0.nDof && !any; g++) if (pl.F[g] !== 0 || (pl.prescribed && pl.prescribed[g] !== 0)) any = true;
+    if (!any && pl.items) for (const it of pl.items) if (it && it.length) { any = true; break; }
+    if (!any) throw new RangeError(noLoad);
+  }
+  let patternChecked = false;
   const DOFS = { ux: 0, uy: 1, uz: 2, rx: 3, ry: 4, rz: 5 };
   let ctrl = null;
   if (control) {
@@ -151,10 +189,36 @@ export function pushoverAnalysis(model, {
   }
   const axialOf = (f) => 0.5 * (-f[0] + f[6]);
 
-  // tangent system for the current member states
+  // Tangent system for the current member states. The assembled system is kept between steps: a step that ends
+  // at a load-step limit changes no member state, so the system (and, without P-Δ, its factorisation) is reused;
+  // after an event only the element records of the members whose state changed are rebuilt (updateFrameSystem
+  // gives the same system as a full rebuild). The geometric stiffness follows the current axial forces and is
+  // recomputed in every step when P-Δ is on.
+  const sig = (s) => (s.hingeA ? 1 : 0) + (s.hingeB ? 2 : 0) + (s.axial !== 'elastic' ? 4 : 0);
+  const stateSig = new Int8Array(nEl).fill(-1);
+  const curMembers = model.members.slice();
+  let curSys = null; let curFac = null;
+  const loadCache = new Map();
   const tangent = () => {
-    const members = model.members.map((m, e) => withReleases(m, st[e].hingeA, st[e].hingeB, st[e].axial !== 'elastic'));
-    const sys = buildFrameSystem({ ...model, members }, { shearDeformation });
+    const changed = [];
+    for (let e = 0; e < nEl; e++) {
+      const g = sig(st[e]);
+      if (g === stateSig[e]) continue;
+      curMembers[e] = withReleases(model.members[e], st[e].hingeA, st[e].hingeB, st[e].axial !== 'elastic');
+      stateSig[e] = g; changed.push(e);
+    }
+    if (!curSys || changed.length) {
+      const tm = { ...model, members: curMembers.slice() };
+      try {
+        curSys = curSys ? updateFrameSystem(curSys, tm, changed, { shearDeformation }) : buildFrameSystem(tm, { shearDeformation });
+      } catch (err) {
+        // leave the cache consistent with the member states for a caller that catches the mechanism
+        curSys = null; stateSig.fill(-1);
+        throw err;
+      }
+      curFac = null; loadCache.clear();
+    }
+    const sys = curSys;
     for (const d of sys.autoRestrained) {
       if (d % 6 < 3 && !sys0.auto[d]) {
         const err = new Error(`Translational dof ${d} has lost all stiffness.`);
@@ -164,13 +228,20 @@ export function pushoverAnalysis(model, {
     }
     let kg = null;
     if (pDelta) kg = frameGeometricStiffness(sys, st.map((s) => axialOf(s.f)));
-    const fac = factorFrame(sys, kg ? { add: kg.global } : {});
+    const fac = kg || !curFac ? factorFrame(sys, kg ? { add: kg.global } : {}) : curFac;
+    if (!kg) curFac = fac;
     if (fac.negativePivots > 0) {
       const err = new Error('Tangent stiffness is indefinite (global instability).');
       err.mechanism = true;
       throw err;
     }
     return { sys, kg, fac };
+  };
+  // equivalent nodal loads of a load set on the current system (they depend on the member releases only)
+  const loadsOf = (key, parts, sys) => {
+    let l = loadCache.get(key);
+    if (!l) { l = resolveLoads(sys, parts); loadCache.set(key, l); }
+    return l;
   };
   const unit = (tg, loads) => solveFrame(tg.sys, tg.fac, loads, tg.kg ? { add: tg.kg.global, addLocal: tg.kg.local } : {});
 
@@ -283,9 +354,9 @@ export function pushoverAnalysis(model, {
       loads = { F: pending[0].F, items: zeroItems(), prescribed: new Float64Array(sys0.nDof) };
       limit = pending[0].remaining; mode = 'redistribution';
     } else if (baseRemaining > 0) {
-      loads = resolveLoads(tg.sys, loadParts(model, base)); limit = baseRemaining; mode = 'base';
+      loads = loadsOf('base', baseParts, tg.sys); limit = baseRemaining; mode = 'base';
     } else {
-      loads = resolveLoads(tg.sys, patternParts); limit = maxLoadFactor - lambda; mode = 'pattern';
+      loads = loadsOf('pattern', patternParts, tg.sys); limit = maxLoadFactor - lambda; mode = 'pattern';
       stageName = 'pattern';
     }
     let res;
@@ -295,6 +366,13 @@ export function pushoverAnalysis(model, {
       if (!err.mechanism) throw err;
       status = stageName === 'base' ? 'collapse-under-base-load' : 'collapse';
       break;
+    }
+    if (mode === 'pattern' && !patternChecked) {
+      patternChecked = true;
+      let rmax = 0;
+      for (let g = 0; g < sys0.nDof; g++) rmax = Math.max(rmax, Math.abs(res.displacements[g]));
+      for (let e = 0; e < nEl && rmax === 0; e++) for (let i = 0; i < 12; i++) rmax = Math.max(rmax, Math.abs(res.memberForces[e].f[i]));
+      if (rmax === 0) throw new RangeError(noLoad);
     }
     if (mode === 'pattern' && baseShearRef === 0) {
       const a = res.appliedSum;

@@ -175,6 +175,11 @@ export function propagatingBuckling({ D, t, fy, alphaFab = 1, pe, pmin = 0, gamm
  * Default factors (ULS): γF = 1.1, γE = 1.3, γA = 1.0 (Table 5-1), γSC = 1.14 normal safety class (Table 5-2),
  * γm = 1.15 (Table 5-3) — documented defaults, to be confirmed against the governing edition.
  * Validity: D/t2 ≤ 60, ovality ≤ 3 %, |Ted| ≤ Tk; torsion and shear not included.
+ * When the net internal pressure reaches the burst resistance ((pld − pe)/pb ≥ 1) the square root in Eq. 5.28 has
+ * no real value: the pipe has no bending capacity left. The utilisation is then continued as
+ * γSC·γm·(Ted/Tk)² + ((pld − pe)/pb)², the limit of Eq. 5.28 as the pressure ratio reaches 1 (finite, ≥ 1, growing
+ * with the overpressure) and `burstExceeded` is true — the member fails on pressure containment
+ * (see burstPressureDnv / the burst check), whatever the bending.
  *
  * @param {object} o
  * @param {number} o.D @param {number} o.t outer diameter and wall thickness t2 = tnom − tcorr [m]
@@ -188,8 +193,9 @@ export function propagatingBuckling({ D, t, fy, alphaFab = 1, pe, pmin = 0, gamm
  * @param {number} [o.gammaSC=1.14] @param {number} [o.gammaM=1.15]
  * @param {number} [o.E=207e9] @param {number} [o.nu=0.3] @param {number} [o.f0=0.005] @param {number} [o.alphaFab=1]
  * @returns {{ Md: number, Ted: number, Mk: number, Tk: number, alphaC: number, pb: number, pc: number,
- *   mode: 'internal' | 'external', uc: number }} Md, Mk [N·m]; Ted, Tk [N]; pb, pc [Pa]; uc is the left-hand side
- *   of the governing interaction equation (≤ 1 passes) [-]
+ *   mode: 'internal' | 'external', uc: number, burstExceeded: boolean }} Md, Mk [N·m]; Ted, Tk [N]; pb, pc [Pa];
+ *   uc is the left-hand side of the governing interaction equation (≤ 1 passes; always finite) [-]; burstExceeded =
+ *   net internal pressure at or above the burst resistance
  */
 export function combinedLoadingDnv(o) {
   const {
@@ -210,17 +216,17 @@ export function combinedLoadingDnv(o) {
   const Mk = fy * alphaC * (D - t) ** 2 * t, Tk = fy * alphaC * Math.PI * (D - t) * t;
   const { pc } = collapsePressureDnv({ D, t, fy, E, nu, f0, alphaFab });
   const g = gammaSC * gammaM;
-  let uc, mode;
+  let uc, mode, burstExceeded = false;
   if (pld >= pe) {
     mode = 'internal';
     const pr = (pld - pe) / pb;
-    if (pr >= 1) uc = Infinity;
+    if (pr >= 1) { burstExceeded = true; uc = g * (Ted / Tk) ** 2 + pr * pr; }
     else uc = g * ((Math.abs(Md) / Mk) * Math.sqrt(1 - pr * pr) + (Ted / Tk) ** 2) + pr * pr;
   } else {
     mode = 'external';
     uc = g * g * (Math.abs(Md) / Mk + (Ted / Tk) ** 2) ** 2 + g * g * ((pe - pmin) / pc) ** 2;
   }
-  return { Md, Ted, Mk, Tk, alphaC, pb, pc, mode, uc };
+  return { Md, Ted, Mk, Tk, alphaC, pb, pc, mode, uc, burstExceeded };
 }
 
 /**

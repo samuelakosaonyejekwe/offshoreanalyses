@@ -261,6 +261,9 @@ const SCR_R = new Float64Array(6), SCR_Q = new Float64Array(6);
 const SCR_B1 = Float64Array.of(0, 0, 1, 0, 0, 0), SCR_B2 = Float64Array.of(0, 0, 0, 0, 0, 1);
 
 function seabedZ(sb, x) { return typeof sb.profile === 'function' ? sb.profile(x) : sb.z; }
+// Axial shear stiffness of the seabed before sliding [Pa]. Friction needs an elastic stage; when a friction
+// coefficient is given without kt the normal stiffness is used (mobilisation over a slip of mu × penetration).
+function seabedKt(sb) { return sb.kt !== undefined ? sb.kt : sb.mu > 0 ? sb.kn : 0; }
 
 /**
  * Residual (internal − external) and tangent stiffness. `out` (optional) receives element forces and contact
@@ -313,7 +316,7 @@ function assemble(mesh, model, st, u, fac, R, B, out) {
   if (out) out.q.fill(0);
   const sb = model.seabed;
   if (sb) {
-    const kn = sb.kn, mu = sb.mu ?? 0, kt = sb.kt ?? 0;
+    const kn = sb.kn, mu = sb.mu ?? 0, kt = seabedKt(sb);
     for (let k = 0; k < nn; k++) {
       const x = u[3 * k], z = u[3 * k + 1];
       const zs = seabedZ(sb, x) + mesh.offset[k];
@@ -421,7 +424,11 @@ function endSpec(end, name) {
  * @param {Array<object>} [model.pointLoads] `{ s [m], Fx?, Fz? [N, +z up: buoy positive, clump negative], M? [N·m] }`
  *   applied at the nearest node
  * @param {object} [model.seabed] `{ z [m elevation], kn [N/m per m = Pa, normal stiffness], mu? [-], kt? [Pa axial
- *   shear stiffness before sliding], profile? (x) => z [m] (trench / slope; overrides z) }`
+ *   shear stiffness before sliding], profile? (x) => z [m] (trench / slope; overrides z) }`. Axial friction is an
+ *   elastic–sliding (Coulomb) spring anchored where each node first touches down: it acts when mu > 0, with
+ *   kt defaulting to kn when it is not given (full friction mobilised after a slip of mu × penetration);
+ *   kt = 0 switches friction off explicitly. Friction develops only through movement along the seabed after
+ *   first contact, so it depends on the load path (ramping) as in the real installation.
  * @param {Array<object>} [model.supports] rigid circles `{ xc, zc, R [m], k [Pa penalty stiffness per unit length],
  *   side? 'outside' | 'inside', angMin?, angMax? [rad polar angle window about the centre], offset? [m] }`
  * @param {object} [model.current] `{ rho? [kg/m³], U? [m/s uniform, +x] | profile? (z) => U | z: [], U: [] }`
@@ -452,7 +459,9 @@ export function solveRodStatic(model) {
   const mesh = buildMesh(model);
   const { ne, nn, ndof } = mesh;
   const A = endSpec(model.endA, 'endA'), Bn = endSpec(model.endB, 'endB');
-  if (model.seabed) { num(model.seabed.kn, 'seabed.kn', { min: 0, strictMin: true }); if (typeof model.seabed.profile !== 'function') num(model.seabed.z, 'seabed.z'); }
+  if (model.seabed) { num(model.seabed.kn, 'seabed.kn', { min: 0, strictMin: true });
+    if (model.seabed.mu !== undefined) num(model.seabed.mu, 'seabed.mu', { min: 0 });
+    if (model.seabed.kt !== undefined) num(model.seabed.kt, 'seabed.kt', { min: 0 }); if (typeof model.seabed.profile !== 'function') num(model.seabed.z, 'seabed.z'); }
   (model.supports ?? []).forEach((sp, k) => { num(sp.R, `supports[${k}].R`, { min: 0, strictMin: true }); num(sp.k, `supports[${k}].k`, { min: 0, strictMin: true }); num(sp.xc, `supports[${k}].xc`); num(sp.zc, `supports[${k}].zc`); });
 
   const init = model.initial ?? 'straight';
@@ -500,12 +509,12 @@ export function solveRodStatic(model) {
   const B = bandCreate(ndof, 5);
   const sb = model.seabed;
   const setAnchors = (first) => {
-    if (!sb || !(sb.mu > 0)) return;
+    if (!sb || !(sb.mu > 0) || !(seabedKt(sb) > 0)) return;
     for (let k = 0; k < nn; k++) {
       const x = u[3 * k], pen = seabedZ(sb, x) + mesh.offset[k] - u[3 * k + 1];
       if (pen < 0) { st.anchor[k] = NaN; continue; }
       if (Number.isNaN(st.anchor[k]) || first) { st.anchor[k] = x; continue; }
-      const lim = sb.mu * sb.kn * pen / sb.kt;
+      const lim = sb.mu * sb.kn * pen / seabedKt(sb);
       const dxa = x - st.anchor[k];
       if (Math.abs(dxa) > lim) st.anchor[k] = x - Math.sign(dxa) * lim;
     }
@@ -791,6 +800,26 @@ export function rodModes(result, { nModes = 6 } = {}) {
  * Validity: small harmonic motion about the static shape, contact status frozen, steady current not included
  * in the drag linearisation, planar motion.
  *
+ * LIMITATION AT TOUCHDOWN — READ BEFORE USING momentAmp FOR FATIGUE. With the contact status frozen, the node
+ * where the static shape lands is a fixed support for the dynamic motion: the suspended span rotates about it and
+ * all the dynamic bending of the touchdown zone is concentrated at that one node. In reality the touchdown point
+ * travels along the pipe and each material point only sees the static curvature profile slide past it. The
+ * frozen-contact momentAmp in the touchdown zone is therefore not the bending range a material point sees: on a
+ * stiff seabed with a large touchdown excursion it has been found to over-predict the touchdown stress range of a
+ * steel catenary riser about threefold, while for small excursions it can equally fall below the travelling
+ * estimate. Do not use it for touchdown fatigue without the correction below. Away from the touchdown zone the
+ * result is unaffected.
+ * `touchdownSmoothing: { travel }` replaces the bending amplitude inside the touchdown zone by that kinematic
+ * picture: for each node within 8λ + travel on the suspended side and 4λ + travel on the grounded side of a
+ * static touchdown point (λ = √(EI/Te), the bending boundary-layer length), the curvature amplitude becomes half
+ * the range of the static curvature |κ(s)| over s ± travel (nine sample points), and momentAmp = EI × that.
+ * `travel` is the amplitude of the touchdown-point excursion along the rod [m] for the motion analysed: obtain it
+ * from two static solutions with the end displaced by ± the motion amplitude (difference of the touchdown arc
+ * length), or from the inextensible catenary relations (Irvine, "Cable Structures", §1.2). The frozen-contact
+ * values are kept in momentAmpFrozen / curvatureAmpFrozen. Reference for the travelling-touchdown model:
+ * Pesce, Aranha & Martins (1998), "The soil rigidity effect in the touchdown boundary-layer of a catenary riser:
+ * static problem", ISOPE; Sparks (2007) Ch. 13 (boundary layer at touchdown).
+ *
  * @param {object} result output of solveRodStatic (both translations of the excited end must be prescribed)
  * @param {object} opts
  * @param {number} opts.omega circular frequency [rad/s]
@@ -803,15 +832,25 @@ export function rodModes(result, { nModes = 6 } = {}) {
  * @param {number} [opts.zeta=0] structural damping ratio applied as stiffness-proportional damping at ω [-]
  * @param {number} [opts.tol=1e-4] relative convergence tolerance on the velocity amplitudes [-]
  * @param {number} [opts.maxIter=60]
+ * @param {{travel: number}} [opts.touchdownSmoothing] post-process the touchdown zone with the travelling
+ *   touchdown model (see above); travel = touchdown excursion amplitude along the rod [m], >= 0
  * @returns {{ s: Float64Array, xAmp: Float64Array, zAmp: Float64Array, normalAmp: Float64Array,
  *   tensionAmp: Float64Array, momentAmp: Float64Array, curvatureAmp: Float64Array, iterations: number,
- *   converged: boolean }} displacement amplitudes [m], dynamic effective tension amplitude [N], bending moment
- *   amplitude [N·m], curvature amplitude [1/m], all at nodes
+ *   converged: boolean, momentAmpFrozen?: Float64Array, curvatureAmpFrozen?: Float64Array,
+ *   touchdown?: {s: number, node: number, lambda: number, from: number, to: number}[] }} displacement amplitudes
+ *   [m], dynamic effective tension amplitude [N], bending moment amplitude [N·m], curvature amplitude [1/m], all at
+ *   nodes; with touchdownSmoothing also the frozen-contact arrays and, per static touchdown point, its arc
+ *   length [m], node, boundary-layer length λ [m] and the smoothed interval of arc length [m]
  */
 export function rodHarmonicResponse(result, opts) {
   if (!result || !result.state) throw new RangeError('rod: argument result must come from solveRodStatic');
-  const { omega, end = 'A', xAmp = 0, zAmp = 0, phaseZ = 0, rotAmp = 0, rho = 1025, zeta = 0, tol = 1e-4, maxIter = 60 } = opts ?? {};
+  const { omega, end = 'A', xAmp = 0, zAmp = 0, phaseZ = 0, rotAmp = 0, rho = 1025, zeta = 0, tol = 1e-4, maxIter = 60, touchdownSmoothing } = opts ?? {};
   num(omega, 'omega', { min: 0, strictMin: true });
+  if (touchdownSmoothing !== undefined) {
+    if (!touchdownSmoothing || typeof touchdownSmoothing !== 'object') throw new RangeError('rod: argument touchdownSmoothing must be { travel }');
+    num(touchdownSmoothing.travel, 'touchdownSmoothing.travel', { min: 0 });
+    if (!result.reaction || !result.curvature) throw new RangeError('rod: argument result must carry reaction and curvature for touchdownSmoothing');
+  }
   num(zeta, 'zeta', { min: 0 });
   const { mesh, st, u } = result.state;
   const { ndof, nn, ne } = mesh;
@@ -896,7 +935,52 @@ export function rodHarmonicResponse(result, opts) {
     momentAmp[k] = curvatureAmp[k] * mesh.EI[Math.min(k, ne - 1)];
     tensionAmp[k] = k === 0 ? dN[0] : k === ne ? dN[ne - 1] : 0.5 * (dN[k - 1] + dN[k]);
   }
-  return { s: Float64Array.from(mesh.s), xAmp: xA, zAmp: zA, normalAmp: nA, tensionAmp, momentAmp, curvatureAmp, iterations: it, converged };
+  const out = { s: Float64Array.from(mesh.s), xAmp: xA, zAmp: zA, normalAmp: nA, tensionAmp, momentAmp, curvatureAmp, iterations: it, converged };
+  if (touchdownSmoothing) {
+    out.momentAmpFrozen = Float64Array.from(momentAmp);
+    out.curvatureAmpFrozen = Float64Array.from(curvatureAmp);
+    out.touchdown = smoothTouchdown(mesh, result, touchdownSmoothing.travel, curvatureAmp, momentAmp);
+  }
+  return out;
+}
+
+// Travelling-touchdown post-process of rodHarmonicResponse: inside each touchdown zone the curvature amplitude is
+// half the range of the static |curvature| swept over ± travel. Returns the touchdown points treated.
+function smoothTouchdown(mesh, result, travel, curvatureAmp, momentAmp) {
+  const { nn, ne, s } = mesh;
+  const kap = new Float64Array(nn);
+  for (let k = 0; k < nn; k++) kap[k] = Math.abs(result.curvature[k]);
+  const at = (x) => {
+    if (x <= s[0]) return kap[0];
+    if (x >= s[nn - 1]) return kap[nn - 1];
+    let lo = 0, hi = nn - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (s[m] <= x) lo = m; else hi = m; }
+    return kap[lo] + (kap[hi] - kap[lo]) * (x - s[lo]) / (s[hi] - s[lo]);
+  };
+  const touching = (k) => result.reaction[k] > 0;
+  const points = [];
+  for (let k = 0; k < nn - 1; k++) {
+    if (touching(k) === touching(k + 1)) continue;
+    // a supported rod end resting on the seabed carries its load through the support: not a touchdown point
+    if (k < 2 || k > nn - 4) continue;
+    // node kT is the first grounded node; dir points from the grounded side to the suspended side
+    const kT = touching(k) ? k : k + 1, dir = touching(k) ? 1 : -1;
+    const lambda = Math.sqrt(mesh.EI[Math.min(kT, ne - 1)] / Math.max(Math.abs(result.Te[kT]), 1));
+    const a = s[kT] + dir * (8 * lambda + travel), b = s[kT] - dir * (4 * lambda + travel);
+    points.push({ s: s[kT], node: kT, lambda, from: Math.max(Math.min(a, b), s[0]), to: Math.min(Math.max(a, b), s[nn - 1]) });
+  }
+  const done = new Uint8Array(nn);
+  for (const p of points) {
+    for (let k = 0; k < nn; k++) {
+      if (done[k] || s[k] < p.from || s[k] > p.to) continue;
+      let mn = Infinity, mx = -Infinity;
+      for (let q = -4; q <= 4; q++) { const v = at(s[k] + travel * q / 4); if (v < mn) mn = v; if (v > mx) mx = v; }
+      curvatureAmp[k] = 0.5 * (mx - mn);
+      momentAmp[k] = curvatureAmp[k] * mesh.EI[Math.min(k, ne - 1)];
+      done[k] = 1;
+    }
+  }
+  return points;
 }
 
 /**

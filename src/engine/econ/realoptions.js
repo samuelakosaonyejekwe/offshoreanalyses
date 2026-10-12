@@ -68,15 +68,20 @@ export function binomialCRR({ S, K, r, sigma, T, q = 0, steps = 200, type = 'cal
  * General recombining CRR lattice valuation of a claim on a value process V: terminal payoff `terminal(V)` and an
  * optional decision rule `exercise(V, continuation, time, step)` applied at every earlier node (return the node
  * value). This is the engine behind the real-option templates.
+ * Who receives the leakage q matters. A pure option holder (call or put on V) does not, and `payout` is false:
+ * continuation = e^(−rΔt)·E[F]. The owner of an operating asset does receive it while holding, and `payout` is
+ * true: continuation = V(1 − e^(−qΔt)) + e^(−rΔt)·E[F], the cash released over the step plus the discounted
+ * expectation, so that a claim with terminal(V) = V and no decisions is worth exactly V at every node.
  * Ref: Cox, Ross & Rubinstein (1979); Trigeorgis, L. (1996), Real Options, ch. 3 and 5; Copeland & Antikarov
  * (2001), Real Options: A Practitioner's Guide, ch. 5.
- * @param {{V0: number, sigma: number, r: number, T: number, q?: number, steps?: number,
+ * @param {{V0: number, sigma: number, r: number, T: number, q?: number, steps?: number, payout?: boolean,
  *   terminal: (V: number) => number, exercise?: (V: number, cont: number, t: number, step: number) => number}} o
- *   V0 = present value of the underlying project (currency), q = value leakage (1/yr)
+ *   V0 = present value of the underlying project (currency), q = value leakage (1/yr), payout = the claim
+ *   holder receives the leakage while holding (default false)
  * @returns {{value: number, delta: number, u: number, d: number, p: number}} value in currency; p = risk-neutral
  *   up probability
  */
-export function valueLattice({ V0, sigma, r, T, q = 0, steps = 200, terminal, exercise }) {
+export function valueLattice({ V0, sigma, r, T, q = 0, steps = 200, payout = false, terminal, exercise }) {
   requireNumber('V0', V0, { gt: 0 }); requireNumber('sigma', sigma, { gt: 0 }); requireNumber('T', T, { gt: 0 });
   requireNumber('r', r); requireNumber('q', q); requireNumber('steps', steps, { min: 1, max: 20000, integer: true });
   if (typeof terminal !== 'function') throw new RangeError('terminal must be a function');
@@ -84,13 +89,15 @@ export function valueLattice({ V0, sigma, r, T, q = 0, steps = 200, terminal, ex
   const p = (Math.exp((r - q) * dt) - d) / (u - d);
   if (!(p > 0 && p < 1)) throw new RangeError('risk-neutral probability outside (0, 1): increase steps or check r, q, sigma');
   const disc = Math.exp(-r * dt);
+  const cash = payout ? 1 - Math.exp(-q * dt) : 0;
   const val = new Float64Array(steps + 1);
   for (let j = 0; j <= steps; j++) val[j] = terminal(V0 * Math.pow(u, 2 * j - steps));
   let delta = NaN;
   for (let i = steps - 1; i >= 0; i--) {
     for (let j = 0; j <= i; j++) {
-      const cont = disc * (p * val[j + 1] + (1 - p) * val[j]);
-      val[j] = exercise ? exercise(V0 * Math.pow(u, 2 * j - i), cont, i * dt, i) : cont;
+      const V = V0 * Math.pow(u, 2 * j - i);
+      const cont = cash * V + disc * (p * val[j + 1] + (1 - p) * val[j]);
+      val[j] = exercise ? exercise(V, cont, i * dt, i) : cont;
     }
     if (i === 1) delta = (val[1] - val[0]) / (V0 * (u - d));
   }
@@ -104,9 +111,14 @@ export function valueLattice({ V0, sigma, r, T, q = 0, steps = 200, terminal, ex
  * growing at `growth` less the switching cost. Each may be limited to a window [from, to] in years; `american`
  * false restricts exercise to maturity.
  * Option value = value with options − value of the same lattice without options.
+ * The options belong to the owner of the operating asset, who receives the leakage q (the project's cash yield)
+ * while holding: the value of holding at a node is V(1 − e^(−qΔt)) + e^(−rΔt)·E[F] (see valueLattice, payout).
+ * The value without options is therefore V0 for any q, a European abandonment option equals the
+ * Black–Scholes–Merton put with yield q, and with q = 0 the American abandonment option is the CRR American put.
  * Ref: Trigeorgis (1996), Real Options, ch. 5 and 7 (option interactions); Copeland & Antikarov (2001), ch. 5–6.
  * @param {{V0: number, sigma: number, r: number, T: number, q?: number, steps?: number, american?: boolean,
- *   options: object[]}} o V0 = PV of project operating cash flows (currency); option amounts in currency
+ *   options: object[]}} o V0 = PV of project operating cash flows (currency); q = cash yield of the project
+ *   (1/yr); option amounts in currency
  * @returns {{valueWithOptions: number, valueWithoutOptions: number, optionValue: number}} currency
  */
 export function realOptionLattice({ V0, sigma, r, T, q = 0, steps = 200, american = true, options }) {
@@ -122,9 +134,9 @@ export function realOptionLattice({ V0, sigma, r, T, q = 0, steps = 200, america
     return (V, t) => (t >= from - 1e-12 && t <= to + 1e-12 ? f(V, t) : -Infinity);
   });
   const best = (V, t, hold) => { let m = hold; for (const f of pay) { const v = f(V, t); if (v > m) m = v; } return m; };
-  const withOpt = valueLattice({ V0, sigma, r, T, q, steps, terminal: (V) => best(V, T, V),
+  const withOpt = valueLattice({ V0, sigma, r, T, q, steps, payout: true, terminal: (V) => best(V, T, V),
     exercise: american ? (V, cont, t) => best(V, t, cont) : undefined }).value;
-  const without = valueLattice({ V0, sigma, r, T, q, steps, terminal: (V) => V }).value;
+  const without = valueLattice({ V0, sigma, r, T, q, steps, payout: true, terminal: (V) => V }).value;
   return { valueWithOptions: withOpt, valueWithoutOptions: without, optionValue: withOpt - without };
 }
 

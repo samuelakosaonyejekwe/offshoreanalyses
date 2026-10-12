@@ -170,3 +170,64 @@ test('depth of closure: Hallermeier and Birkemeier by hand', () => {
   assert.ok(o > h);
   assert.throws(() => depthOfClosure({ He: 3, Te: 9, method: 'x' }), RangeError);
 });
+
+test('Exner with spatially varying transport on a level bed: bounded step, bounded scour, grid-convergent (local celerity)', () => {
+  // qs = a u³ with u = Q(x)/(η − zb): the unit discharge rises by 50 % through a contraction centred at x = 500 m.
+  // The bed starts level, so the jump ratio Δqs/Δzb between neighbours is infinite; the local celerity
+  // 3 qs/((1 − p)(η − zb)) is finite everywhere. Equilibrium scour in the throat makes u uniform:
+  // η − zb = 5 × 1.5 → zb = −2.5 m, which bounds the erosion.
+  const p = 0.4; const aC = 1e-4; const eta = 5; const L = 1000;
+  const run = (n, extra = {}) => {
+    const dx = L / n;
+    const Qx = Float64Array.from({ length: n }, (_, i) => 5 * (1 + 0.5 * Math.exp(-((((i + 0.5) * dx - 500) / 100) ** 2))));
+    return exnerEvolve({ dx, zb0: new Float64Array(n), porosity: p, tEnd: 2e6, maxSteps: 20000,
+      transport: (z) => Float64Array.from(z, (zi, i) => aC * (Qx[i] / (eta - zi)) ** 3), ...extra });
+  };
+  const a = run(50); const b = run(100);
+  for (const r of [a, b]) {
+    assert.ok(r.courantMax <= 0.8 + 1e-9, `Courant ${r.courantMax}`);
+    assert.ok(Math.min(...r.zb) > -2.5 && Math.min(...r.zb) < -2.0, `scour ${Math.min(...r.zb)}`);
+    assert.ok(Math.abs(r.mass.error) < 1e-9);
+    assert.ok(r.dtMin > 10 && r.dtMax < 1e5, `steps ${r.dtMin}…${r.dtMax}`);
+  }
+  rel(Math.min(...b.zb), Math.min(...a.zb), 0.01);
+  // the raw jump ratio collapses the step on the same problem
+  assert.throws(() => run(50, { celerity: 'jump' }), /maxSteps/);
+  // a supplied celerity function reproduces the local estimate
+  const dx = L / 50;
+  const Qx = Float64Array.from({ length: 50 }, (_, i) => 5 * (1 + 0.5 * Math.exp(-((((i + 0.5) * dx - 500) / 100) ** 2))));
+  const c = run(50, { celerity: (z) => Float64Array.from(z, (zi, i) => (3 * aC * Qx[i] ** 3) / ((1 - p) * (eta - zi) ** 4)) });
+  rel(Math.min(...c.zb), Math.min(...a.zb), 1e-4);
+});
+
+test('Exner bed-slope term with uniform transport is linear diffusion: a Gaussian mound spreads with σ² = σ0² + 2 D t', () => {
+  // qs = q0 everywhere → ∂zb/∂t = D ∂²zb/∂x², D = β q0/(1 − p) = 2 × 1e-4 / 0.6 = 3.333e-4 m²/s.
+  // σ0 = 10 m, t = 3e5 s: σ² = 100 + 200 = 300 → peak ratio σ0/σ = 1/√3 = 0.5774.
+  const n = 200; const dx = 1; const q = new Float64Array(n).fill(1e-4);
+  const z0 = Float64Array.from({ length: n }, (_, i) => Math.exp(-0.5 * (((i + 0.5) * dx - 100) / 10) ** 2));
+  const r = exnerEvolve({ dx, zb0: z0, transport: () => q, tEnd: 3e5, porosity: 0.4, bedSlopeBeta: 2 });
+  rel(Math.max(...r.zb), 1 / Math.sqrt(3), 2e-3);
+  let m = 0; let v = 0;
+  for (let i = 0; i < n; i++) { m += r.zb[i]; v += r.zb[i] * ((i + 0.5) * dx - 100) ** 2; }
+  rel(v / m, 300, 2e-3);
+  assert.ok(Math.abs(r.mass.relativeError) < 1e-12);
+  // explicit diffusion limit Δt <= cfl Δx² (1 − p)/(2 β q0) = 0.8 × 0.6 / 4e-4 = 1200 s
+  assert.ok(r.dtMax <= 1200 * (1 + 1e-9), `dtMax ${r.dtMax}`);
+  assert.throws(() => exnerEvolve({ dx, zb0: z0, transport: () => q, tEnd: 1, bedSlopeBeta: -1 }), /bedSlopeBeta/);
+});
+
+test('Exner adaptive step with zero celerity: supply onto a level bed is stepped by the bed-change limit, dtMax is honoured', () => {
+  // uniform capacity 1e-4, supply 3e-4 m²/s for 1000 s, p = 0.35, dx = 2 m: first cell rises 0.2/(0.65 × 2) = 0.15385 m
+  const n = 50; const dx = 2; const q = new Float64Array(n).fill(1e-4);
+  const base = { dx, zb0: new Float64Array(n), transport: () => q, tEnd: 1000, porosity: 0.35, left: { q: 3e-4 } };
+  const r = exnerEvolve(base);
+  rel(r.zb[0], 0.2 / (0.65 * dx), 1e-10);
+  // default limit cfl × 0.001 Δx = 1.6 mm per step → 0.15385 / 0.0016 = 96.2 → 97 steps
+  assert.equal(r.steps, 97);
+  const one = exnerEvolve({ ...base, maxBedChange: 1 });
+  assert.equal(one.steps, 1); rel(one.zb[0], 0.2 / (0.65 * dx), 1e-10);
+  const capped = exnerEvolve({ ...base, maxBedChange: 1, dtMax: 50 });
+  assert.equal(capped.steps, 20); assert.ok(capped.dtMax <= 50 + 1e-9);
+  assert.throws(() => exnerEvolve({ ...base, maxBedChange: 0 }), /maxBedChange/);
+  assert.throws(() => exnerEvolve({ ...base, celerity: 'roe' }), /celerity/);
+});

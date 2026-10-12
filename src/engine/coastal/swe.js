@@ -53,9 +53,19 @@ function seriesFn(spec, key, name) {
  *     at wet/dry fronts, and keeps depths non-negative;
  *   - Manning friction treated point-implicitly; two-stage SSP Runge–Kutta (Shu & Osher 1988); CFL-limited
  *     adaptive time step.
+ * Time step: Δt = cfl·dx / max(|u| + √(g h)) over the wet cells and the boundary states, never above `dtMax`.
+ * The boundary state at the end of the step is included, so a rising inflow shortens the step before it arrives.
+ * While the whole domain is dry and a forcing boundary (stage, discharge, wave) is present there is no wave speed
+ * to scale the step; it is then limited to cfl·dx/√(g·dx), the Courant step of a flow as deep as one cell is
+ * long, so that a hydrograph starting from zero is not stepped over. A forcing pulse much shorter than the step
+ * permitted by a very thin film of water can still be under-resolved: give `dtMax` (a fraction of the shortest
+ * forcing time scale) in that case.
  * Boundary types (each side): 'wall' (reflective), 'transmissive' (zero gradient), 'periodic' (both sides),
  * 'stage' (prescribed free-surface level, velocity from the outgoing Riemann invariant), 'discharge'
- * (prescribed unit discharge, depth from the outgoing invariant), 'wave' (incident wave train entering
+ * (prescribed unit discharge, depth from the outgoing invariant; the mass flux through the boundary face is set
+ * to the prescribed q exactly, so volume.boundaryNet equals ∫q dt to the accuracy of the two-stage time
+ * integration, on wet and dry beds alike — except that a prescribed outflow from a dry boundary cell is
+ * suppressed), 'wave' (incident wave train entering
  * through an absorbing–generating characteristic boundary).
  * Reference: Toro (2001) "Shock-Capturing Methods for Free-Surface Shallow Flows"; Audusse, Bouchut,
  * Bristeau, Klein & Perthame (2004) SIAM J. Sci. Comput. 25(6); Harten, Lax & van Leer (1983).
@@ -70,6 +80,7 @@ function seriesFn(spec, key, name) {
  * @param {number} o.tEnd end time [s]
  * @param {number} [o.x0] coordinate of the left edge of the domain [m], default 0
  * @param {number} [o.cfl] Courant number [-], default 0.45 (must be <= 0.5)
+ * @param {number} [o.dtMax] upper limit on the time step [s], default unlimited
  * @param {number|ArrayLike<number>} [o.manning] Manning n [s/m^(1/3)], default 0
  * @param {'minmod'|'vanleer'|'none'} [o.limiter] slope limiter ('none' = first order), default 'minmod'
  * @param {number} [o.hDry] depth below which a cell is treated as dry [m], default 1e-6
@@ -99,13 +110,14 @@ function seriesFn(spec, key, name) {
 export function solveSwe1d({
   dx, zb, h0, eta0, u0, tEnd, x0 = 0, cfl = 0.45, manning = 0, limiter = 'minmod', hDry = 1e-6,
   left = { type: 'wall' }, right = { type: 'wall' }, outputTimes = [], landSide = 'right', hShore = 1e-3,
-  g = G, maxSteps = 5e6,
+  g = G, maxSteps = 5e6, dtMax: dtLimit = Infinity,
 }) {
   need(Number.isFinite(dx) && dx > 0, 'dx must be positive');
   need(zb && zb.length >= 4, 'zb must have at least 4 cells');
   need(Number.isFinite(tEnd) && tEnd >= 0, 'tEnd must be >= 0');
   need(cfl > 0 && cfl <= 0.5, 'cfl must lie in (0, 0.5]');
   need(hDry > 0, 'hDry must be positive');
+  need(dtLimit > 0, 'dtMax must be positive');
   need(h0 !== undefined || eta0 !== undefined, 'h0 or eta0 must be given');
   const lim = { minmod, vanleer: vanLeer, none: noLimiter }[limiter];
   need(lim !== undefined, "limiter must be 'minmod', 'vanleer' or 'none'");
@@ -208,6 +220,7 @@ export function solveSwe1d({
       ub = hi > hDry ? Rout + sgn * 2 * Math.sqrt(g * hb) : 0;
     } else if (b.type === 'discharge') {
       const qb = b.q(t);
+      b.qNow = qb;
       hb = Math.max(hi, hDry * 10);
       // Solve qb/hb − sgn·2√(g hb) = Rout by Newton iteration starting from the interior depth.
       for (let it = 0; it < 30; it++) {
@@ -321,6 +334,11 @@ export function solveSwe1d({
       FqL[f] = fq + halfG * (hp[a] * hp[a] - hL * hL);
       FqR[f] = fq + halfG * (hm[f] * hm[f] - hR * hR);
     }
+    // Prescribed discharge: the Riemann flux between the characteristic ghost state and the first cell differs
+    // from q (by several per cent over a dry or nearly dry bed), so the mass flux is imposed directly. Water
+    // cannot be drawn out of a dry cell.
+    if (bl.type === 'discharge') Fh[iL] = bl.qNow < 0 && hh[iL] <= hDry ? 0 : bl.qNow;
+    if (br.type === 'discharge') Fh[iR + 1] = br.qNow > 0 && hh[iR] <= hDry ? 0 : br.qNow;
     const idx = 1 / dx;
     for (let i = iL; i <= iR; i++) {
       dh[i] = -(Fh[i + 1] - Fh[i]) * idx;
@@ -419,6 +437,9 @@ export function solveSwe1d({
     snap(0);
     io++;
   }
+  const forced = [bl.type, br.type].some((ty) => ty === 'stage' || ty === 'discharge' || ty === 'wave');
+  const dtDry = (cfl * dx) / Math.sqrt(g * dx);
+  const ghostSpeed = (i) => (h[i] > hDry ? Math.abs(q[i] / h[i]) + Math.sqrt(g * h[i]) : 0);
   while (t < tEnd) {
     need(steps < maxSteps, 'maxSteps exceeded');
     applyBc(h, q, t);
@@ -432,6 +453,17 @@ export function solveSwe1d({
     let target = tEnd;
     if (io < outs.length && outs[io] < target) target = outs[io];
     let dt = smax > 0 ? (cfl * dx) / smax : target - t;
+    if (forced) {
+      if (!(smax > 0) && dt > dtDry) dt = dtDry;
+      // the second stage sees the boundary state at t + Δt: it must satisfy the same Courant limit
+      for (let it = 0; it < 4; it++) {
+        applyBc(h, q, Math.min(t + Math.min(dt, dtLimit), target));
+        const sb = Math.max(ghostSpeed(1), ghostSpeed(iR + 1));
+        if (!(sb * dt > cfl * dx * (1 + 1e-12))) break;
+        dt = (cfl * dx) / sb;
+      }
+    }
+    if (dt > dtLimit) dt = dtLimit;
     let hit = false;
     if (t + dt >= target - 1e-12 * Math.max(target, 1)) {
       dt = target - t;

@@ -135,3 +135,31 @@ test('Closed-loop DP: holds station against a constant force with thrust equal t
   const again = run({ waveMotion: { sigma: [1.0, 1.0, 0.01], period: 9 }, noiseStd: [0.1, 0.1, 0.001] });
   assert.equal(again.footprint.maxRadius, waves.footprint.maxRadius);
 });
+
+test('infeasible demand: fraction:false skips the fraction search; the default result is unchanged; capability polar is identical', () => {
+  // two azimuth thrusters of 100 kN on the centreline: at most 200 kN of sway; demand 500 kN → fraction 0.4
+  const thrusters = [{ x: 20, y: 0, Tmax: 1e5 }, { x: -20, y: 0, Tmax: 1e5 }];
+  const demand = { Fx: 0, Fy: 5e5, Mz: 0 };
+  const full = dp.allocateThrust({ thrusters, demand });
+  assert.equal(full.feasible, false);
+  close(full.demandFraction, 0.4, 5e-4); close(full.achieved.Fy, 2e5, 5e-4);
+  const quick = dp.allocateThrust({ thrusters, demand, fraction: false });
+  assert.equal(quick.feasible, false); assert.ok(Number.isNaN(quick.demandFraction));
+  // one allocation pass instead of the bisection: every thruster saturated towards the demand
+  for (const t of quick.thrusters) close(t.utilisation, 1, 1e-9);
+  close(quick.achieved.Fy, 2e5, 1e-9); close(quick.residual.Fy, 3e5, 1e-9);
+  assert.ok(quick.iterations < full.iterations + 1);
+  // coarser resolution of the search
+  const coarse = dp.allocateThrust({ thrusters, demand, fractionTol: 0.05 });
+  assert.ok(Math.abs(coarse.demandFraction - 0.4) <= 0.05 && coarse.demandFraction <= 0.4 + 1e-12);
+  assert.throws(() => dp.allocateThrust({ thrusters, demand, fractionTol: 0 }), RangeError);
+  // a feasible demand is not affected by the option
+  const okA = dp.allocateThrust({ thrusters, demand: { Fx: 0, Fy: 1e5, Mz: 0 } });
+  const okB = dp.allocateThrust({ thrusters, demand: { Fx: 0, Fy: 1e5, Mz: 0 }, fraction: false });
+  assert.ok(okA.feasible && okB.feasible); assert.equal(okB.demandFraction, 1); close(okB.thrusters[0].T, okA.thrusters[0].T, 1e-12);
+  // capability: pure sway force F = 250 v² N balanced by 200 kN intact (v = √800 = 28.28 m/s) and practically 0 with one failed
+  // (a single centreline thruster cannot hold sway without a yaw moment)
+  const cap = dp.dpCapability({ thrusters, envForce: (v) => ({ Fx: 0, Fy: 250 * v * v, Mz: 0 }), directionsDeg: [90], vMax: 60 });
+  close(cap.intact[0], Math.sqrt(800), 1e-4);
+  assert.ok(cap.failure[0] < 0.1, `failure limit ${cap.failure[0]}`);
+});

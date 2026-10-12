@@ -265,3 +265,33 @@ test('invalid input throws RangeError', () => {
   assert.throws(() => parisLawBs7910({ environment: 'air', curve: 'mean', rRatio: 'medium' }), RangeError);
   assert.throws(() => fadOption1(-1, { yieldStrength: 1, tensileStrength: 2 }), /Lr/);
 });
+
+test('growth threshold with an equivalent constant-amplitude range: arrested by default, grows with variableAmplitude', () => {
+  // ΔK0 = 63 N/mm^(3/2) = 63 × √1000 × 1e3 Pa·√m = 1.992 MPa·√m. A 1 mm deep, 10 mm long surface flaw under an
+  // equivalent range of 20 MPa has ΔK of about 20 × 1.1 × √(π × 0.001) ≈ 1.2 MPa·√m < ΔK0: no growth at all.
+  const law = parisLawBs7910({ environment: 'air' });
+  close(law.threshold, 63 * Math.sqrt(1000) * 1e3, 1e-12);
+  assert.equal(law.variableAmplitude, false);
+  const flaw = { a0: 1e-3, c0: 5e-3, t: 0.025, membraneRange: 20 * MPa, maxCycles: 1e7 };
+  const ca = surfaceCrackGrowth({ ...flaw, law });
+  assert.equal(ca.status, 'arrested'); assert.equal(ca.cycles, Infinity); assert.equal(ca.a, 1e-3);
+  // BS 7910 advice for variable-amplitude loading: threshold zero — either on the law or on the integration
+  const lawVa = parisLawBs7910({ environment: 'air', variableAmplitude: true });
+  assert.equal(lawVa.threshold, 0); assert.equal(lawVa.variableAmplitude, true);
+  assert.deepEqual(lawVa.stages, law.stages);
+  const va1 = surfaceCrackGrowth({ ...flaw, law: lawVa });
+  const va2 = surfaceCrackGrowth({ ...flaw, law, variableAmplitude: true });
+  assert.equal(va1.status, 'max-cycles'); assert.ok(va1.a > 1e-3);
+  close(va2.a, va1.a, 1e-12); close(va2.c, va1.c, 1e-12);
+  assert.equal(law.threshold > 0, true, 'the caller’s law object is not modified');
+  // an explicit threshold takes precedence over the flag
+  close(parisLawBs7910({ variableAmplitude: true, threshold: 1e6 }).threshold, 1e6, 1e-15);
+  // one-parameter integration against the closed form (Y = 1.12, A m = 3): N = (a0^-½ − af^-½)/(½ A Y³ Δσ³ π^1.5)
+  const A = law.stages[0].A; const Y = 1.12; const ds = 20 * MPa;
+  const dK = (a) => Y * ds * Math.sqrt(Math.PI * a);
+  assert.equal(parisIntegrate({ a0: 1e-3, af: 2e-3, deltaK: dK, law }).arrested, true);
+  const n = parisIntegrate({ a0: 1e-3, af: 2e-3, deltaK: dK, law, variableAmplitude: true });
+  assert.equal(n.arrested, false);
+  close(n.cycles, (1e-3 ** -0.5 - 2e-3 ** -0.5) / (0.5 * A * Y ** 3 * ds ** 3 * Math.PI ** 1.5), 1e-4);
+  close(n.cycles, parisLifeClosedForm({ a0: 1e-3, af: 2e-3, stressRange: ds, Y, A, m: 3 }), 1e-4);
+});

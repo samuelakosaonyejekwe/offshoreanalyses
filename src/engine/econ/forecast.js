@@ -274,27 +274,38 @@ export function holtWintersForecast({ x, horizon, season, trend = true, seasonal
  * ARIMA(p, d, q) forecast with 95 % limits, optionally seasonal: with `season` and D = 1 the series is first
  * seasonally differenced (x_t − x_(t−s)), the ARIMA is fitted to the result and the forecast is integrated back
  * (limits are then reported for the mean path only as mean ± the differenced-series limits).
- * Ref: Box, Jenkins & Reinsel, Time Series Analysis, 4th ed., ch. 5, 7 and 9 (seasonal models).
- * @param {{x: number[], p?: number, d?: number, q?: number, horizon: number, season?: number, D?: number}} o
- * @returns {{mean: number[], lo95: number[], hi95: number[], aic: number, sigma2: number, stationary: boolean}}
+ * `includeMean` estimates the mean μ of the differenced series. With d = 0 it is the series mean (default on);
+ * with d = 1 it is the drift per step, so the forecast continues the trend instead of flattening towards the
+ * last level (default off, the Box–Jenkins convention — switch it on for a series with a persistent trend);
+ * with d = 2 it is a constant acceleration and should normally stay off.
+ * Ref: Box, Jenkins & Reinsel, Time Series Analysis, 4th ed., ch. 5, 7 and 9 (seasonal models); §4.1.3 and
+ * §5.3.3 (deterministic trend / constant term in the differenced model).
+ * @param {{x: number[], p?: number, d?: number, q?: number, horizon: number, season?: number, D?: number,
+ *   includeMean?: boolean}} o x in any unit [u]; orders (−); horizon and season in steps; includeMean: estimate
+ *   the mean / drift of the differenced series (default true when d = 0, false otherwise)
+ * @returns {{mean: number[], lo95: number[], hi95: number[], aic: number, sigma2: number, stationary: boolean,
+ *   drift: number}} forecast and limits [u]; drift = estimated mean of the differenced series [u per step]
+ *   (0 when not estimated)
  */
-export function arimaForecast({ x, p = 1, d = 0, q = 0, horizon, season, D = 0 }) {
+export function arimaForecast({ x, p = 1, d = 0, q = 0, horizon, season, D = 0, includeMean }) {
   requireSeries('x', x, { minLength: 6 }); requireNumber('horizon', horizon, { min: 1, integer: true });
+  if (includeMean !== undefined && typeof includeMean !== 'boolean') throw new RangeError('includeMean must be a boolean');
+  const order = includeMean === undefined ? { p, d, q } : { p, d, q, includeMean };
   if (!season || !D) {
-    const m = arima(x, { p, d, q }); const f = m.forecast(horizon);
-    return { mean: Array.from(f.mean), lo95: Array.from(f.lo95), hi95: Array.from(f.hi95), aic: m.aic, sigma2: m.sigma2, stationary: m.stationary };
+    const m = arima(x, order); const f = m.forecast(horizon);
+    return { mean: Array.from(f.mean), lo95: Array.from(f.lo95), hi95: Array.from(f.hi95), aic: m.aic, sigma2: m.sigma2, stationary: m.stationary, drift: m.mean };
   }
   requireNumber('season', season, { min: 2, integer: true });
   if (D !== 1) throw new RangeError('only D = 0 or 1 is supported');
   if (x.length < 2 * season + 4) throw new RangeError('x is too short for seasonal differencing');
   const w = []; for (let t = season; t < x.length; t++) w.push(x[t] - x[t - season]);
-  const m = arima(w, { p, d, q }); const f = m.forecast(horizon);
+  const m = arima(w, order); const f = m.forecast(horizon);
   const ext = Array.from(x); const mean = []; const lo95 = []; const hi95 = [];
   for (let h = 0; h < horizon; h++) {
     const v = f.mean[h] + ext[ext.length - season];
     ext.push(v); mean.push(v); lo95.push(v - (f.mean[h] - f.lo95[h])); hi95.push(v + (f.hi95[h] - f.mean[h]));
   }
-  return { mean, lo95, hi95, aic: m.aic, sigma2: m.sigma2, stationary: m.stationary };
+  return { mean, lo95, hi95, aic: m.aic, sigma2: m.sigma2, stationary: m.stationary, drift: m.mean };
 }
 
 /**
@@ -707,8 +718,9 @@ export function referenceClassUplift({ estimate, acceptableOverrunProbability, t
  * Learning-curve cost projection along a path of cumulative volume.
  * Ref: Wright (1936); Boston Consulting Group (1968).
  * @param {{c0: number, q0: number, volumes: number[], learningRate: number}} o reference cost at cumulative volume
- *   q0 and the future cumulative volumes
- * @returns {number[]} cost at each cumulative volume (currency per unit)
+ *   q0 and the future cumulative volumes; learningRate = fractional cost reduction per doubling of cumulative
+ *   volume (0.15 for an "85 % curve": progress ratio = 1 − learningRate), as in cost.learningExponent
+ * @returns {number[]} cost at each cumulative volume (currency per unit): c0 (q/q0)^log2(1 − learningRate)
  */
 export function learningCurveProjection({ c0, q0, volumes, learningRate }) {
   return Array.from(requireSeries('volumes', volumes), (q) => costAtCumulativeVolume({ c0, q0, q, learningRate }));

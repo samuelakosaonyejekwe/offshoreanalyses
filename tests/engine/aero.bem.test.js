@@ -213,3 +213,44 @@ test('input validation', () => {
   assert.throws(() => bemSolve({ rotor: {}, U: 10, omega: 1 }), RangeError);
   assert.throws(() => glauertIdealCp(0), RangeError);
 });
+
+test('parked, feathered rotor: no induction, drag-only thrust at zero yaw by strip integration, smooth variation with yaw', () => {
+  const rotor = nrel5mw();
+  const U = 70; const rho = 1.225;
+  const r0 = bemSolve({ rotor, U, omega: 0, pitchDeg: 90 });
+  assert.equal(r0.parked, true); assert.equal(r0.tsr, 0);
+  // zero yaw, tilt and cone: the wind is normal to the rotor plane (phi = 90 deg), each element sits at
+  // alpha = 90 deg − (twist + 90 deg) = −twist, and the force along the shaft is its drag plus nothing from lift:
+  //   T = B ∫ ½ ρ U² c cd(−twist) dr  (trapezoidal through the stations, zero at hub and tip, as the solver integrates)
+  const flat = bemSolve({ rotor, U, omega: 0, pitchDeg: 90, tiltDeg: 0, preconeDeg: 0 });
+  const st = rotor.stations; let T = 0; let rp = rotor.hubRadius; let fp = 0;
+  for (let i = 0; i <= st.length; i++) {
+    const r = i < st.length ? st[i].r : rotor.tipRadius;
+    const f = i < st.length ? 0.5 * rho * U * U * st[i].chord * st[i].polar.cdAt(-st[i].twistDeg * Math.PI / 180) : 0;
+    T += 0.5 * (f + fp) * (r - rp); rp = r; fp = f;
+  }
+  rel(flat.thrust, rotor.blades * T, 1e-9, 'drag-only thrust');
+  for (const s of flat.spanwise) { assert.equal(s.a, 0); assert.equal(s.ap, 0); assert.equal(s.F, 1); }
+  // a feathered rotor is two orders of magnitude below the operating thrust coefficient
+  assert.ok(flat.Ct > 0 && flat.Ct < 0.02, `Ct ${flat.Ct}`);
+  // smooth in yaw: 2 deg steps never change Ct by more than a small fraction of the operating value (the momentum
+  // iteration used to jump from 123 kN at 0 deg to 1990 kN at 8 deg and −96 kN at 30 deg)
+  let prev = r0.Ct; let big = 0; const ct = [];
+  for (let yaw = 2; yaw <= 90; yaw += 2) {
+    const c = bemSolve({ rotor, U, omega: 0, pitchDeg: 90, yawDeg: yaw }).Ct;
+    big = Math.max(big, Math.abs(c - prev)); prev = c; ct.push(c);
+    assert.ok(Math.abs(c) < 0.02, `yaw ${yaw}: Ct ${c}`);
+  }
+  assert.ok(big < 0.003, `largest 2 deg step in Ct ${big}`);
+  // thrust scales with U² and the answer is symmetric in the sign of the yaw error for an untilted, unconed rotor
+  rel(bemSolve({ rotor, U: 35, omega: 0, pitchDeg: 90, yawDeg: 20 }).thrust, bemSolve({ rotor, U, omega: 0, pitchDeg: 90, yawDeg: 20 }).thrust / 4, 1e-9);
+  rel(bemSolve({ rotor, U, omega: 0, pitchDeg: 90, yawDeg: -20, tiltDeg: 0, preconeDeg: 0 }).thrust, bemSolve({ rotor, U, omega: 0, pitchDeg: 90, yawDeg: 20, tiltDeg: 0, preconeDeg: 0 }).thrust, 1e-9);
+  // slow idling stays on the same branch and close to the standstill value; an operating point is unaffected
+  const idle = bemSolve({ rotor, U, omega: 0.02, pitchDeg: 90, yawDeg: 8 });
+  assert.equal(idle.parked, true);
+  assert.ok(Math.abs(idle.Ct - bemSolve({ rotor, U, omega: 0, pitchDeg: 90, yawDeg: 8 }).Ct) < 1e-3);
+  const op = bemSolve({ rotor, U: 11.4, omega: 12.1 * Math.PI / 30, pitchDeg: 0 });
+  assert.equal(op.parked, false); assert.ok(op.Ct > 0.6 && op.Ct < 0.95);
+  // the branch can be switched off
+  assert.equal(bemSolve({ rotor, U, omega: 0, pitchDeg: 90, parkedTsr: 0 }).parked, false);
+});

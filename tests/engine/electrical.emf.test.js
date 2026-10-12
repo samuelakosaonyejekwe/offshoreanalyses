@@ -103,7 +103,25 @@ test('Carson mutual impedance by hand: f = 50 Hz, ρ = 100 Ω·m, d = 10 m → 4
   rel(Zm.re, 4.9348e-5, 1e-5);
   rel(Zm.im, 2 * Math.PI * 50 * 2e-7 * Math.log(93.178), 1e-5);
   rel(Zm.im, 2.84912e-4, 1e-4);
-  assert.throws(() => mutualImpedance({ d: 2000, f: 50, rhoEarth: 100 }), RangeError);
+});
+
+test('Carson mutual impedance beyond the earth-return depth De = 658.87·√(ρ/f) is zero coupling, not an error', () => {
+  // ρ = 100 Ω·m, f = 50 Hz: De = 658.87·√2 = 931.78 m
+  const far = mutualImpedance({ d: 2000, f: 50, rhoEarth: 100 });
+  assert.equal(far.Zm.re, 0); assert.equal(far.Zm.im, 0); assert.equal(far.beyondReturnDepth, true);
+  rel(far.De, 931.78, 1e-4);
+  const at = mutualImpedance({ d: far.De, f: 50, rhoEarth: 100 });
+  assert.equal(at.Zm.im, 0); assert.equal(at.beyondReturnDepth, true);
+  assert.equal(mutualImpedance({ d: 900, f: 50, rhoEarth: 100 }).beyondReturnDepth, false);
+  // seawater (ρ = 0.25 Ω·m): De = 46.6 m; a pipeline 60 m away from a single current sees no induced voltage,
+  // and adding that far conductor to a near one leaves the near conductor's result unchanged
+  const none = inducedVoltage({ conductors: [{ d: 60, I: 1000 }], f: 50, rhoEarth: 0.25, length: 5000 });
+  assert.equal(none.E, 0); assert.equal(none.voltage, 0); assert.equal(none.beyondReturnDepth, 1);
+  const near = inducedVoltage({ conductors: [{ d: 5, I: 1000 }], f: 50, rhoEarth: 0.25, length: 5000 });
+  const both = inducedVoltage({ conductors: [{ d: 5, I: 1000 }, { d: 60, I: 1000 }], f: 50, rhoEarth: 0.25, length: 5000 });
+  rel(both.E, near.E, 1e-12); assert.equal(near.beyondReturnDepth, 0);
+  // invalid input is still rejected
+  assert.throws(() => mutualImpedance({ d: -1, f: 50 }), RangeError);
 });
 
 test('induced voltage on a parallel pipeline: single current uses the full Zm; a balanced three-phase group largely cancels', () => {

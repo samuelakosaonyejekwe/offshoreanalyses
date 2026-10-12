@@ -147,3 +147,20 @@ test('spacing and orientation sweeps: wider spacing and rows across the wind giv
   assert.ok(or.results[0].valuePerTurbine > or.results[1].valuePerTurbine);
   assert.equal(rowAngleForWind(0), -0);
 });
+
+test('capacity density of a single row or a single turbine: zero hull area and density with a note, never a non-finite value', () => {
+  const row = [[0, 0], [1000, 0], [2000, 0], [3000, 0]];
+  const r = capacityDensity({ points: row, ratedPower: 10e6 });
+  assert.equal(r.installed, 40e6); assert.equal(r.hullArea, 0); assert.equal(r.hullDensity, 0);
+  assert.equal(r.degenerate, true); assert.match(r.note, /one line/);
+  // an oblique row (round-off sliver in the hull area) and a single turbine behave the same
+  const ob = capacityDensity({ points: [[0, 0], [700.1, 300.3], [1400.2, 600.6], [2100.3, 900.9]], ratedPower: 10e6 });
+  assert.equal(ob.hullDensity, 0); assert.equal(ob.degenerate, true);
+  assert.equal(capacityDensity({ points: [[5, 5]], ratedPower: 10e6 }).hullDensity, 0);
+  // the site polygon still gives a density for the row: 40 MW on 3 km × 0.5 km = 26.67 W/m²
+  const s = capacityDensity({ points: row, ratedPower: 10e6, polygon: [[0, -250], [3000, -250], [3000, 250], [0, 250]] });
+  close(s.siteDensity, 40e6 / 1.5e6, 1e-12); assert.equal(s.hullDensity, 0);
+  // a proper layout: 4 turbines on a 1 km square → 40 W/m² (40 MW/km²), no note
+  const q = capacityDensity({ points: square(1000), ratedPower: 10e6 });
+  close(q.hullDensity, 40, 1e-12); assert.equal(q.degenerate, false); assert.equal(q.note, null);
+});

@@ -52,8 +52,14 @@ export function wedgeWaterEntry({ deadriseDeg, V, t, halfBeam, rho = 1025 }) {
  *   flat bottom (deadrise below 4°), allowing for cushioning and three-dimensional effects: C_Pa >= 2 pi;
  *   wedge with deadrise beta above 15°, allowing for pile-up: C_Pa >= 2.5 / (tan beta)^1.1.
  * Reference: DNV-RP-C205 (2019) §8 (slamming pressures). Between 4° and 15° the standard gives no
- * expression and this function throws: use wedgeWaterEntry or a dedicated analysis.
- * @param {{shape:string, deadriseDeg?:number}} o shape 'cylinder' | 'flat' | 'wedge'
+ * expression. For shape 'wedge' this function then interpolates linearly in the deadrise angle between the two
+ * documented end values, 2 pi at 4° and 2.5/(tan 15°)^1.1 = 10.64 at 15°:
+ *   C_Pa = 2 pi + (beta − 4°)/(15° − 4°) · (10.64 − 2 pi),  4° <= beta < 15°.
+ * This is an interpolation of this library, not a code expression — it is continuous with both ends and rises
+ * towards 15° because the flat-bottom value already contains the cushioning reduction; for design in this range
+ * use wedgeWaterEntry or a dedicated analysis. A wedge with deadrise below 4° takes the flat-bottom value.
+ * @param {{shape:string, deadriseDeg?:number}} o shape 'cylinder' | 'flat' | 'wedge'; deadrise angle in degrees,
+ *   [0, 90) for 'wedge', [0, 4) for 'flat'
  * @returns {number} C_Pa, -
  */
 export function slammingPressureCoefficient({ shape, deadriseDeg }) {
@@ -63,7 +69,12 @@ export function slammingPressureCoefficient({ shape, deadriseDeg }) {
     return 2 * Math.PI;
   }
   if (shape === 'wedge') {
-    if (!(deadriseDeg >= 15 && deadriseDeg < 90)) throw new RangeError('deadriseDeg must be within [15, 90) for the wedge expression');
+    if (!(deadriseDeg >= 0 && deadriseDeg < 90)) throw new RangeError('deadriseDeg must be within [0, 90) for a wedge');
+    if (deadriseDeg < 4) return 2 * Math.PI;
+    if (deadriseDeg < 15) {
+      const c15 = 2.5 / Math.tan(15 * DEG) ** 1.1;
+      return 2 * Math.PI + ((deadriseDeg - 4) / 11) * (c15 - 2 * Math.PI);
+    }
     return 2.5 / Math.tan(deadriseDeg * DEG) ** 1.1;
   }
   throw new RangeError("shape must be 'cylinder', 'flat' or 'wedge'");
@@ -91,6 +102,8 @@ export function cylinderSlamCoefficient({ s, D }) {
  *   P = exp( -( d²/(2 m0r) + v_cr²/(2 m0v) ) ),   N per second = (1/2 pi) sqrt(m0v/m0r) · P.
  * The threshold defaults to Ochi's v_cr = 0.093 sqrt(g L) (12 ft/s for a 520 ft ship, Froude-scaled).
  * For bow-flare slamming use d = height of the flare above the still waterline.
+ * With no relative motion or no relative velocity (m0r = 0 or m0v = 0, calm water) there is no slamming:
+ * probability and rate are 0.
  * Reference: Ochi (1964) Prediction of occurrence and severity of ship slamming at sea, 5th Symp. Naval
  * Hydrodynamics; Ochi & Motter (1973) SNAME Trans. 81. Narrow-band Gaussian relative motion.
  * @param {object} o
@@ -103,10 +116,12 @@ export function cylinderSlamCoefficient({ s, D }) {
  * @returns {{probability:number, ratePerHour:number, vThreshold:number, emergenceProbability:number}}
  */
 export function slammingProbability({ m0r, m0v, d, L, vThreshold, g = G }) {
-  needPos(m0r, 'm0r'); needPos(m0v, 'm0v');
+  if (!(m0r >= 0) || !Number.isFinite(m0r)) throw new RangeError('m0r must be >= 0');
+  if (!(m0v >= 0) || !Number.isFinite(m0v)) throw new RangeError('m0v must be >= 0');
   if (!(d >= 0)) throw new RangeError('d must be >= 0');
   let vc = vThreshold;
   if (vc === undefined) { needPos(L, 'L'); vc = 0.093 * Math.sqrt(g * L); }
+  if (m0r === 0 || m0v === 0) return { probability: 0, ratePerHour: 0, vThreshold: vc, emergenceProbability: 0 };
   const emergence = Math.exp((-d * d) / (2 * m0r));
   const probability = emergence * Math.exp((-vc * vc) / (2 * m0v));
   return { probability, ratePerHour: (3600 / (2 * Math.PI)) * Math.sqrt(m0v / m0r) * probability, vThreshold: vc, emergenceProbability: emergence };
@@ -117,12 +132,14 @@ export function slammingProbability({ m0r, m0v, d, L, vThreshold, g = G }) {
  *   P = exp(-f²/(2 m0r)),  N per second = (1/2 pi) sqrt(m2r/m0r) · P.
  * Reference: Ochi (1964), as slammingProbability. Rayleigh-distributed maxima of the relative motion; the
  * dynamic swell-up of the bow wave is not included (increase the relative motion or reduce the freeboard).
+ * With no relative motion (m0r = 0, calm water) the deck stays dry: probability 0 (rate 0 when m2r is given).
  * @param {{m0r:number, m2r?:number, freeboard:number}} o m², m²/s² (variance of relative velocity), m
- * @returns {{probability:number, ratePerHour:number|null}}
+ * @returns {{probability:number, ratePerHour:number|null}} probability per cycle [-]; rate [1/h], null without m2r
  */
 export function deckWetnessProbability({ m0r, m2r, freeboard }) {
-  needPos(m0r, 'm0r');
+  if (!(m0r >= 0) || !Number.isFinite(m0r)) throw new RangeError('m0r must be >= 0');
   if (!(freeboard >= 0)) throw new RangeError('freeboard must be >= 0');
+  if (m0r === 0) return { probability: 0, ratePerHour: m2r >= 0 ? 0 : null };
   const probability = Math.exp((-freeboard * freeboard) / (2 * m0r));
   return { probability, ratePerHour: m2r > 0 ? (3600 / (2 * Math.PI)) * Math.sqrt(m2r / m0r) * probability : null };
 }
