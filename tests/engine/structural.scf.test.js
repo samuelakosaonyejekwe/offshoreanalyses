@@ -111,8 +111,9 @@ test('hot-spot stress superposition at eight points (DNV-RP-C203 Eq. 3.3.1)', ()
     30 + 40, 45 + h * 40 - h * 20, 60 - 20, 45 - h * 40 - h * 20, 30 - 40, 45 - h * 40 + h * 20, 60 + 20, 45 + h * 40 + h * 20,
   ].map((v) => v * 1e6);
   r.sigma.forEach((v, i) => near(v, exp[i], 1e-12, `point ${i + 1}`));
-  assert.equal(r.governingPoint, 7);
-  near(r.max, 80e6, 1e-12);
+  // point 8 combines the mean axial term with both bending terms at 45°: 45 + (40 + 20)/√2 = 87.4 MPa
+  assert.equal(r.governingPoint, 8);
+  near(r.max, exp[7], 1e-12);
   // pure axial: crown and saddle values, mean in between
   const a = hotSpotStresses({ sigmaX: 1, scfAC: 2, scfAS: 8, scfMIP: 3, scfMOP: 5 });
   assert.deepEqual(a.sigma, [2, 5, 8, 5, 2, 5, 8, 5]);

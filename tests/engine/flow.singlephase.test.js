@@ -232,8 +232,8 @@ test('Joukowsky surge and elastic wave speed — hand calculations', () => {
   const a = waveSpeed({ K: 2.2e9, rho: 1000, D: 0.5, e: 0.01, E: 2.07e11, nu: 0.3 });
   assert.ok(rel(a, Math.sqrt(2.2e6) / Math.sqrt(1 + (2.2e9 / 2.07e11) * 50 * 0.91)) < 1e-12);
   assert.ok(a > 1200 && a < 1240);
-  // rigid-pipe limit → acoustic speed of the liquid
-  assert.ok(rel(waveSpeed({ K: 2.2e9, rho: 1000, D: 0.5, e: 0.01, E: 1e15 }), Math.sqrt(2.2e6)) < 1e-4);
+  // towards the rigid-pipe limit the speed approaches the acoustic speed of the liquid (stiffest E the function accepts)
+  assert.ok(rel(waveSpeed({ K: 2.2e9, rho: 1000, D: 0.5, e: 0.01, E: 1e13 }), Math.sqrt(2.2e6)) < 1e-2);
 });
 
 test('MOC: frictionless instantaneous closure gives the Joukowsky head and a 4L/a period', () => {
