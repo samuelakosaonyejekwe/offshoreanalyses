@@ -8,6 +8,7 @@
     "test": "node --test tests/",
     "serve": "node tools/serve.mjs",
     "manifest": "node tools/manifest.mjs",
+    "build": "node tools/bundle.mjs && node tools/manifest.mjs && node tools/precache.mjs",
     "precache": "node tools/manifest.mjs && node tools/precache.mjs"
   }
 }

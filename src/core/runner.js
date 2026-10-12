@@ -4,10 +4,15 @@ import { getProject, busValues } from './store.js';
 let worker, seq = 0, broken = false;
 const pending = new Map();
 
+const ROOT = new URL('../../', import.meta.url).href;
+// Preference order: the packed worker (one file), the source worker (many files), then the page itself.
+const WORKERS = [`${ROOT}dist/worker.js`, new URL('./worker.js', import.meta.url).href];
+let attempt = 0;
+
 function ensureWorker() {
   if (worker || broken) return worker;
   try {
-    worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    worker = new Worker(WORKERS[attempt], { type: 'module' });
     worker.onmessage = ({ data }) => {
       const p = pending.get(data.id);
       if (!p) return;
@@ -16,13 +21,14 @@ function ensureWorker() {
       if (data.error) p.reject(new Error(data.error)); else p.resolve(data.result);
     };
     worker.onerror = (e) => {
-      // a worker that fails to load (old browser, blocked module workers) must not strand the queued jobs
-      broken = true; worker = null;
-      for (const [, p] of pending) p.retry();
+      // a worker script that cannot load must not strand the queued jobs: try the next option and replay them
+      worker = null;
+      const queued = [...pending.values()];
       pending.clear();
-      console.warn('Analysis worker unavailable, computing in the page instead.', e.message);
+      if (++attempt >= WORKERS.length) { broken = true; console.warn('Analysis worker unavailable, computing in the page instead.', e.message); }
+      for (const p of queued) p.retry();
     };
-  } catch { broken = true; worker = null; }
+  } catch { worker = null; if (++attempt >= WORKERS.length) broken = true; return ensureWorker(); }
   return worker;
 }
 
@@ -49,9 +55,9 @@ export function task(type, moduleId, values, options = {}, onProgress) {
   const id = ++seq;
   let cancel;
   const promise = new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject, onProgress, retry: () => inPage(type, moduleId, values, options, ctxData, onProgress).then(resolve, reject) });
+    pending.set(id, { resolve, reject, onProgress, retry: () => task(type, moduleId, values, options, onProgress).then(resolve, reject) });
     cancel = () => { w.postMessage({ type: 'abort', target: id }); pending.delete(id); reject(new Error('Cancelled')); };
-    w.postMessage({ id, type, moduleId, values, options, ctxData });
+    w.postMessage({ id, type, moduleId, values, options, ctxData, root: ROOT });
   });
   promise.cancel = cancel;
   return promise;

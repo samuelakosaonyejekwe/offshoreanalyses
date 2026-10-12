@@ -1,8 +1,8 @@
 // Service worker: makes the app installable and fully usable offline, keeps it current, and falls back to
 // mirror hosts when the primary host cannot be reached.
-const CACHE = 'offshore-analyses-v1';
+const CACHE = 'offshore-analyses-v2';
 const CORE = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest', 'mirrors.json', 'precache.json', 'assets/icon.svg', 'assets/icon-192.png', 'assets/icon-512.png', 'assets/world.json',
-  'src/app.js', 'src/ui/shell.js', 'src/ui/dom.js', 'src/ui/plot.js', 'src/ui/form.js', 'src/ui/results.js', 'src/core/store.js', 'src/core/registry.js', 'src/core/runner.js', 'src/core/studies.js', 'src/core/worker.js',
+  'src/app.js', 'src/ui/shell.js', 'src/ui/dom.js', 'src/ui/plot.js', 'src/ui/form.js', 'src/ui/results.js', 'src/core/store.js', 'src/core/registry.js', 'src/core/runner.js', 'src/core/studies.js', 'src/core/worker.js', 'dist/worker.js', 'src/suites/manifest.json',
   'src/library/materials.js', 'src/data/connectors.js', 'src/ui/views/home.js', 'src/ui/views/suite.js', 'src/ui/views/module.js', 'src/ui/views/pages.js', 'src/spec/index.json'];
 
 const scope = self.registration.scope;
