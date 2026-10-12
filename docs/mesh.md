@@ -250,18 +250,154 @@ unsorted; the 2-D fallback draws wireframe, lines and points only (faces are not
 
 ## Adapters (`src/geometry/adapters`)
 
-Every adapter exports `id`, `title`, `formats`, `extensions`, `library`, `sizeBytes`, `available()` and
+Every adapter exports `id`, `title`, `formats`, `extensions`, `library` (`{ name, version, licence }`),
+`sizeBytes` (what a browser downloads on first use), `available()` and
 `async parse(input, opts) -> { models, warnings, meta }` with `input = { name, bytes | text }`, the same shape
-as the importers.
+as the importers, and `sniff(input)`, which says whether the content is theirs. All five are part of this
+build. The four that need a runtime also export `load()` (starts the runtime once; `parse` calls it); the
+runtime is fetched relative to the module on first use and works on the page, in a module worker and under
+Node. `docs/vendor.md` records every vendored file.
 
-| Adapter | Status | Formats | Notes |
+| Adapter | Runtime | Formats | Result |
 | --- | --- | --- | --- |
-| `occt.js` | **included** (7.7 MB, loaded on first use) | STEP (AP203 / 214 / 242), IGES, BREP | one surface per solid or shell, one group per B-rep face, metres; options `{ format, quality: 'coarse' \| 'normal' \| 'fine', linearDeflection [m], angularDeflection [rad], units (BREP only), upAxis }`; also exports `load()` and `sniff(input)` |
-| `hdf5.js` | stub — not included | HDF5: NetCDF-4 CF grids, MED, CGNS | convert to NetCDF classic (`nccopy -k classic`), or Gmsh / VTK / a solver deck for meshes |
-| `web-ifc.js` | stub — not included | IFC2x3 / IFC4 | convert to STEP, glTF or OBJ |
-| `laz.js` | stub — not included | LAZ | convert to uncompressed LAS |
-| `sqlite.js` | stub — not included | GeoPackage | convert to GeoJSON / Shapefile (vector) or GeoTIFF (raster) |
+| `occt.js` | occt-import-js 0.0.23, 7.7 MB | STEP (AP203 / 214 / 242), IGES, BREP | one `surface` per solid or shell, one group per B-rep face |
+| `hdf5.js` | h5wasm 0.10.3, 4.2 MB | NetCDF-4 (CF grids, UGRID), MED, CGNS, Exodus II on NetCDF-4, generic HDF5 | `grid`, `points`, `surface`, `frame`, `volume` |
+| `web-ifc.js` | web-ifc 0.0.78, 7.5 MB | IFC2x3 / IFC4 / IFC4x3, all products | one `surface` per IFC class, one group per element |
+| `laz.js` | laz-perf 0.0.7, 0.3 MB | LAZ | one `points` model |
+| `sqlite.js` | none (reads the SQLite file format itself) | GeoPackage vector layers | `points`, `polyline`, `section` |
 
-A stub's `available()` returns `false` and its `parse` rejects with
-`"<file>: <format> import is not included in this build — convert to <format>."`; `convertTo` holds the advice.
-`docs/vendor.md` records the vendored runtime and how to add the others.
+`available()` is true when WebAssembly exists and, under Node, the vendored files are on disk. When a runtime
+cannot start, `parse` rejects with a message that names the missing piece and what to convert the file to
+(`convertTo`).
+
+### occt.js
+
+Options `{ format, quality: 'coarse' | 'normal' | 'fine', linearDeflection [m], angularDeflection [rad],
+units (BREP only), upAxis }`. Metres; STEP and IGES declare their unit, BREP is taken as millimetres.
+
+### hdf5.js
+
+The convention is recognised from the object tree, never from the file name; `meta.flavour` says which one was
+found and `meta.tree = { entries: [{ path, type, shape?, dtype? }], truncated }` lists the first 2000 objects.
+
+| `meta.flavour` | Recognised by | Models |
+| --- | --- | --- |
+| `med` | root group `ENS_MAA` | frame, surface, volume |
+| `cgns` | root label "Root Node of HDF5 File", a `CGNSLibraryVersion` or a `CGNSBase_t` node | frame, surface, volume |
+| `exodus-netcdf4` | datasets `coordx` or `coord` and `connect<n>` | frame, surface, volume |
+| `netcdf4-ugrid` | a variable with `cf_role = "mesh_topology"` and `face_node_connectivity` | surface |
+| `netcdf4-cf-grid` | a numeric variable of two or more dimensions on x/y or lon/lat axes | grid; points when an axis is uneven |
+| `generic` | anything else | none, unless `opts.datasets` names them |
+
+Options: those of the grid, vector and mesh importers (`units`, `scale`, `crs`, `vertical`, `zUnits`,
+`projection`, `origin`) and `maxCells`, `variable`, `mesh`, `datasets`.
+
+**CF grids.** The variable is `opts.variable`, else the first of `elevation` (GEBCO, EMODnet), `z` (ETOPO, GMT),
+`Band1`, `bathymetry`, `topo`, `depth`, `depth_average` … found on recognisable axes, else one with a height or
+depth standard name, else the first gridded variable (a warning lists the others). Axes are the attached
+dimension scales; without them, one-dimensional variables of matching length named or attributed as x / y
+(`lon`, `lat`, `x`, `y`, `easting`, `northing`, `COLUMNS`, `LINES`, `axis`, `standard_name`, degree units).
+Leading dimensions (time, level) are taken at index 0. `scale_factor`, `add_offset`, `_FillValue`,
+`missing_value`, `valid_range`, `valid_min` and `valid_max` are applied; `positive = "down"` or a depth name
+flips the sign so that z is up. The variable is read in strips of rows and block-averaged while it is read to at
+most `opts.maxCells` nodes (default 1 500 000; 0 keeps every node), no-data cells being left out of each
+average; `meta.decimation = { factor, source: [nx, ny] }`. Row 0 of the result is the southern row whatever the
+storage order. Longitude/latitude grids are placed on the local tangent plane about the grid centre
+(`projection: 'none'` keeps degrees). Deflate and shuffle are decoded; plug-in filters are not.
+
+**UGRID.** Node coordinates, a node elevation variable when one exists (depth made negative) and
+`face_node_connectivity` with its `start_index` and fill value; quadrilaterals and polygons are triangulated.
+
+**MED.** The first mesh (or `opts.mesh`) and its first computation step. Coordinates and connectivities are
+stored component by component and are re-interlaced. Corner nodes are mapped from the MED order to the order of
+this application (canonical node k = MED node `map[k]`):
+
+| MED type | Read as | `map` |
+| --- | --- | --- |
+| `SE2`, `TR3`, `QU4` | line2, tri3, quad4 | identity |
+| `TE4` | tet4 | `[0, 2, 1, 3]` |
+| `HE8` | hex8 | `[0, 3, 2, 1, 4, 7, 6, 5]` |
+| `PE6` | wedge6 | `[0, 2, 1, 3, 5, 4]` |
+| `PY5` | pyr5 | `[0, 3, 2, 1, 4]` |
+
+MED numbers the base face of a solid cell with the opposite sense of rotation, so without the mapping every
+cell would have a negative volume. The tables agree with files written by the MED 4.1 library through Gmsh 4.15.
+Quadratic cells (`SE3`, `TR6`, `TR7`, `QU8`, `QU9`, `T10`, `H20`, `H27`, `P15`, `P18`, `P13`) are read on their
+corner nodes with a warning. Families: each group named by a family of cells becomes `sets.cells` /
+`sets.elements` / `sets.members`, each group of a family of nodes becomes `sets.nodes`; surface groups and cell
+tags are named after the groups (`"a + b"` for a family in several groups, the family name when it has none).
+The axis unit (`UNI`) is used when it is a length unit. Not read: polygons, polyhedra, structured MED grids,
+fields, further computation steps.
+
+**CGNS.** Every zone of every base, in name order. Unstructured zones: all `Elements_t` sections — `BAR_2/3`,
+`TRI_3/6`, `QUAD_4/8/9`, `TETRA_4/10`, `PYRA_5/13/14`, `PENTA_6/15/18`, `HEXA_8/20/27` and `MIXED`; the CGNS
+node orders are those of this application except for `HEXA_20` / `HEXA_27`, whose top-face and vertical mid-edge
+nodes are exchanged. Structured zones become hex8 (3-D), quad4 (2-D) or line2 (1-D) cells on the vertex
+lattice, i running fastest. Each section (or structured zone) is an element set and a surface group; boundary
+conditions of unstructured zones given as `PointList` / `PointRange` / `ElementList` / `ElementRange` become
+element sets (grid location `FaceCenter`, `CellCenter` …) or node sets (`Vertex`), under the name of the
+condition, of its family and of the names listed in that family. `DimensionalUnits` of the base gives the
+length unit. Zones are placed side by side: node and element numbers of later zones are offset, and nodes on
+zone interfaces are not merged. Not read: `NGON_n` / `NFACE_n` sections, rind planes, cylindrical or spherical
+coordinates, boundary conditions on structured index ranges, solutions. ADF files are refused with the
+`cgnsconvert -h` advice.
+
+**Exodus II on NetCDF-4.** Element blocks (`BAR`, `TRI`, `QUAD` / `SHELL`, `TET`, `HEX`, `WEDGE`, `PYRAMID`,
+linear and quadratic) with their ids and names as sets and tags, and node sets. Side sets are counted, not read.
+
+**Generic HDF5.** Nothing is guessed. Without `opts.datasets` the result has no models and one warning that
+lists the datasets. `opts.datasets` takes dataset paths:
+
+| `opts.datasets` | Result |
+| --- | --- |
+| `{ grid, x?, y?, x0?, y0?, dx?, dy?, nodata? }` | `grid` from a `[ny, nx]` dataset; evenly spaced axis datasets or origin and spacing |
+| `{ points }` or `{ x, y, z }` | `points` from an `[n, 3]` dataset or three equally long ones |
+| `{ positions, elements: { tri3 \| quad4 \| tet4 \| hex8 \| wedge6 \| pyr5 \| line2: path }, indexBase? }` | frame / surface / volume; connectivity in the order of this application; 1-based indices are detected when they run to n |
+
+Limits: the whole file has to be in memory (its bytes are mounted in the library's in-memory file system
+without a copy, and the library reads the datasets it is asked for on top of that); a failed read reports the
+innermost line of the HDF5 error stack.
+
+### web-ifc.js
+
+Options `{ units, circleSegments = 12 (4–128), classes: ['IfcPlate', …], openings = false }`. One `surface` per
+IFC class with `ifcClass` and `source`; groups carry `name`, `expressId`, `globalId`, `tag`, `color`;
+`meta = { schema, units, engine, circleSegments, classes: { IfcBeam: n }, elements: [{ class, name, globalId,
+expressId, model, group, triangles }] }`. Placements, the project length unit (SI prefixes and conversion-based
+units) and opening subtraction are evaluated by the engine; results are in metres, z up. Opening and space
+volumes are left out and counted in a warning unless `openings` is true or their class is asked for. Faces are
+tessellated separately, so vertices on shared edges are duplicated (`repair` welds them). Reached through
+`importFile(input, { fullGeometry: true })`; without that option IFC files go to `importers/ifc.js`, which gives
+frame models with section properties for linear elements.
+
+### laz.js
+
+Options: those of the LAS importer (`units`, `vertical`, `projection`, `origin`) and `maxPoints` (default
+2 000 000; 0 keeps all). `readLazHeader(bytes, fileName)` returns the public header and the "laszip encoded"
+record (VLR 22204: compressor, version, chunk size, items) without decompressing anything. `parse` decodes the
+records in file order — the stream cannot be entered in the middle — keeps every n-th one so that at most
+`maxPoints` remain, and hands them to the LAS importer as an uncompressed image with the original header and
+VLRs. Scale and offset, `attrs.classification`, `attrs.intensity` (when any is non-zero), `attrs.rgb`, the
+coordinate reference system and unit handling are therefore exactly those of a LAS file; `meta` adds
+`compression = { compressor, version, chunkSize, items }`, `decoder`, `pointCount` and `thinning`.
+
+Read: point formats 0–3 (pointwise chunked compressor) and 6–8 (layered compressor), fixed and variable chunk
+sizes, extra bytes. Refused with the reason: files without the laszip record, the unchunked stream of early
+LASzip versions, waveform formats 4, 5, 9 and 10, files of 2 GB or more (the decoder needs the whole file in its
+32-bit memory; a file takes about twice its size while it is read). LAZ carries no checksum: damaged bytes
+either stop the decoder ("could not be decompressed") or decode into wrong coordinates, in which case points
+outside the bounding box of the header are counted in a warning. An uncompressed LAS file named `.laz` is read
+directly.
+
+### sqlite.js
+
+GeoPackage 1.0–1.4 feature tables through a read-only reader of the SQLite 3 file format written for this
+application (table B-trees, overflow chains, all text encodings; `openSqlite(bytes)`, `gpkgHeader`, `parseWkb`
+and `parseColumns` are exported). Options: those of the vector importer (`projection`, `origin`, `utmZone`,
+`crs`, `units`, `vertical`, `polygons`) and `layers` (table names), `maxFeatures`. Points become one `points`
+model per layer with the attribute columns as per-point attributes, lines one `polyline` each, flat polygons one
+`section` each (polygons with varying z: closed polylines); longitude/latitude layers are projected about one
+common origin. `meta = { application, sqlite: { pageSize, encoding, pages, journal }, layers: [...], tiles:
+[...], crs, units }`. Tile pyramids (imagery, tiled gridded coverage) are listed in `meta.tiles`, not decoded;
+`WITHOUT ROWID` tables are reported, not read; a database in WAL mode is read as of its last checkpoint, with a
+warning.

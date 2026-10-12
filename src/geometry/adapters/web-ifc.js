@@ -159,11 +159,13 @@ export async function parse(input, opts = {}) {
     const elements = [];
     let empty = 0, hidden = 0, failed = 0;
     const p = [0, 0, 0];
-    api.StreamAllMeshes(model, (mesh) => {
+    let voidsStreamed = 0;
+    const onMesh = (mesh) => {
       const eid = mesh.expressID;
       let cls = 'IfcProduct';
       try { cls = api.GetNameFromTypeCode(api.GetLineType(model, eid)) || cls; } catch { /* keep the generic name */ }
       const key = cls.toUpperCase();
+      if (VOIDS.has(key)) voidsStreamed++;
       if ((want && !want.has(key)) || (!want && !opts.openings && VOIDS.has(key))) { hidden++; return; }
       let b = byClass.get(cls);
       if (!b) { b = { coords: new Grow(Float64Array, 3 * 1024), idx: new Grow(Uint32Array, 3 * 1024), groups: [] }; byClass.set(cls, b); }
@@ -217,7 +219,19 @@ export async function parse(input, opts = {}) {
       if (tag) grp.tag = tag;
       if (colour) grp.color = colour;
       b.groups.push(grp);
-    }, !override);
+    };
+    api.StreamAllMeshes(model, onMesh, !override);
+    // The engine leaves openings and spaces out of its stream of all meshes (they are voids and rooms): they
+    // are counted for the report, and streamed by type when asked for.
+    const voidTypes = [...VOIDS].map((n) => lib[n]).filter((t) => Number.isFinite(t));
+    const voidWanted = opts.openings || (want && [...VOIDS].some((n) => want.has(n)));
+    if (!voidsStreamed && voidTypes.length) {
+      if (voidWanted) {
+        try { api.StreamAllMeshesWithTypes(model, voidTypes, onMesh, !override); } catch { warnings.push('The engine could not evaluate the opening / space volumes; they were left out.'); }
+      } else if (!want) {
+        for (const t of voidTypes) { try { hidden += api.GetLineIDsWithType(model, t).size(); } catch { /* a type the schema of this file does not have */ } }
+      }
+    }
 
     const fallback = baseName(fname);
     const models = [];

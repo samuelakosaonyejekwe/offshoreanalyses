@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import * as occt from '../../src/geometry/adapters/occt.js';
 import * as hdf5 from '../../src/geometry/adapters/hdf5.js';
 import * as ifc from '../../src/geometry/adapters/web-ifc.js';
 import * as laz from '../../src/geometry/adapters/laz.js';
 import * as sqlite from '../../src/geometry/adapters/sqlite.js';
+import { adapterStatus } from '../../src/geometry/registry.js';
 import { inspect } from '../../src/mesh/topology.js';
 import { inertiaSolid } from '../../src/mesh/measure.js';
 import { repair } from '../../src/mesh/repair.js';
@@ -74,12 +75,50 @@ test('import options: text input, y-up conversion, explicit format; unreadable c
   assert.equal(occt.sniff({ name: 'a.xyz', text: 'x' }), null);
 });
 
-test('adapters that are not part of this build say so and name a format to convert to', async () => {
-  for (const [a, word] of [[hdf5, /HDF5.*not included in this build — convert to NetCDF classic/], [ifc, /IFC.*not included in this build — convert to STEP/], [laz, /LAZ.*not included in this build — convert to uncompressed LAS/], [sqlite, /GeoPackage.*not included in this build — convert to GeoJSON/]]) {
-    assert.equal(a.available(), false);
-    assert.equal(a.sizeBytes, 0);
-    assert.ok(Array.isArray(a.formats) && a.formats.length && typeof a.convertTo === 'string');
-    await assert.rejects(() => a.parse({ name: 'survey.bin', bytes: new Uint8Array(4) }), word);
-    await assert.rejects(() => a.parse({ name: 'survey.bin' }), /^Error: survey\.bin: /);
+test('every adapter of this build is real: common interface, runtime on disk and recorded in docs/vendor.md', async () => {
+  const doc = await readFile(new URL('../../docs/vendor.md', import.meta.url), 'utf8');
+  const all = { occt, hdf5, 'web-ifc': ifc, laz, sqlite };
+  for (const [name, a] of Object.entries(all)) {
+    assert.equal(a.id, name);
+    assert.equal(typeof a.title, 'string');
+    assert.ok(Array.isArray(a.formats) && a.formats.length && Array.isArray(a.extensions) && a.extensions.length, name);
+    assert.equal(typeof a.library.name, 'string');
+    assert.equal(a.available(), true, `${name} is available`);
+    assert.equal(typeof a.parse, 'function');
+    // input without content is refused with the file name in front, not with a crash inside a runtime
+    await assert.rejects(() => a.parse({ name: 'survey.bin' }), /^Error: survey\.bin: /, name);
+    await assert.rejects(() => a.parse({ name: 'survey.bin', bytes: new Uint8Array(4) }), /^Error: survey\.bin: .*not (an? |recognised)/, name);
+  }
+  // runtimes that are downloaded on first use state their size, version and licence, as recorded
+  for (const a of [occt, hdf5, ifc, laz]) {
+    assert.ok(a.sizeBytes > 100000, a.id);
+    assert.match(a.library.version, /^\d+\.\d+\.\d+$/);
+    assert.ok(doc.includes(`| ${a.library.version} |`) && doc.includes(a.library.licence), `${a.id}: version and licence are in docs/vendor.md`);
+    assert.ok(doc.includes(a.sizeBytes.toLocaleString('en-US').replace(/,/g, ' ')), `${a.id}: download size ${a.sizeBytes} is in docs/vendor.md`);
+    assert.equal(typeof a.load, 'function');
+  }
+  // the GeoPackage reader is part of the application: nothing to download
+  assert.equal(sqlite.sizeBytes, 0);
+  // what to convert a file to when a runtime cannot start (no WebAssembly) stays available as advice
+  for (const a of [hdf5, ifc, laz, sqlite]) assert.ok(typeof a.convertTo === 'string' && a.convertTo.length > 10, a.id);
+  const st = await adapterStatus();
+  assert.deepEqual(Object.fromEntries(Object.entries(st).map(([k, v]) => [k, v.available])), { occt: true, 'web-ifc': true, hdf5: true, laz: true, sqlite: true });
+});
+
+test('no vendored file is left unrecorded: every file under vendor/ has its SHA-256 in docs/vendor.md', async () => {
+  const doc = await readFile(new URL('../../docs/vendor.md', import.meta.url), 'utf8');
+  const root = new URL('../../vendor/', import.meta.url);
+  const walk = async (dir) => (await Promise.all((await readdir(dir, { withFileTypes: true })).map((e) => (e.isDirectory() ? walk(new URL(`${e.name}/`, dir)) : [new URL(e.name, dir)])))).flat();
+  const files = await walk(root);
+  assert.deepEqual(files.map((u) => u.href.slice(root.href.length)).sort(), [
+    'h5wasm/LICENSE.txt', 'h5wasm/hdf5_hl.js', 'h5wasm/hdf5_util.js',
+    'laz-perf/LICENSE.txt', 'laz-perf/laz-perf.js', 'laz-perf/laz-perf.wasm', 'laz-perf/package.json',
+    'occt/license.occt-import-js.txt', 'occt/license.occt.txt', 'occt/occt-import-js.js', 'occt/occt-import-js.wasm', 'occt/package.json',
+    'web-ifc/LICENSE.md', 'web-ifc/node/package.json', 'web-ifc/node/web-ifc-api-node.js', 'web-ifc/node/web-ifc-node.wasm', 'web-ifc/web-ifc-api.js', 'web-ifc/web-ifc.wasm',
+  ]);
+  for (const u of files) {
+    const buf = await readFile(u);
+    assert.ok(doc.includes(createHash('sha256').update(buf).digest('hex')), `${u.href.slice(root.href.length)}: SHA-256 is recorded`);
+    assert.ok(doc.includes(`| ${buf.length} |`), `${u.href.slice(root.href.length)}: size ${buf.length} is recorded`);
   }
 });
