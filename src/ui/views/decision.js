@@ -10,7 +10,7 @@ import { pager } from '../shell.js';
 
 // Embodied-carbon factors, kg CO2e per unit. Mid-range open-literature values (ICE database v3 order of
 // magnitude); they are screening defaults — replace with product EPDs in the Economics suite for a real LCA.
-const CARBON = { steel_t: [1900, 't structural steel'], concrete_m3: [300, 'm³ concrete'], rock_t: [10, 't rock'], cable_km: [60000, 'km cable'], pipe_km: [250000, 'km line pipe'], copper_t: [3800, 't copper'], aluminium_t: [8600, 't aluminium'], polymer_t: [2500, 't polymer'] };
+const CARBON = { steel_t: [1900, 't structural steel'], concrete_m3: [300, 'm³ concrete'], rock_t: [10, 't rock'], cable_km: [60000, 'km cable'], pipe_km: [250000, 'km line pipe'], copper_t: [3800, 't copper'], lead_t: [1600, 't lead'], aluminium_t: [8600, 't aluminium'], polymer_t: [2500, 't polymer'] };
 const FUEL_T_PER_DAY = 20; // generic offshore construction vessel; 3.206 t CO2 per t MGO (IMO)
 
 export default async function decision(root) {
