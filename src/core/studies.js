@@ -31,6 +31,7 @@ export function defaults(mod, bus = {}, saved = {}) {
 // Conversion from the SI bus value to the engineering unit shown in a form field.
 const UNIT_FACTORS = {
   mm: 1e-3, cm: 1e-2, km: 1e3, in: 0.0254, ft: 0.3048, 'm²': 1, 'mm²': 1e-6, kN: 1e3, MN: 1e6, t: 1e3, te: 1e3, tonne: 1e3, 'kN·m': 1e3, 'MN·m': 1e6, kNm: 1e3, MNm: 1e6,
+  'kPa/m': 1e3, 'MPa/m': 1e6, 'N/mm²': 1e6, 'kg/m': 1, 'N/m': 1, 'kN·m/rad': 1e3, 'MN·m/rad': 1e6, 'GN·m/rad': 1e9, 'GN/m': 1e9, 'kt': 1e6, 'µm': 1e-6, 'kV': 1e3, 'kA': 1e3, 'MVA': 1e6, yr: 1, years: 1,
   kPa: 1e3, MPa: 1e6, GPa: 1e9, bar: 1e5, barg: 1e5, psi: 6894.757, 'kN/m': 1e3, 'MN/m': 1e6, 'kN/m³': 1e3, 'kN/m²': 1e3, kW: 1e3, MW: 1e6, GW: 1e9, 'MWh': 3.6e9, 'GWh': 3.6e12, 'kWh': 3.6e6,
   'GWh/yr': 1e9, 'MWh/yr': 1e6, min: 60, h: 3600, hr: 3600, day: 86400, days: 86400, kn: 0.514444, knots: 0.514444, 'km/h': 1 / 3.6, '%': 0.01, g: 9.80665, 'mm/yr': 1e-3,
 };
