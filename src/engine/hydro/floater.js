@@ -658,7 +658,8 @@ export function boxBargeRAO({ L, B, T, omega, headingDeg = 180, speed = 0, Cb = 
     const F = x < 1e-6 ? kappa * f : (kappa * f * Math.sin(x)) / x;
     const Gp = x < 1e-4 ? (kappa * f * 2 * x) / L : (kappa * f * 24 * (Math.sin(x) - x * Math.cos(x))) / ((ke * L) ** 2 * L);
     const eta = 1 / Math.hypot(1 - 2 * k * T * alpha * alpha, (Asec * Asec) / (k * B0 * alpha * alpha));
-    heave[i] = eta * F; pitch[i] = eta * Gp;
+    // amplitudes only: the sin(x)/x force factor changes sign beyond its first zero, which is a phase flip, not a negative amplitude
+    heave[i] = Math.abs(eta * F); pitch[i] = Math.abs(eta * Gp);
     if (hasRoll) {
       // Froude–Krylov roll moment about G of the box in exp(kz) exp(-i(kx x + ky y)), per unit amplitude:
       // M_O = rho (∫∫∫ (y a_z - z a_y) dV) + rho g ∫∫ y eta dA,  M_G = M_O + z_G F_y
