@@ -45,6 +45,36 @@ const scale = (ax, a, b) => ax.log
   : (v) => a + (v - ax.lo) / (ax.hi - ax.lo) * (b - a);
 const axLabel = (a) => (a?.label ? a.label + (a.unit && a.unit !== '-' ? ` [${a.unit}]` : '') : '');
 
+// Text never overlaps: every label is measured (approximate glyph width) and either shortened with an
+// ellipsis (the full text stays available as a tooltip) or skipped when its slot is already taken.
+const textW = (str, px) => String(str).length * px * 0.56;
+function fitText(str, maxPx, px) {
+  const t = String(str ?? '');
+  if (textW(t, px) <= maxPx) return t;
+  const n = Math.max(3, Math.floor(maxPx / (px * 0.56)) - 1);
+  return `${t.slice(0, n).trimEnd()}…`;
+}
+function label(attrs, str, maxPx) {
+  const px = attrs['font-size'] || 11;
+  const shown = fitText(str, maxPx, px);
+  const el = h('text', attrs, shown);
+  if (shown !== String(str)) el.append(h('title', String(str)));
+  return el;
+}
+/** Keep only ticks whose labels do not collide along an axis of the given pixel positions. */
+function thin(ticks, pos, px, vertical) {
+  const out = []; let last = -Infinity;
+  const sorted = ticks.map((t) => [t, pos(t)]).sort((a, b) => a[1] - b[1]);
+  for (const [t, q] of sorted) {
+    const half = vertical ? px * 0.6 : textW(fmt(t, 3), px) / 2 + 4;
+    if (q - half >= last) { out.push(t); last = q + half; }
+  }
+  return out;
+}
+
+// left margin wide enough for the widest tick label plus the rotated axis title
+const leftMargin = (ya) => Math.max(62, 34 + Math.max(...ya.ticks.map((t) => textW(fmt(t, 3), 11))));
+
 let tipEl;
 function tip(evt, html) {
   if (!tipEl) { tipEl = h('div.tip'); document.body.append(tipEl); }
@@ -60,18 +90,15 @@ const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt
 function frame(p, xa, ya, m) {
   const g = h('g');
   const x = scale(xa, m.l, W - m.r), y = scale(ya, H - m.b, m.t);
-  for (const t of ya.ticks) {
-    g.append(h('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: 'var(--grid)', 'stroke-width': 1 }));
-    g.append(h('text', { x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--ink-3)' }, fmt(t, 3)));
-  }
-  for (const t of xa.ticks) {
-    g.append(h('line', { x1: x(t), x2: x(t), y1: H - m.b, y2: H - m.b + 4, stroke: 'var(--line)' }));
-    g.append(h('text', { x: x(t), y: H - m.b + 17, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--ink-3)' }, fmt(t, 3)));
-  }
+  for (const t of ya.ticks) g.append(h('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: 'var(--grid)', 'stroke-width': 1 }));
+  for (const t of thin(ya.ticks, y, 11, true)) g.append(h('text', { x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--ink-3)' }, fmt(t, 3)));
+  for (const t of xa.ticks) g.append(h('line', { x1: x(t), x2: x(t), y1: H - m.b, y2: H - m.b + 4, stroke: 'var(--line)' }));
+  for (const t of thin(xa.ticks, x, 11, false)) g.append(h('text', { x: x(t), y: H - m.b + 17, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--ink-3)' }, fmt(t, 3)));
   g.append(h('line', { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, stroke: 'var(--line)' }));
   if (ya.lo < 0 && ya.hi > 0 && !ya.log) g.append(h('line', { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0), stroke: 'var(--ink-3)', 'stroke-width': 1 }));
-  g.append(h('text', { x: (m.l + W - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)' }, axLabel(p.x)));
-  g.append(h('text', { x: 14, y: (m.t + H - m.b) / 2, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)', transform: `rotate(-90 14 ${(m.t + H - m.b) / 2})` }, axLabel(p.y)));
+  g.append(label({ x: (m.l + W - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)' }, axLabel(p.x), W - m.l - m.r));
+  const cyL = (m.t + H - m.b) / 2;
+  g.append(label({ x: 14, y: cyL, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)', transform: `rotate(-90 14 ${cyL})` }, axLabel(p.y), H - m.t - m.b));
   return { g, x, y };
 }
 
@@ -81,8 +108,11 @@ function xyChart(p, svg) {
   const xa = axis(extent(series.map((s) => s.x)), p.x || {}, 0);
   const ya = axis(extent(series.map((s) => s.y)), p.y || {}, 0.06);
   if (p.y?.reverse) [ya.lo, ya.hi] = [ya.hi, ya.lo];
+  m.l = leftMargin(ya);
+  m.r = Math.max(m.r, 6 + textW(fmt(xa.ticks[xa.ticks.length - 1], 3), 11) / 2, 6 + textW(fmt(xa.ticks[0], 3), 11) / 2 - m.l);
   const { g, x, y } = frame(p, xa, ya, m);
   svg.append(g);
+  const ends = [];
   series.forEach((s, i) => {
     const c = s.color || color(i);
     const pts = [];
@@ -97,11 +127,22 @@ function xyChart(p, svg) {
       const [cx, cy] = pt.split(',');
       svg.append(h('circle', { cx, cy, r: 4, fill: c, stroke: 'var(--surface)', 'stroke-width': 2 }));
     }
-    if (series.length > 1 && series.length <= 4 && pts.length && p.type !== 'scatter') {
-      const [lx, ly] = pts[pts.length - 1].split(',').map(Number);
-      svg.append(h('text', { x: Math.min(lx + 4, W - 4), y: ly - 6, 'font-size': 10.5, fill: 'var(--ink-2)', 'text-anchor': 'end' }, s.name || ''));
-    }
+    if (series.length > 1 && series.length <= 4 && pts.length && p.type !== 'scatter' && s.name) ends.push({ name: s.name, pt: pts[pts.length - 1].split(',').map(Number), first: pts[0].split(',').map(Number) });
   });
+  // direct labels at the right-hand end of each line, kept inside the plot and clear of one another;
+  // a label that cannot be placed is simply left to the legend
+  const placed = [];
+  for (const e of ends) {
+    const end = e.pt[0] >= e.first[0] ? e.pt : e.first;
+    const text = fitText(e.name, (W - m.l - m.r) * 0.45, 10.5);
+    const w = textW(text, 10.5);
+    const x1 = Math.min(W - m.r - 2, Math.max(m.l + w + 4, end[0] - 4));
+    const yy = Math.min(H - m.b - 4, Math.max(m.t + 10, end[1] - 6));
+    const box = [x1 - w, yy - 11, x1, yy + 3];
+    if (placed.some((b) => box[0] < b[2] + 4 && box[2] > b[0] - 4 && box[1] < b[3] && box[3] > b[1])) continue;
+    placed.push(box);
+    svg.append(h('text', { x: x1, y: yy, 'font-size': 10.5, fill: 'var(--ink-2)', 'text-anchor': 'end', 'paint-order': 'stroke', stroke: 'var(--surface)', 'stroke-width': 3, 'stroke-linejoin': 'round' }, text));
+  }
   // crosshair + tooltip: nearest x across all series
   const cross = h('line', { y1: m.t, y2: H - m.b, stroke: 'var(--ink-3)', 'stroke-width': 1, 'stroke-dasharray': '3 3', visibility: 'hidden' });
   const hit = h('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: 'transparent' });
@@ -136,9 +177,12 @@ function xyChart(p, svg) {
 function barChart(p, svg) {
   const cats = p.categories || [];
   const series = p.series || [];
-  const m = { l: 62, r: 14, t: 14, b: cats.some((c) => String(c).length > 8) ? 78 : 44 };
+  const m = { l: 62, r: 14, t: 14, b: 44 };
+  // rotate category labels when they would not fit side by side
+  if (cats.some((c) => textW(c, 11) > (W - m.l - m.r) / Math.max(1, cats.length) - 4)) m.b = 96;
   const ya = axis(extent(series.map((s) => s.y)), { ...(p.y || {}), zero: true }, 0.05);
   const xa = { lo: 0, hi: cats.length, ticks: [] };
+  m.l = leftMargin(ya);
   const { g, y } = frame({ ...p, x: {} }, xa, ya, m);
   svg.append(g);
   const bw = (W - m.l - m.r) / Math.max(1, cats.length);
@@ -146,7 +190,7 @@ function barChart(p, svg) {
   const rot = m.b > 60;
   cats.forEach((c, i) => {
     const cx = m.l + bw * (i + 0.5);
-    svg.append(h('text', { x: cx, y: H - m.b + 16, 'text-anchor': rot ? 'end' : 'middle', 'font-size': 11, fill: 'var(--ink-3)', transform: rot ? `rotate(-35 ${cx} ${H - m.b + 16})` : null }, String(c).slice(0, 26)));
+    if (!rot || i % Math.max(1, Math.ceil(16 / bw)) === 0) svg.append(label({ x: cx, y: H - m.b + 16, 'text-anchor': rot ? 'end' : 'middle', 'font-size': 11, fill: 'var(--ink-3)', transform: rot ? `rotate(-35 ${cx} ${H - m.b + 16})` : null }, c, rot ? Math.min((m.b - 32) / Math.sin(35 * Math.PI / 180), (cx - 6) / Math.cos(35 * Math.PI / 180)) : bw - 4));
     series.forEach((s, j) => {
       const v = s.y[i];
       if (!Number.isFinite(v)) return;
@@ -159,7 +203,7 @@ function barChart(p, svg) {
       svg.append(r);
     });
   });
-  if (p.x?.label) svg.append(h('text', { x: (m.l + W - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)' }, axLabel(p.x)));
+  if (p.x?.label && m.b < 60) svg.append(label({ x: (m.l + W - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)' }, axLabel(p.x), W - m.l - m.r));
   if (p.limit != null) svg.append(h('line', { x1: m.l, x2: W - m.r, y1: y(p.limit), y2: y(p.limit), stroke: 'var(--critical)', 'stroke-width': 1.5, 'stroke-dasharray': '6 4' }));
   return series.length > 1 ? series.map((s, j) => ({ name: s.name, color: s.color || color(j), box: true })) : [];
 }
@@ -173,6 +217,8 @@ function histChart(p, svg) {
   for (const v of vals) counts[Math.min(n - 1, Math.floor((v - lo) / wBin))]++;
   const m = { l: 62, r: 14, t: 14, b: 44 };
   const xa = niceTicks(lo, hi), ya = niceTicks(0, Math.max(...counts, 1));
+  m.l = leftMargin(ya);
+  m.r = Math.max(m.r, 6 + textW(fmt(xa.ticks[xa.ticks.length - 1], 3), 11) / 2);
   const { g, x, y } = frame({ x: p.x, y: p.y || { label: 'Count' } }, xa, ya, m);
   svg.append(g);
   counts.forEach((c, i) => {
@@ -182,9 +228,11 @@ function histChart(p, svg) {
     r.addEventListener('pointerleave', () => tip());
     svg.append(r);
   });
+  let mkRow = 0;
   for (const mk of p.markers || []) {
     svg.append(h('line', { x1: x(mk.value), x2: x(mk.value), y1: m.t, y2: H - m.b, stroke: 'var(--ink)', 'stroke-width': 1.5, 'stroke-dasharray': '5 4' }));
-    svg.append(h('text', { x: x(mk.value) + 4, y: m.t + 10, 'font-size': 10.5, fill: 'var(--ink-2)' }, mk.label));
+    const right = x(mk.value) + 4 + textW(mk.label, 10.5) < W - m.r;
+    svg.append(h('text', { x: x(mk.value) + (right ? 4 : -4), y: m.t + 10 + 12 * (mkRow++ % 3), 'text-anchor': right ? 'start' : 'end', 'font-size': 10.5, fill: 'var(--ink-2)', 'paint-order': 'stroke', stroke: 'var(--surface)', 'stroke-width': 3 }, mk.label));
   }
   return [];
 }
@@ -192,6 +240,7 @@ function histChart(p, svg) {
 function heatChart(p, svg) {
   const xs = Array.from(p.xs || []), ys = Array.from(p.ys || []), z = p.z || [];
   const m = { l: 62, r: 74, t: 14, b: 44 };
+  m.l = Math.max(62, 34 + Math.max(...ys.map((v) => textW(fmt(v, 3), 11))));
   const [zlo, zhi] = extent(z);
   const diverging = zlo < 0 && zhi > 0 && p.diverging !== false;
   const zmax = Math.max(Math.abs(zlo), Math.abs(zhi));
@@ -228,11 +277,12 @@ function heatChart(p, svg) {
   svg.append(g);
   if (p.type === 'contour') drawContours(svg, xs, ys, z, zlo, zhi, m, cw, ch, yStep < 0);
   const xt = (i) => m.l + ((i + 0.5) * (W - m.l - m.r)) / xs.length;
-  const stepX = Math.ceil(xs.length / 8), stepY = Math.ceil(ys.length / 8);
+  const wTick = Math.max(...xs.map((v) => textW(fmt(v, 3), 11))) + 8;
+  const stepX = Math.max(1, Math.ceil(wTick / cw)), stepY = Math.max(1, Math.ceil(14 / ch));
   for (let i = 0; i < xs.length; i += stepX) svg.append(h('text', { x: xt(i), y: H - m.b + 16, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--ink-3)' }, fmt(xs[i], 3)));
   for (let j = 0; j < ys.length; j += stepY) svg.append(h('text', { x: m.l - 8, y: (yStep < 0 ? H - m.b - (j + 0.5) * ch : m.t + (j + 0.5) * ch) + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--ink-3)' }, fmt(ys[j], 3)));
-  svg.append(h('text', { x: (m.l + W - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)' }, axLabel(p.x)));
-  svg.append(h('text', { x: 14, y: (m.t + H - m.b) / 2, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)', transform: `rotate(-90 14 ${(m.t + H - m.b) / 2})` }, axLabel(p.y)));
+  svg.append(label({ x: (m.l + W - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)' }, axLabel(p.x), W - m.l - m.r));
+  svg.append(label({ x: 14, y: (m.t + H - m.b) / 2, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)', transform: `rotate(-90 14 ${(m.t + H - m.b) / 2})` }, axLabel(p.y), H - m.t - m.b));
   // colour bar
   const bh = H - m.t - m.b, n = 24;
   for (let k = 0; k < n; k++) {
@@ -242,7 +292,7 @@ function heatChart(p, svg) {
   const top = diverging ? zmax : zhi, bot = diverging ? -zmax : zlo;
   svg.append(h('text', { x: W - m.r + 32, y: m.t + 9, 'font-size': 10.5, fill: 'var(--ink-3)' }, fmt(top, 3)));
   svg.append(h('text', { x: W - m.r + 32, y: H - m.b, 'font-size': 10.5, fill: 'var(--ink-3)' }, fmt(bot, 3)));
-  svg.append(h('text', { x: W - 6, y: (m.t + H - m.b) / 2, 'font-size': 11, fill: 'var(--ink-2)', 'text-anchor': 'middle', transform: `rotate(-90 ${W - 6} ${(m.t + H - m.b) / 2})` }, (p.zLabel || '') + (p.zUnit ? ` [${p.zUnit}]` : '')));
+  svg.append(label({ x: W - 6, y: (m.t + H - m.b) / 2, 'font-size': 11, fill: 'var(--ink-2)', 'text-anchor': 'middle', transform: `rotate(-90 ${W - 6} ${(m.t + H - m.b) / 2})` }, (p.zLabel || '') + (p.zUnit ? ` [${p.zUnit}]` : ''), H - m.t - m.b - 30));
   return [];
 }
 
@@ -275,7 +325,7 @@ function polarChart(p, svg) {
   const rr = (v) => (v / rmax.hi) * R;
   for (const t of rmax.ticks.slice(1)) {
     svg.append(h('circle', { cx, cy, r: rr(t), fill: 'none', stroke: 'var(--grid)' }));
-    svg.append(h('text', { x: cx + 3, y: cy - rr(t) - 2, 'font-size': 10, fill: 'var(--ink-3)' }, fmt(t, 3)));
+    svg.append(h('text', { x: cx + rr(t) * Math.sin(Math.PI / 12) + 3, y: cy - rr(t) * Math.cos(Math.PI / 12) + 3, 'font-size': 10, fill: 'var(--ink-3)', 'paint-order': 'stroke', stroke: 'var(--surface)', 'stroke-width': 3 }, fmt(t, 3)));
   }
   // compass convention: 0° at top (north / bow), clockwise positive
   const ang = (deg) => ((deg - 90) * Math.PI) / 180;
@@ -305,8 +355,8 @@ function tornadoChart(p, svg) {
   const bh = (H - m.t - m.b) / Math.max(1, items.length);
   for (const t of xa.ticks) {
     svg.append(h('line', { x1: x(t), x2: x(t), y1: m.t, y2: H - m.b, stroke: 'var(--grid)' }));
-    svg.append(h('text', { x: x(t), y: H - m.b + 16, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--ink-3)' }, fmt(t, 3)));
   }
+  for (const t of thin(xa.ticks, x, 11, false)) svg.append(h('text', { x: x(t), y: H - m.b + 16, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--ink-3)' }, fmt(t, 3)));
   items.forEach((it, i) => {
     const yy = m.t + i * bh + 3, hh = Math.max(4, Math.min(22, bh - 6));
     const bar = (v, c, lab) => {
@@ -316,10 +366,10 @@ function tornadoChart(p, svg) {
       svg.append(r);
     };
     bar(it.low, color(0), 'low'); bar(it.high, color(1), 'high');
-    svg.append(h('text', { x: m.l - 8, y: yy + hh / 2 + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--ink-2)' }, String(it.name).slice(0, 26)));
+    svg.append(label({ x: m.l - 8, y: yy + hh / 2 + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--ink-2)' }, it.name, m.l - 14));
   });
   svg.append(h('line', { x1: x(p.base), x2: x(p.base), y1: m.t, y2: H - m.b, stroke: 'var(--ink)', 'stroke-width': 1.5 }));
-  svg.append(h('text', { x: (m.l + W - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)' }, axLabel(p.x)));
+  svg.append(label({ x: (m.l + W - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink-2)' }, axLabel(p.x), W - m.l - m.r));
   return [{ name: 'Input at low value', color: color(0), box: true }, { name: 'Input at high value', color: color(1), box: true }];
 }
 
