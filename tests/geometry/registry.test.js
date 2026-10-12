@@ -199,9 +199,8 @@ test('importFile: gzip and zip containers, multi-file sets', async () => {
 test('importFile: convert-only formats say exactly what to export', async () => {
   const cases = [
     ['part.x_t', '**ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz**\n', /Parasolid files are not read\. Export STEP \(AP214 or AP242\)/],
-    ['part.sat', '700 0 1 0\n', /ACIS SAT \/ SAB files are not read\. Export STEP/],
+    ['part.sab', 'ACIS BinaryFile\0\0\0\0', /ACIS SAB \(binary\) files are not read\..*save as SAT \(text\) or STEP/],
     ['plan.dwg', 'AC1032\0\0\0\0\0', /DWG drawings are not read\..*save the drawing as ASCII DXF/],
-    ['plan.dxf', 'AutoCAD Binary DXF\r\n\x1a\0', /Binary DXF is not read\. Save the drawing as ASCII DXF/],
     ['scan.e57', 'ASTM-E57\0\0\0\0', /E57 scans are not read\. Export the cloud as LAS/],
     ['part.sldprt', '\0\0\0\0binary', /Native CAD files are not read\..*export STEP/],
     ['mesh.hst', 'HYDROSTAR\n', /Export the panel mesh as WAMIT GDF or NEMOH/],

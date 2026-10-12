@@ -16,7 +16,8 @@
 //   POINT                              → points
 //
 // Not read: 3DSOLID / REGION / BODY / SURFACE (embedded ACIS data), MESH, HATCH, text, dimensions, leaders,
-// images, viewports, paper space layout. These are counted in `meta.skipped`. Binary DXF is not read.
+// images, viewports, paper space layout. These are counted in `meta.skipped`. Binary DXF is decoded by
+// dxfbinary.js and enters at dxfModels().
 
 import { lineCursor, baseName, Grow, Welder, finish, surfaceModel, pointsModel, M4, V3, tally, cleanName, groupsFromBuckets, unitAdvice, closeLoop } from './common.js';
 import { resolveUnits, suggestUnits } from '../units.js';
@@ -88,6 +89,16 @@ export function parseDxf(input, opts = {}) {
   if (input.bytes && input.bytes.length > 22 && String.fromCharCode(...input.bytes.subarray(0, 18)) === 'AutoCAD Binary DXF') throw new Error(`${fname}: binary DXF is not read. Save the drawing as ASCII DXF (SAVEAS → "AutoCAD DXF", not "Binary DXF").`);
   const sec = readPairs(input);
   if (!sec || (!sec.ENTITIES.length && !sec.BLOCKS.length)) throw new Error(`${fname}: not an ASCII DXF drawing with entities (expected group-code / value line pairs with "0 / SECTION … 2 / ENTITIES").`);
+  return dxfModels(sec, input, opts);
+}
+
+/**
+ * Build the models from the group pairs of a drawing, whatever encoding they were stored in.
+ * @param {{ HEADER: Array, TABLES: Array, BLOCKS: Array, ENTITIES: Array }} sec flat [code, value, …] lists per
+ *   section, codes as numbers and values as trimmed strings (exactly what the ASCII form holds)
+ */
+export function dxfModels(sec, input, opts = {}) {
+  const fname = input.name || 'DXF';
   const name = baseName(input.name);
   const warnings = [];
   const hist = {}, skipped = {};

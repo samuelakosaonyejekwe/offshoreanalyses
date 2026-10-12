@@ -27,7 +27,7 @@ export const EXTENSION_MAP = Object.freeze({
   las: 'las', laz: 'laz', e57: 'e57', pts: 'pts', ptx: 'ptx', xyzrgb: 'xyzrgb', xyzi: 'xyzrgb', xyzn: 'xyzrgb',
   gpkg: 'geopackage', sqlite: 'geopackage',
   x_t: 'parasolid', x_b: 'parasolid', xmt_txt: 'parasolid', xmt_bin: 'parasolid', xt: 'parasolid',
-  sat: 'acis', sab: 'acis', asat: 'acis', asab: 'acis', dwg: 'dwg', dgn: 'native-cad', brep: 'brep', brp: 'brep',
+  sat: 'acis', sab: 'acis-sab', asat: 'acis', asab: 'acis-sab', dwg: 'dwg', dgn: 'native-cad', brep: 'brep', brp: 'brep',
   sldprt: 'native-cad', sldasm: 'native-cad', ipt: 'native-cad', iam: 'native-cad', prt: 'native-cad', asm: 'native-cad',
   catpart: 'native-cad', catproduct: 'native-cad', '3dm': 'native-cad', jt: 'native-cad', rvt: 'native-cad', skp: 'native-cad',
   fbx: 'native-cad', '3ds': 'native-cad', par: 'native-cad', psm: 'native-cad', f3d: 'native-cad', nwd: 'native-cad', rfa: 'native-cad',
@@ -174,6 +174,9 @@ function sniffText(head, ext) {
   if (lead.startsWith('DSAA')) return ['surfer-grd', 'Surfer ASCII grid magic DSAA'];
   if (lead.startsWith('AutoCAD Binary DXF')) return ['dxf-binary', 'binary DXF sentinel'];
   if (lead.startsWith('**ABCDEFGHIJKLMNOPQRSTUVWXYZ') || /^\*\*PART1;/m.test(lead)) return ['parasolid', 'Parasolid transmit-file header'];
+  if (lead.startsWith('ACIS BinaryFile') || lead.startsWith('ASM BinaryFile')) return ['acis-sab', 'ACIS binary (SAB) signature'];
+  // ACIS SAT: a first line of four integers (version, records, bodies, flag), then entity records with $ pointers
+  if (/^\d{3,5}[ \t]+\d+[ \t]+\d+[ \t]+\d+[ \t]*\r?\n/.test(lead) && (ext === 'sat' || ext === 'asat' || /(^|\n)\s*(-\d+\s+)?(asmheader|body|lump|shell|face)\s+\$-?\d+\s/.test(lead))) return ['acis', 'ACIS SAT header and entity records'];
 
   if (lead[0] === '<') {
     const root = xmlRootName(t);
@@ -249,6 +252,7 @@ function sniffBinary(bytes, ext) {
   if (startsWith(bytes, ascii('DSBB'))) return ['surfer-grd', 'Surfer 6 binary grid magic DSBB'];
   if (startsWith(bytes, ascii('DSRR'))) return ['surfer-grd', 'Surfer 7 binary grid magic DSRR'];
   if (startsWith(bytes, SIG.binDxf)) return ['dxf-binary', 'binary DXF sentinel'];
+  if (startsWith(bytes, ascii('ACIS BinaryFile')) || startsWith(bytes, ascii('ASM BinaryFile'))) return ['acis-sab', 'ACIS binary (SAB) signature'];
   if (startsWith(bytes, ascii('AC10')) && bytes.length > 6 && bytes[4] >= 0x30 && bytes[4] <= 0x39) return ['dwg', 'DWG version string'];
   if (bytes.length >= 100 && bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0x27 && bytes[3] === 0x0a) return ['shapefile', 'ESRI shapefile file code 9994'];
   if (startsWith(bytes, ascii('ply\n')) || startsWith(bytes, ascii('ply\r'))) return ['ply', 'PLY magic'];
