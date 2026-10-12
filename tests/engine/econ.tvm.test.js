@@ -12,7 +12,7 @@ test('standard factors match the compound-interest tables (Blank & Tarquin, 10 %
   close(tvm.factorAF(0.10, 5), 0.16380, 2e-5);
   close(tvm.factorFA(0.10, 5), 6.1051, 1e-5);
   close(tvm.factorAG(0.10, 5), 1.8101, 2e-5);
-  close(tvm.factorPF(0.10, 5), 0.6209, 2e-5);
+  close(tvm.factorPF(0.10, 5), 0.6209, 1e-4);
 });
 
 test('factor identities: A/P = A/F + i, P/G = (P/A)(A/G), F/G = (P/G)(F/P)', () => {

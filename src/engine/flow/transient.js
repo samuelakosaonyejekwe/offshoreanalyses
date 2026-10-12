@@ -11,14 +11,19 @@
  * law vG = C0 vm + vd, vm = αL vL + αG vG. s is the chainage along the pipe, θ the local inclination
  * (positive upward in the +s direction).
  *
- * Numerical flux: AUSM-type flux-vector splitting of the family introduced for this model by Evje & Fjelde
- * (2003), Computers & Fluids 32, 1497–1530 ("AUSMV"): phase mass and momentum are split with the velocity
- * polynomials V±, the pressure with P± (Liou & Steffen 1993; Wada & Liou 1997). The contact weights are
+ * Numerical flux: hybrid flux-vector splitting of the AUSM family introduced for this model by Evje & Fjelde
+ * (2003), Computers & Fluids 32, 1497–1530 ("AUSMV"/"AUSMD"). Phase mass and convective momentum fluxes are
+ * split with the velocity polynomials V± (Liou & Steffen 1993; Wada & Liou 1997) using the contact weights
  * χL = 2 mR/(mL + mR), χR = 2 mL/(mL + mR) per phase (m = α ρ), which make the mass flux pure upwinding
- * whenever the two sides share a velocity, so volume-fraction fronts are not smeared at acoustic speed.
- * These weights follow the Wada–Liou construction; they are stated here rather than transcribed from the
- * 2003 paper. An optional pressure-diffusion term in the mass flux (Liou 2006, J. Comput. Phys. 214, 137–170,
- * AUSM⁺-up, coefficient Kp) damps odd–even pressure modes at low Mach number.
+ * whenever the two sides share a velocity, so volume-fraction fronts are not smeared at acoustic speed. These
+ * weights follow the Wada–Liou construction; they are stated here rather than transcribed from the 2003 paper.
+ * The interface pressure is the linearised (acoustic) Riemann value with impedances z = ρ c,
+ *   p* = [zR pL + zL pR + zL zR (wL − wR)]/(zL + zR)      (Toro 2009, Riemann Solvers, §9.3),
+ * blended into the upwinding P± pressure splitting for mixture Mach numbers between 0.5 and 1. The plain
+ * average of the P± splitting is unstable at a liquid/gas interface at rest under gravity (impedance ratio
+ * ~10³); the impedance weighting removes that. The matching pressure-diffusion velocity 2 Kp (pL − pR)/(zL + zR)
+ * is added to the mass flux (Kp = ½ is the acoustic Riemann value; cf. Liou 2006, J. Comput. Phys. 214,
+ * 137–170, AUSM⁺-up) and damps odd–even pressure modes at low Mach number.
  * Space: MUSCL reconstruction of (αG, p, vL) with a slope limiter; each cell extrapolates its pressure to the
  * faces along its own hydrostatic profile (hydrostatic reconstruction, cf. Audusse et al. 2004, SIAM J. Sci.
  * Comput. 25, 2050–2065), so a fluid at rest in discrete hydrostatic balance is preserved. Time: two-stage SSP Runge–Kutta (Shu & Osher 1988) under a CFL limit on |v| + c,
@@ -177,7 +182,8 @@ export function flowlineRiserProfile({ flowlineLength, flowlineAngleDeg = -2, ri
  * @param {object} o.initial initial condition (above)
  * @param {'first'|'minmod'|'vanleer'|'mc'|'none'} [o.limiter='vanleer'] MUSCL slope limiter ('first' = first order)
  * @param {number} [o.cfl=0.45] Courant number on |v| + c [-], 0 < cfl ≤ 0.9
- * @param {number} [o.Kp=0.25] pressure-diffusion coefficient of the mass flux [-] (0 switches it off)
+ * @param {number} [o.Kp=0.25] pressure-diffusion coefficient of the mass flux [-] (0 switches it off and
+ *   leaves odd–even pressure modes undamped; 0.5 is the acoustic Riemann value)
  * @param {number} [o.nProfiles=50] number of stored profiles (plus the initial one) [-]
  * @param {number} [o.nHistory=1000] number of history intervals [-]
  * @param {number} [o.maxSteps=5e6] abort threshold on the number of time steps [-]
@@ -376,17 +382,29 @@ export function simulateTransient(o) {
     }
     const rL = L.m1 + L.m2;
     const rR = R.m1 + R.m2;
+    const zL = rL * L.c;
+    const zR = rR * R.c;
     if (Kp > 0) {
-      // Pressure-diffusion velocity (AUSM⁺-up type); vanishes for the hydrostatically balanced face pressures.
-      const u = Kp * (L.p - R.p) / (0.5 * (rL + rR) * c);
+      // Pressure-diffusion velocity (pL − pR)/(zL + zR) of the acoustic Riemann problem, scaled by 2 Kp; it
+      // vanishes for hydrostatically balanced face pressures.
+      const u = 2 * Kp * (L.p - R.p) / (zL + zR);
       if (u > 0) { F1 += L.m1 * u; F2 += L.m2 * u; F3 += (L.m1 * L.vl + L.m2 * L.vg) * u; }
       else { F1 += R.m1 * u; F2 += R.m2 * u; F3 += (R.m1 * R.vl + R.m2 * R.vg) * u; }
     }
     const wL = (L.m1 * L.vl + L.m2 * L.vg) / rL;
     const wR = (R.m1 * R.vl + R.m2 * R.vg) / rR;
-    const Pp = Math.abs(wL) <= c ? (wL + c) * (wL + c) * (2 - wL / c) / (4 * c * c) : (wL > 0 ? 1 : 0);
-    const Pm = Math.abs(wR) <= c ? (wR - c) * (wR - c) * (2 + wR / c) / (4 * c * c) : (wR < 0 ? 1 : 0);
-    flux.f1 = F1; flux.f2 = F2; flux.f3 = F3 + Pp * L.p + Pm * R.p;
+    // Interface pressure: impedance-weighted acoustic value at low Mach number, blended into the upwinding
+    // P± splitting as the mixture Mach number approaches one.
+    const pAc = (zR * L.p + zL * R.p + zL * zR * (wL - wR)) / (zL + zR);
+    const M2 = Math.max(wL * wL, wR * wR) / (c * c);
+    let pFace = pAc;
+    if (M2 > 0.25) {
+      const Pp = Math.abs(wL) <= c ? (wL + c) * (wL + c) * (2 - wL / c) / (4 * c * c) : (wL > 0 ? 1 : 0);
+      const Pm = Math.abs(wR) <= c ? (wR - c) * (wR - c) * (2 + wR / c) / (4 * c * c) : (wR < 0 ? 1 : 0);
+      const f = M2 >= 1 ? 0 : (1 - M2) / 0.75;
+      pFace = f * pAc + (1 - f) * (Pp * L.p + Pm * R.p);
+    }
+    flux.f1 = F1; flux.f2 = F2; flux.f3 = F3 + pFace;
   };
 
   // Phase state carrying stated mass fluxes at a given pressure (inlet boundary and steady initial profile).

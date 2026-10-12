@@ -170,7 +170,8 @@ export function linearIrregularWave(o) {
  * @param {number} [o.rnaInertia=0] RNA rotary inertia about the lateral axis [kg m2]
  * @param {number} o.zHub hub elevation [m] (hub displacement = top displacement + top rotation x (zHub - zTop))
  * @param {number} [o.zTowerBase] elevation of the tower-base output section [m]; default the first segment joint
- * @param {object|'fixed'} [o.foundation='fixed'] { Kh [N/m], Kr [N m/rad], Khr [N] (default 0) }
+ * @param {object|'fixed'} [o.foundation='fixed'] { Kh [N/m], Kr [N m/rad], Khr [N] (default 0) }; springs more than
+ *   1e4 times stiffer than the lowest element are treated as a clamp
  * @param {number} [o.nElem=40] number of beam elements (approximately; segment joints are kept as nodes)
  * @param {number} [o.nModes=2] modes returned
  * @param {number} [o.zeta=0.01] structural damping ratio assigned to every mode [-]
@@ -244,7 +245,12 @@ export function buildSupportStructure(o) {
   // K0 keeps the unrestrained stiffness for the free-body section-force recovery
   const K0 = K.map((r) => r.slice());
   let off = 0;
-  if (!fixed) {
+  // springs several orders stiffer than the adjoining element only degrade the conditioning of the dense
+  // eigen-solve without changing the modes: treat them as a clamp
+  const e0 = elems[0];
+  const le0 = e0.zb - e0.za;
+  const rigid = !fixed && o.foundation.Kh > 1e4 * 12 * e0.EI / le0 ** 3 && o.foundation.Kr > 1e4 * 4 * e0.EI / le0;
+  if (!fixed && !rigid) {
     need(o.foundation.Kh > 0 && o.foundation.Kr > 0, 'foundation', 'Kh and Kr must be > 0');
     K[0][0] += o.foundation.Kh; K[1][1] += o.foundation.Kr;
     K[0][1] += o.foundation.Khr ?? 0; K[1][0] += o.foundation.Khr ?? 0;

@@ -81,8 +81,9 @@ export function opexBuildUp(o) {
  * Logic (every step visible in the result): transit time = distance / speed; productive hours per technician-shift
  * = shift length − 2 × transit (CTV) or shift length − in-field transfer allowance (SOV); corrective workload =
  * Σ failure rate × (repair hours × technicians) per turbine; technician-shifts needed = workload / productive
- * hours / weather accessibility; vessel days follow from technicians per vessel; downtime per failure = repair
- * hours + mean waiting time for access and logistics; availability = 1 − downtime hours / 8760.
+ * hours / weather accessibility; vessel days follow from technicians per vessel; downtime per failure = elapsed
+ * repair time (whole days of single-shift working plus the remainder; heavy-lift repairs around the clock) + mean
+ * waiting time for access and logistics; availability = 1 − downtime hours / 8760.
  * Ref: structure follows published strategy models, e.g. Dalgic, Lazakis, Dinwoodie, McMillan & Revie (2015),
  * Advanced logistics planning for offshore wind farm operation and maintenance activities, Ocean Engineering 101;
  * all numerical data are placeholders supplied through `failureData` and `rates`.
@@ -114,7 +115,11 @@ export function windOmModel({ turbines, ratedMW, distance_km, strategy, capacity
   for (const s of failureData.subsystems) {
     techHours += s.rate * s.repairHours * s.technicians;
     materials += s.rate * s.repairCost;
-    downtime += s.rate * (s.repairHours + (s.heavyLift ? heavyLiftWaitHours : wait));
+    // minor repairs proceed only during the productive hours of one shift per day, so a job longer than one
+    // shift leaves the turbine down overnight; heavy-lift repairs are worked around the clock
+    const elapsed = s.heavyLift || !feasible ? s.repairHours
+      : Math.floor(s.repairHours / productive) * 24 + (s.repairHours % productive);
+    downtime += s.rate * (elapsed + (s.heavyLift ? heavyLiftWaitHours : wait));
     if (s.heavyLift) heavyEvents += s.rate;
   }
   techHours += R.scheduledServiceHours * 2;                             // annual service by a two-person team

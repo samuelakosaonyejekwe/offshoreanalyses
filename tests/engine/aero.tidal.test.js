@@ -153,8 +153,9 @@ test('Garrett & Cummins (2007) blocked-channel limit: Cp,max = (16/27)(1 − B)^
   close(betz.alpha2, 2 / 3, 1e-12);
   close(betz.Ct, 8 / 9, 1e-12);
   close(betz.Cp, 16 / 27, 1e-12);
-  // Garrett–Cummins closed forms at B = 0.2, α4 = 1/3: u_t/u = 2/(3(1 + B)) ... checked via their turbine-velocity
-  // relation α2 = α4 (β4 + α4)/(β4 + 2α4 − 1)
+  // Garrett & Cummins at the optimum: turbine-plane velocity u_t/u = 2/(3(1 + B))
+  close(channelBlockageLimit({ B: 0.2 }).alpha2, 2 / (3 * 1.2), 1e-6);
+  // and their general turbine-velocity relation α2 = α4 (β4 + α4)/(β4 + 2α4 − 1)
   const r = channelBlockage({ B: 0.2, alpha4: 0.4 });
   close(r.alpha2, (0.4 * (r.beta4 + 0.4)) / (r.beta4 + 2 * 0.4 - 1), 1e-9);
   assert.ok(r.beta4 > 1 && r.alpha2 > 0.4 && r.alpha2 < 1);

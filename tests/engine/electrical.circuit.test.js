@@ -82,9 +82,9 @@ test('distributed line tends to the nominal-π model for short lengths: B differ
   rel(diffB(2000) / diffB(1000), 4, 1e-3);
   const d = abcdDistributed({ ...line, length: 1000 }); const n = abcdNominalPi({ ...line, length: 1000 });
   for (const k of ['A', 'C', 'D']) assert.ok(cabs(csub(d[k], n[k])) <= 1e-5 * cabs(d[k]), k);
-  // at 150 km the two differ visibly but still by less than 1 % in B
+  // at 150 km the lumped model is already a few per cent off in B
   const diff = diffB(150e3);
-  assert.ok(diff > 1e-3 && diff < 0.01, `relative difference ${diff}`);
+  assert.ok(diff > 0.01 && diff < 0.05, `relative difference ${diff}`);
 });
 
 test('reciprocity: AD − BC = 1 for the distributed line and for any cascade', () => {

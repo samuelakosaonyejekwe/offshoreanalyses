@@ -93,14 +93,11 @@ export function inertiaSolid(positions, indices, { density = 1 } = {}) {
   const cg = [m1[0] / vol, m1[1] / vol, m1[2] / vol];
   // central second moments, then tensor
   const cc = c2.map((v, q) => v - vol * cg[pr[q][0]] * cg[pr[q][1]]);
-  const tensor = (s, V, g) => {
-    // s: second moments about a point; shift not needed here, g unused
-    return [
-      [s[1] + s[2], -s[3], -s[5]],
-      [-s[3], s[0] + s[2], -s[4]],
-      [-s[5], -s[4], s[0] + s[1]],
-    ].map((r) => r.map((x) => x * density));
-  };
+  const tensor = (s) => [
+    [s[1] + s[2], -s[3], -s[5]],
+    [-s[3], s[0] + s[2], -s[4]],
+    [-s[5], -s[4], s[0] + s[1]],
+  ].map((r) => r.map((x) => x * density));
   const c = [cg[0] + o[0], cg[1] + o[1], cg[2] + o[2]];
   const so = cc.map((v, q) => v + vol * c[pr[q][0]] * c[pr[q][1]]);
   return { volume: vol, mass: density * vol, centroid: c, inertia: tensor(cc), inertiaOrigin: tensor(so) };

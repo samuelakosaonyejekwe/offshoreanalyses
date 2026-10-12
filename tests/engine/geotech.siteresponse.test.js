@@ -65,12 +65,13 @@ test('linear time-domain run: a harmonic input is scaled by |F(f0)|; strain at m
   close(r.pgaSurface, 0.5 * F, 2e-3);
   close(r.amplification, F, 2e-3);
   assert.equal(r.converged, true);
-  // undamped standing wave u = U cos(k z): strain amplitude at mid-height = k U sin(k H/2), U = a_surface / w^2
-  const und = s.equivalentLinearResponse({ layers: [{ h: H, rho: 1800, Vs, damping: 0 }], bedrock: { rigid: true }, acc, dt });
+  // standing wave u = U cos(k z): strain amplitude at mid-height = k U sin(k H/2), U = a_surface / w^2
+  // (a trace of damping keeps the transfer function finite at the bin that coincides with the third mode)
+  const und = s.equivalentLinearResponse({ layers: [{ h: H, rho: 1800, Vs, damping: 1e-5 }], bedrock: { rigid: true }, acc, dt });
   const w = 2 * Math.PI * f0, k = w / Vs;
   close(und.layers[0].gammaMax, k * (und.pgaSurface / (w * w)) * Math.sin(k * H / 2), 2e-3);
   // PGA at the top of a lower sub-layer follows cos(k z)
-  const two = s.equivalentLinearResponse({ layers: [{ h: 8, rho: 1800, Vs, damping: 0 }, { h: 12, rho: 1800, Vs, damping: 0 }], bedrock: { rigid: true }, acc, dt, layerHistories: true });
+  const two = s.equivalentLinearResponse({ layers: [{ h: 8, rho: 1800, Vs, damping: 1e-5 }, { h: 12, rho: 1800, Vs, damping: 1e-5 }], bedrock: { rigid: true }, acc, dt, layerHistories: true });
   close(two.layers[1].pgaTop, two.pgaSurface * Math.abs(Math.cos(k * 8)), 2e-3);
 });
 
@@ -81,13 +82,18 @@ test('equivalent-linear iteration: converges, softens the column under strong sh
   for (let i = 0; i < N; i++) { const t = i * dt; acc[i] = Math.exp(-((t - 5) ** 2) / 4) * (Math.sin(2 * Math.PI * 1.1 * t) + 0.6 * Math.sin(2 * Math.PI * 2.7 * t + 1) + 0.4 * Math.sin(2 * Math.PI * 5.3 * t + 2)); }
   const mk = () => [0, 1, 2, 3].map((i) => ({ h: 5, rho: 1850, Vs: 180 + 30 * i, curve: { model: 'darendeli', sigmaM: (25 + 50 * i) * 1e3, PI: 15 } }));
   const rock = { rho: 2400, Vs: 800, damping: 0.01 };
-  const strong = s.equivalentLinearResponse({ layers: mk(), bedrock: rock, acc: acc.map((a) => 3 * a), dt, maxIter: 30 });
+  const strong = s.equivalentLinearResponse({ layers: mk(), bedrock: rock, acc: acc.map((a) => 0.5 * a), dt, maxIter: 30 });
   const weak = s.equivalentLinearResponse({ layers: mk(), bedrock: rock, acc: acc.map((a) => 0.001 * a), dt });
   assert.equal(strong.converged, true);
   assert.equal(weak.converged, true);
-  for (const l of strong.layers) assert.ok(l.ratio < 0.95 && l.ratio > 0.05 && l.damping > 0.02);
+  for (const l of strong.layers) assert.ok(l.ratio < 0.95 && l.ratio > 0.1 && l.damping > 0.02, `ratio ${l.ratio}, damping ${l.damping}`);
   for (const l of weak.layers) assert.ok(l.ratio > 0.99);
-  assert.ok(strong.amplification < weak.amplification);
+  // softening lowers the fundamental frequency of the column (first peak of the transfer function)
+  const firstPeak = (tf) => { for (let i = 1; i < tf.f.length - 1; i++) if (tf.amp[i] > tf.amp[i - 1] && tf.amp[i] > tf.amp[i + 1]) return tf.f[i]; return NaN; };
+  assert.ok(firstPeak(strong.tf) < firstPeak(weak.tf));
+  // weak-motion fundamental frequency close to Vs,avg / 4H with the travel-time average velocity
+  const tt = [0, 1, 2, 3].reduce((a, i) => a + 5 / (180 + 30 * i), 0);
+  assert.ok(Math.abs(firstPeak(weak.tf) - 1 / (4 * tt)) / (1 / (4 * tt)) < 0.12);
   // strain-compatible properties are consistent with the curve at the effective strain
   const l0 = strong.layers[0];
   close(l0.gammaEff, 0.65 * l0.gammaMax, 1e-12);
@@ -110,7 +116,7 @@ test('response spectrum (Nigam-Jennings): undamped step input doubles the static
   close(stiff.SaAbs[0], 3, 2e-3);
 });
 
-test('response spectrum: steady-state resonance of a damped oscillator approaches a0 / (2 xi); exact against closed-form free vibration', () => {
+test('response spectrum: steady-state resonance of a damped oscillator approaches a0 / (2 xi); time-step independence for a piecewise-linear record; impulse response', () => {
   const dt = 0.005, T = 0.8, xi = 0.05, a0 = 1.5;
   const n = 40000;
   const acc = new Float64Array(n);
@@ -121,11 +127,15 @@ test('response spectrum: steady-state resonance of a damped oscillator approache
   // triangular pulse then free vibration: the recurrence is exact for piecewise-linear input, so two time
   // steps give identical spectra when the record is sampled consistently
   const pulse = (h) => { const m = Math.round(2 / h); const p = new Float64Array(m + 1); for (let i = 0; i <= m; i++) { const t = i * h; p[i] = t <= 0.2 ? t / 0.2 : t <= 0.4 ? (0.4 - t) / 0.2 : 0; } return p; };
-  const c1 = s.responseSpectrum({ acc: pulse(0.1), dt: 0.1, periods: [0.3, 1, 2], damping: 0.05, freeVibrationCycles: 3 });
-  const c2 = s.responseSpectrum({ acc: pulse(0.001), dt: 0.001, periods: [0.3, 1, 2], damping: 0.05, freeVibrationCycles: 3 });
+  const c1 = s.responseSpectrum({ acc: pulse(0.02), dt: 0.02, periods: [1, 2], damping: 0.05, freeVibrationCycles: 3 });
+  const c2 = s.responseSpectrum({ acc: pulse(0.001), dt: 0.001, periods: [1, 2], damping: 0.05, freeVibrationCycles: 3 });
   // the coarse run samples the same piecewise-linear record, so only the sampling of the maximum differs
-  for (let i = 1; i < 3; i++) assert.ok(Math.abs(c1.Sd[i] - c2.Sd[i]) / c2.Sd[i] < 0.02, `T index ${i}: ${c1.Sd[i]} vs ${c2.Sd[i]}`);
-  close(c2.PSV[1], 2 * Math.PI * c2.Sd[1], 1e-12);
+  // (at most 1 - cos(pi dt/T) = 0.2 %)
+  for (let i = 0; i < 2; i++) assert.ok(Math.abs(c1.Sd[i] - c2.Sd[i]) / c2.Sd[i] < 3e-3, `T index ${i}: ${c1.Sd[i]} vs ${c2.Sd[i]}`);
+  close(c2.PSV[1], Math.PI * c2.Sd[1], 1e-12);
+  // undamped oscillator after a short impulse: Sd = I / w with I the impulse area (0.2 here), for T >> 0.4 s
+  const long = s.responseSpectrum({ acc: pulse(0.001), dt: 0.001, periods: [40], damping: 0, freeVibrationCycles: 1 });
+  close(long.Sd[0], 0.2 / (2 * Math.PI / 40), 1e-3);
 });
 
 test('Arias intensity and significant duration of a constant-amplitude sine: Ia = (pi/2g) a0^2 t/2, D5-95 = 0.9 t', () => {

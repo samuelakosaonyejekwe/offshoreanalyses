@@ -12,7 +12,7 @@ test('layered Darcy flow by hand: series and parallel equivalent conductivities,
   close(r.kNormal, 6 / sumLk, 1e-12);
   close(r.kParallel, (2e-4 + 1e-6 + 3e-5) / 6, 1e-12);
   close(r.headLoss.reduce((a, b) => a + b, 0), 3, 1e-12);
-  close(r.heads[3], 0, 1e-9 + 1e-12) || true;
+  assert.ok(Math.abs(r.heads[3]) < 1e-12);
   close(r.gradients[1], r.velocity / 1e-6, 1e-12);
   close(s.criticalGradient({ gammaSub: 9810 }), 1, 1e-14);
 });

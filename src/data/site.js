@@ -1,7 +1,7 @@
 // Site characterisation: pull every live source for a coordinate and reduce it to the design values the suites
 // bind to (docs/CONTRACT.md §3). Each derived number keeps its provenance and method so it can be audited.
 import * as C from './connectors.js';
-import { fitGumbel, returnValue, annualMaxima, scatterDiagram } from '../engine/reliability/extreme.js';
+import { fitGumbel, returnValue, scatterDiagram } from '../engine/reliability/extreme.js';
 import { getProject, publish, save, emit } from '../core/store.js';
 
 const clean = (a) => a.filter((v) => typeof v === 'number' && Number.isFinite(v));
@@ -15,13 +15,21 @@ const quant = (a, p) => { const s = clean(a).sort((x, y) => x - y); return s.len
 function extremes(times, values, label) {
   const pairs = times.map((t, i) => [t, values[i]]).filter(([, v]) => typeof v === 'number' && Number.isFinite(v));
   if (pairs.length < 24 * 300) return null;
-  const am = annualMaxima(pairs.map((p) => p[0]), pairs.map((p) => p[1]));
-  const maxima = Array.from(am.maxima).filter(Number.isFinite);
-  if (maxima.length < 8) return { n: maxima.length, v1: quant(maxima, 0.5), v100: maxOf(maxima), method: `${label}: record shorter than 8 years — empirical maximum, not an extreme-value fit` };
-  const fit = fitGumbel(maxima, { method: 'mle' });
+  // Calendar year is read from the ISO string itself (no time-zone shift), and years with less than 80 % of
+  // their hours are dropped: a stray first or last partial year would otherwise enter as a false low maximum.
+  const byYear = new Map();
+  for (const [t, v] of pairs) { const y = Number(String(t).slice(0, 4)); const e = byYear.get(y) || { n: 0, max: -Infinity }; e.n++; if (v > e.max) e.max = v; byYear.set(y, e); }
+  const kept = [...byYear.entries()].filter(([, e]) => e.n >= 0.8 * 8760).sort((a, b) => a[0] - b[0]);
+  const am = { years: kept.map(([y]) => y), maxima: kept.map(([, e]) => e.max) };
+  const maxima = am.maxima;
+  // fewer than five complete years cannot support a fit: report the observed maximum with a stated allowance
+  if (maxima.length < 5) return { n: maxima.length, v1: quant(maxima, 0.5), v100: 1.25 * maxOf(maxima), method: `${label}: only ${maxima.length} complete years — 100-year value taken as 1.25 × the observed maximum, not an extreme-value fit` };
+  // L-moments are the more robust estimator for the short samples that annual maxima give
+  const fit = fitGumbel(maxima, { method: maxima.length >= 15 ? 'mle' : 'lmom' });
   const g = { dist: 'gumbel', loc: fit.loc, scale: fit.scale };
-  // 1-year value: the level exceeded on average once a year ≈ Gumbel mode of annual maxima shifted to T = 1/(1 − e⁻¹)
-  return { n: maxima.length, v1: returnValue(g, 1.582), v10: returnValue(g, 10), v50: returnValue(g, 50), v100: returnValue(g, 100), fit: g, maxima, years: Array.from(am.years), method: `${label}: Gumbel (MLE) on ${maxima.length} annual maxima` };
+  // 1-year value: the Gumbel mode of the annual maxima (return period 1/(1 − e⁻¹) ≈ 1.58 years)
+  return { n: maxima.length, v1: returnValue(g, 1.582), v10: returnValue(g, 10), v50: returnValue(g, 50), v100: returnValue(g, 100), fit: g, maxima, years: am.years,
+    method: `${label}: Gumbel (${maxima.length >= 15 ? 'maximum likelihood' : 'L-moments'}) on ${maxima.length} annual maxima${maxima.length < 15 ? ' — short record, so the 100-year value carries wide uncertainty' : ''}` };
 }
 
 /** Maximum-likelihood Weibull fit for wind speed (Newton iteration on the shape equation). */
@@ -63,9 +71,11 @@ function seismicScreen(fc, lat, lon) {
   const mx = mean(pts.map((p) => p[0])), my = mean(pts.map((p) => p[1]));
   const c1 = pts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / (pts.reduce((s, p) => s + (p[0] - mx) ** 2, 0) || 1e-300);
   const c0 = my - c1 * mx;
-  let pga475 = c1 < 0 ? Math.exp((Math.log(1 / 475) - c0) / c1) : pga[0];
-  pga475 = Math.min(pga475, 1.5);
-  return { n: feats.length, years: yrs, maxMag: maxOf(mags), maxSitePga: pga[0], pga475, note: 'Screening estimate from the historical catalogue with a single attenuation relation — not a probabilistic seismic hazard assessment. Use a site-specific PSHA or the national hazard map for design.' };
+  // a sparse catalogue cannot support an extrapolation: fall back to 1.5 × the largest historical site value,
+  // and never let the fitted value run beyond 5 × that maximum
+  let pga475 = feats.length >= 10 && c1 < 0 ? Math.exp((Math.log(1 / 475) - c0) / c1) : 1.5 * pga[0];
+  pga475 = Math.min(pga475, 5 * pga[0], 1.5);
+  return { n: feats.length, years: yrs, maxMag: maxOf(mags), maxSitePga: pga[0], pga475, note: 'Screening estimate from the historical catalogue with a single attenuation relation (with fewer than 10 events: 1.5 × the largest historical site acceleration) — not a probabilistic seismic hazard assessment. Use a site-specific PSHA or the national hazard map for design.' };
 }
 
 /**
@@ -117,7 +127,7 @@ export async function pullSite(lat, lon, { years = 20, onProgress, force = false
     t.forEach((s, i) => { if (Number.isFinite(hs[i])) monthly[Number(s.slice(5, 7)) - 1].push(hs[i]); });
     data.waves = { years: r.years, n: hsOk.length, mean: mean(hsOk), p50: quant(hsOk, 0.5), p90: quant(hsOk, 0.9), p99: thr, max: maxOf(hsOk), tpMean: mean(tpOk), tpFactor: a, extremes: ex, scatter,
       monthlyMean: monthly.map(mean), monthlyP90: monthly.map((m) => quant(m, 0.9)), exceed: [0.5, 1, 1.5, 2, 2.5, 3, 4, 5].map((h) => ({ hs: h, frac: hsOk.filter((v) => v > h).length / hsOk.length })) };
-    data.provenance.waves = { source: `Open-Meteo Marine hindcast (${r.grid}), ${r.years} years hourly`, at: r.at, method: `${ex.method}; Tp = ${a.toFixed(2)}·√Hs from storms above the 99th percentile; Hmax = 1.86·Hs (Rayleigh, ~1000 waves)` };
+    data.provenance.waves = { source: `Open-Meteo Marine hindcast (${r.grid}), ${r.years} years hourly`, at: r.at, method: `${ex.method}; Tp = ${a.toFixed(2)}·√Hs from storms above the 99th percentile; Hmax = 1.86·Hs (Rayleigh, ~1000 waves). Global reanalysis wave models are known to under-predict storm peaks, typically by 10–20 %: confirm extremes against a site-specific hindcast or measurements` };
   });
   await step('Wind hindcast', 0.48, async () => {
     const r = await C.windHindcast(lat, lon, { years, force, onProgress: (f, m) => onProgress?.(0.48 + 0.3 * f, m) });
