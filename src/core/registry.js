@@ -17,16 +17,28 @@ export function suiteIndex() { return (indexP ||= fetchJson('../spec/index.json'
 export function suiteSpec(n) { if (!specs.has(n)) specs.set(n, fetchJson(`../spec/suite-${pad(n)}.json`)); return specs.get(n); }
 export const commonSpec = (() => { let p; return () => (p ||= fetchJson('../spec/common.json')); })();
 
-/** Modules of one suite; an empty list when the suite's code is not present. */
-export function suiteModules(n) {
-  if (!suites.has(n)) {
-    suites.set(n, import(`../suites/s${pad(n)}/index.js`).then((m) => m.default.modules || [], (err) => { console.warn(`Suite ${n} failed to load`, err); return []; }));
-  }
+let manifestP;
+const manifest = () => (manifestP ||= fetchJson('../suites/manifest.json').catch(() => ({ suites: [] })));
+
+/** Catalogue entries of one suite's modules (titles, coverage, wiring) — no calculation code is loaded. */
+export async function suiteModules(n) {
+  if (!suites.has(n)) suites.set(n, manifest().then((m) => m.suites.find((s) => s.n === n)?.modules || []));
   return suites.get(n);
 }
+
+const described = new Map();
+/**
+ * Full declaration of one module (inputs, mesh ladders, verification cases) as plain data. The module's code
+ * stays in the analysis worker, so the page never loads the engines itself.
+ */
 export async function findModule(id) {
   const n = Number(id.slice(1, 3));
-  return (await suiteModules(n)).find((m) => m.id === id) || null;
+  if (!(await suiteModules(n)).some((m) => m.id === id)) return null;
+  if (!described.has(id)) {
+    const { task } = await import('./runner.js');
+    described.set(id, task('describe', id, {}).catch((err) => { described.delete(id); throw err; }));
+  }
+  return described.get(id);
 }
 
 /** For each analysis in the specification, the modules that cover it. */

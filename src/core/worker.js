@@ -12,6 +12,9 @@ async function findModule(id) {
   return mod;
 }
 
+// the module declaration without its functions: what the page needs to build the form and the studies
+const describe = (mod) => JSON.parse(JSON.stringify(mod, (k, v) => (typeof v === 'function' ? undefined : v === Infinity ? 1e308 : v === -Infinity ? -1e308 : v)));
+
 const aborts = new Map();
 self.onmessage = async ({ data }) => {
   const { id, type, moduleId, values, options, ctxData } = data;
@@ -24,7 +27,8 @@ self.onmessage = async ({ data }) => {
     const ctx = { site: ctxData?.site || {}, bus: ctxData?.bus || {}, material, progress, signal: ac.signal };
     const mod = await findModule(moduleId);
     let result;
-    if (type === 'run') result = await mod.compute(values, ctx);
+    if (type === 'describe') result = describe(mod);
+    else if (type === 'run') result = await mod.compute(values, ctx);
     else if (type === 'verify') result = await studies.verify(mod, ctx);
     else if (typeof studies[type] === 'function') result = await studies[type](mod, values, ctx, { ...options, onProgress: progress });
     else throw new Error(`Unknown task ${type}`);

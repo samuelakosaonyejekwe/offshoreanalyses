@@ -205,7 +205,7 @@ export async function search(root, { q }) {
   const hits = [];
   for (const s of idx) {
     for (const m of await suiteModules(s.n)) {
-      const hay = `${m.title} ${m.summary} ${(m.models || []).join(' ')} ${(m.standards || []).join(' ')} ${(m.inputs || []).map((i) => i.label).join(' ')}`.toLowerCase();
+      const hay = `${m.title} ${m.summary} ${(m.models || []).join(' ')} ${(m.standards || []).join(' ')} ${m.inputText || ''}`.toLowerCase();
       const score = words.reduce((sc, w) => sc + (m.title.toLowerCase().includes(w) ? 3 : 0) + (hay.includes(w) ? 1 : 0), 0);
       if (words.every((w) => hay.includes(w))) hits.push({ m, s, score });
     }

@@ -34,6 +34,7 @@ async function inPage(type, moduleId, values, options, ctxData, onProgress) {
   if (!mod) throw new Error(`Module ${moduleId} is not available.`);
   lib.setCustomMaterials(ctxData.materials);
   const ctx = { site: ctxData.site, bus: ctxData.bus, material: lib.material, progress: onProgress || (() => {}), signal: new AbortController().signal };
+  if (type === 'describe') return JSON.parse(JSON.stringify(mod, (k, v) => (typeof v === 'function' ? undefined : v)));
   if (type === 'run') return mod.compute(values, ctx);
   if (type === 'verify') return studies.verify(mod, ctx);
   return studies[type](mod, values, ctx, { ...options, onProgress });

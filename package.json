@@ -7,6 +7,7 @@
   "scripts": {
     "test": "node --test tests/",
     "serve": "node tools/serve.mjs",
-    "precache": "node tools/precache.mjs"
+    "manifest": "node tools/manifest.mjs",
+    "precache": "node tools/manifest.mjs && node tools/precache.mjs"
   }
 }
