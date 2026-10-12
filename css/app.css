@@ -255,7 +255,7 @@ table.t td.l, table.t th.l { text-align: left; white-space: normal; }
 table.t thead th { background: var(--surface-2); font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); position: sticky; top: 0; }
 table.t tbody tr:last-child td { border-bottom: 0; }
 table.t tbody tr:hover td { background: var(--surface-2); }
-table.t input { width: 100%; min-width: 64px; border: 0; background: transparent; color: var(--ink); font: inherit; text-align: right; padding: 2px; }
+table.t input { width: 100%; min-width: 84px; border: 0; background: transparent; color: var(--ink); font: inherit; text-align: right; padding: 2px; }
 table.t input:focus { outline: 2px solid var(--focus); border-radius: 3px; }
 .ucbar { display: inline-block; width: 80px; height: 8px; background: var(--surface-3); border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
 .ucbar i { display: block; height: 100%; border-radius: 4px; background: var(--good); }
@@ -290,7 +290,7 @@ table.t input:focus { outline: 2px solid var(--focus); border-radius: 3px; }
 .advice.fail .ico { background: var(--critical); }
 .advice.warn .ico { background: var(--warning); color: #3d2a00; }
 .advice.ok .ico { background: var(--good); }
-.advice b { display: block; }
+.advice > div > b { display: block; margin-top: 2px; }
 .advice p { margin: 2px 0 0; color: var(--ink-2); }
 .split { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1100px) { .split { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: start; } .split > .sticky { position: sticky; top: calc(var(--header-h) + 12px); max-height: calc(100vh - var(--header-h) - 24px); overflow-y: auto; padding-right: 4px; } }
@@ -308,3 +308,5 @@ table.t input:focus { outline: 2px solid var(--focus); border-radius: 3px; }
 .figure .why { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
 .advice .sus { color: var(--good-ink); }
 .kpis { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+table.t input[inputmode="text"], table.t select { min-width: 150px; }
+table.t select { border: 0; background: transparent; color: var(--ink); font: inherit; }
