@@ -7,8 +7,9 @@ import { surfaceArea, signedVolume } from '../../src/mesh/measure.js';
 import { enc, close, assertContract } from './fixtures/helpers.js';
 
 // ---------------------------------------------------------------------------------------------------------
-// Fixtures. They are written here, record by record, from the published structure of the SAT format; none
-// was exported from an ACIS-based CAD system. `Sat` only numbers the records and adds the per-version record
+// Fixtures. They are written here, record by record, from the published structure of the SAT format, so that
+// every expected area and volume is known in closed form. Files written by ACIS-based CAD systems are read
+// in acis.real.test.js. `Sat` only numbers the records and adds the per-version record
 // prefix; every field of every record is spelled out by the helpers below.
 //   version < 700 : "-n type $attrib fields #"            (sequence numbers, counted strings "len text")
 //   version ≥ 700 : "type $attrib -1 $history fields #"   (strings "@len text", "End-of-ACIS-data")
@@ -479,47 +480,55 @@ test('SAT: cones (apex and frustum), elliptical cylinder, torus and pipe elbow',
   }
 });
 
-test('SAT: spline-surface faces — stored control net is tessellated untrimmed, procedural ones are counted; nothing crashes', () => {
-  // bilinear patch (degree 1 × 1, 2 × 3 control points) standing on the edge x = 0 … 2 of a box top, bounded by a
-  // four-edge loop; and a second spline face that only refers to another definition
-  const mk = (version, second) => {
+test('SAT: spline-surface faces — a stored control net is trimmed by the face boundary, procedural ones are counted; nothing crashes', () => {
+  // ruled patch (degree 1 × 1, 2 × 3 control points) standing on the edge x = 0 … 2 of a box top and leaning out to
+  // y = 0.5 at mid-height; the face is the part of it inside a loop of six straight edges that lie on it. A second spline face has a
+  // procedural definition without a stored B-spline.
+  const net = '0 0 4 2 0 4 0 0.5 5 2 0.5 5 0 0 6 2 0 6';
+  const mk = (version, second, loopPts = [[0, 0, 4], [2, 0, 4], [2, 0.5, 5], [2, 0, 6], [0, 0, 6], [0, 0.5, 5]]) => {
     const b = solid(version);
     addBox(b, [0, 0, 0], [2, 3, 4]);
-    const v = [[0, 0, 4], [2, 0, 4], [2, 0, 6], [0, 0, 6]].map((p) => b.vertex(...p));
-    const loop = v.map((x, k) => b.between(x, v[(k + 1) % 4]));
-    const nubs = ['{', 'exactsur', ...(version >= 700 ? ['full'] : []), 'nubs', 1, 1, 'open', 'open', 'none', 'none', 2, 3, 0, 1, 1, 1, 0, 1, 1, 1, 2, 1,
-      0, 0, 4, 2, 0, 4, 0, 0.5, 5, 2, 0.5, 5, 0, 0, 6, 2, 0, 6, 0, '}'];
+    const v = loopPts.map((p) => b.vertex(...p));
+    const loop = v.map((x, k) => b.between(x, v[(k + 1) % v.length]));
+    const nubs = ['{', 'exactsur', ...(version >= 700 ? ['full'] : []), 'nubs', 1, 1, 'open', 'open', 'none', 'none', 2, 3, 0, 1, 1, 1, 0, 1, 1, 1, 2, 1, net, 0, '}'];
     b.face(['spline-surface', 'forward', ...nubs, 'I', 'I', 'I', 'I'], 'forward', [loop]);
-    if (second) b.face(['spline-surface', 'forward', '{', 'ref', 0, '}', 'I', 'I', 'I', 'I'], 'forward', []);
+    if (second === 'procedural') b.face(['spline-surface', 'forward', '{', 'sweepsur', 'none', 'F', 0, 'F', 1, '}', 'I', 'I', 'I', 'I'], 'forward', []);
+    if (second === 'ref') b.face(['spline-surface', 'forward', '{', 'ref', 0, '}', 'I', 'I', 'I', 'I'], 'forward', []);
     return b.text();
   };
+  const patchOf = (m, k = 6) => { const g = m.groups[k]; return { positions: m.positions, indices: m.indices.subarray(g.start, g.start + g.count) }; };
   for (const version of [400, 700]) {
-    const r = parseAcis({ name: 'mixed.sat', text: mk(version, true) });
+    const r = parseAcis({ name: 'mixed.sat', text: mk(version, 'procedural') });
     assertContract(r, ['surface']);
     const m = surf(r);
     assert.equal(m.groups.length, 7, 'six planar faces and the patch');
-    assert.ok(r.warnings.some((w) => /^1 free-form face could not be read — export those bodies as STEP\.$/.test(w)), r.warnings.join(' | '));
-    assert.ok(r.warnings.some((w) => /^1 B-spline surface face was tessellated over the whole surface: trimming by the face boundary was not applied/.test(w)));
-    assert.equal(r.meta.skipped['free-form face'], 1);
-    assert.equal(r.meta.elementTypes['spline (untrimmed)'], 1);
-    // the patch reaches y = 0.5 at mid-height and spans z = 4 … 6
-    const g = m.groups[6];
-    let ymax = 0, zmax = 0, a = 0;
-    const patch = { positions: m.positions, indices: m.indices.subarray(g.start, g.start + g.count) };
+    assert.ok(r.warnings.some((w) => /^1 of 8 faces could not be read \(1 × procedural spline surface without a stored B-spline \("sweepsur"\)\) — export those bodies as STEP/.test(w)), r.warnings.join(' | '));
+    assert.equal(r.meta.skipped['face: procedural spline surface without a stored B-spline ("sweepsur")'], 1);
+    assert.equal(r.meta.elementTypes.spline, 1);
+    assert.deepEqual([r.meta.faces, r.meta.faceTotal, r.meta.facesSkipped], [7, 8, 1]);
+    // the patch reaches y = 0.5 at mid-height and spans z = 4 … 6; its corners are the box-top vertices it shares
+    const patch = patchOf(m);
+    let ymax = 0, zmax = 0;
     for (const i of patch.indices) { ymax = Math.max(ymax, m.positions[3 * i + 1]); zmax = Math.max(zmax, m.positions[3 * i + 2]); }
-    a = surfaceArea(patch.positions, patch.indices);
     close(ymax, 0.5, 1e-6); close(zmax, 6, 1e-6);
-    close(a, 2 * 2 * Math.hypot(1, 0.5), 1e-5, 'two flat strips');
+    close(surfaceArea(patch.positions, patch.indices), 2 * 2 * Math.hypot(1, 0.5), 1e-5, 'two flat strips');
   }
+  // trimming: a loop over the lower half of the patch only (its upper edge is the knot line z = 5, y = 0.5)
+  const half = parseAcis({ name: 'half.sat', text: mk(700, null, [[0, 0, 4], [2, 0, 4], [2, 0.5, 5], [0, 0.5, 5]]) });
+  close(surfaceArea(patchOf(surf(half)).positions, patchOf(surf(half)).indices), 2 * Math.hypot(1, 0.5), 1e-5, 'one strip');
+  // "{ ref n }" stands for the n-th sub-type block of the file; a spline face without loops covers its surface
+  const ref = parseAcis({ name: 'ref.sat', text: mk(700, 'ref') });
+  assert.equal(surf(ref).groups.length, 8);
+  close(surfaceArea(patchOf(surf(ref), 7).positions, patchOf(surf(ref), 7).indices), 2 * 2 * Math.hypot(1, 0.5), 1e-5, 'whole patch');
   // only free-form geometry: an error that says what to do, not an empty result
   const b = solid(700);
   b.face(['spline-surface', 'forward', '{', 'ref', 0, '}', 'I', 'I', 'I', 'I'], 'forward', []);
-  assert.throws(() => parseAcis({ name: 'ff.sat', text: b.text() }), /ff\.sat: no geometry could be read from the SAT file\. 1 free-form face could not be read — export those bodies as STEP\./);
-  // a control net that does not pass by the face's vertices is not trusted
-  const far = mk(700, false).replace(/0 0 4 2 0 4 0 0\.5 5 2 0\.5 5 0 0 6 2 0 6/, '0 0 40 2 0 40 0 0.5 50 2 0.5 50 0 0 60 2 0 60');
+  assert.throws(() => parseAcis({ name: 'ff.sat', text: b.text() }), /ff\.sat: no geometry could be read from the SAT file\. 1 of 1 face could not be read \(1 × spline surface on a body without any vertex\) — export those bodies as STEP/);
+  // a control net that does not pass by the face's boundary is not used
+  const far = mk(700, null).replace(net, '0 0 40 2 0 40 0 0.5 50 2 0.5 50 0 0 60 2 0 60');
   const fr = parseAcis({ name: 'far.sat', text: far });
   assert.equal(surf(fr).groups.length, 6);
-  assert.ok(fr.warnings.some((w) => /1 free-form face could not be read/.test(w)));
+  assert.ok(fr.warnings.some((w) => /1 of 7 faces could not be read \(1 × spline surface: its boundary lies \d[\d.e+]* model units off the B-spline surface stored for it\)/.test(w)), fr.warnings.join(' | '));
 });
 
 // Wire body, written out in full (7.0 layout): a straight edge, a quarter-circle arc and an edge on an
@@ -608,12 +617,12 @@ test('SAT: unknown records are reported; damaged, truncated and binary files are
   // a face on a surface type this reader does not know is left out and counted, the rest is kept
   const odd = parseAcis({ name: 'x.sat', text: good.replace(/plane-surface \$-1 -1 \$-1 0 0 0 0 0 -1/, 'meshsurf-surface $-1 -1 $-1 0 0 0 0 0 -1') });
   assert.equal(surf(odd).groups.length, 5);
-  assert.ok(odd.warnings.some((w) => /^1 free-form face could not be read — export those bodies as STEP\.$/.test(w)));
+  assert.ok(odd.warnings.some((w) => /^1 of 6 faces could not be read \(1 × surface type "meshsurf-surface"\) — export those bodies as STEP/.test(w)), odd.warnings.join(' | '));
   assert.equal(inspect(surf(odd)).watertight, false);
   // an analytic surface with missing values is skipped with its own message
   const bad = parseAcis({ name: 'x.sat', text: good.replace(/plane-surface \$-1 -1 \$-1 0 0 0 0 0 -1 1 0 0/, 'plane-surface $-1 -1 $-1 0 0 0') });
   assert.equal(surf(bad).groups.length, 5);
-  assert.ok(bad.warnings.some((w) => /A plane-surface record could not be read \(missing or unsupported values\); its face was skipped/.test(w)));
+  assert.ok(bad.warnings.some((w) => /1 × plane-surface record with missing or unsupported values/.test(w)), bad.warnings.join(' | '));
   // a pointer past the end of the file
   const dangling = parseAcis({ name: 'x.sat', text: boxSat(400).replace(/\n-\d+ straight-curve[^\n]*#(?=\n-\d+ edge)/, '') });
   assert.ok(dangling.models.length >= 1);
@@ -621,10 +630,7 @@ test('SAT: unknown records are reported; damaged, truncated and binary files are
   assert.throws(() => parseAcis({ name: 't.sat', text: good.slice(0, good.length >> 1) }), /t\.sat: the SAT file is truncated: record \d+ \(\w[\w-]*\) is not closed by "#"\./);
   assert.throws(() => parseAcis({ name: 'n.sat', text: 'solid cube\nfacet normal 0 0 1\n' }), /n\.sat: not an ACIS SAT text file \(expected a first line of four integers/);
   assert.throws(() => parseAcis({ name: 'h.sat', text: '700 0 1 0\n' }), /h\.sat: the SAT file holds a header but no entity records\./);
-  assert.throws(() => parseAcis({ name: 'b.sab', bytes: enc('ACIS BinaryFile\u0004\0\0\0') }), /b\.sab: this is a binary ACIS file \(SAB\), which is not read\. Save it as SAT \(text\) or STEP/);
-  for (const name of ['part.sab', 'part.sat']) {
-    await assert.rejects(importFile({ name, bytes: enc('ACIS BinaryFile\u0004\0\0\0\0\0\0\0') }), (e) => e instanceof GeometryFormatError && e.reason === 'convert' && e.formatId === 'acis-sab' && /ACIS SAB \(binary\) files are not read\. In the originating program save as SAT \(text\) or STEP\./.test(e.message));
-  }
-  assert.equal(formatFor('part.sab').status, 'convert');
+  // binary files go to the SAB reader (sab.test.js); the text reader says so when it is handed one
+  assert.throws(() => parseAcis({ name: 'b.sab', bytes: enc('ACIS BinaryFile\u0004\0\0\0') }), /b\.sab: this is a binary ACIS file \(SAB\), which the SAT \(text\) reader does not take/);
   assert.equal(formatFor('part.sat').status, 'native');
 });

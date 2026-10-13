@@ -1,4 +1,5 @@
-// ACIS SAT (text) — boundary representation with analytic geometry.
+// ACIS SAT (text) — boundary representation with analytic and B-spline geometry. The binary form (SAB) is
+// decoded by sab.js into the same records and read by the code below.
 //
 // File structure (as published for the SAT save format):
 //   line 1   version (major × 100 + minor), record count, body count, history flag
@@ -6,44 +7,55 @@
 //   line 3   millimetres per model unit, resabs, resnor                 (version 2.0 and later)
 //   records  "<type> <fields …> #", optionally prefixed by a sequence number "-n". Pointers are "$n" (record
 //            index, −1 = null). Up to 6.x a record starts with its attribute pointer; from 7.0 on that is
-//            followed by an integer and a history pointer ("body $-1 -1 $-1 …") and strings are "@len text".
+//            followed by an integer and a history pointer ("body $-1 -1 $-1 …"; two integers from R27 on) and
+//            strings are "@len text". The data ends at "End-of-ACIS-data" or where a history section begins.
 //
-// Read: body → lump → shell → face → loop → coedge → edge → vertex → point, with the body transform.
-//   surfaces  plane-surface, cone-surface (cylinders and cones, elliptical ratio), sphere-surface, torus-surface
+// Read: body → lump → shell → face → loop → coedge → edge → vertex → point, with the body transform; tolerant
+// topology (tcoedge, tedge, tvertex) is read like the exact one.
+//   surfaces  plane-surface, cone-surface (cylinders and cones, elliptical ratio), sphere-surface, torus-surface,
+//             spline-surface when the record stores a B-spline (exactsur, or the approximation kept with a
+//             procedural definition: rbblnsur, sweepsur, sumsur, skinsur, offsur, rot_spl_sur …), trimmed by the
+//             face boundary
 //   curves    straight-curve, ellipse-curve (circles, ellipses and their arcs), intcurve-curve when the record
 //             stores its B-spline (exactcur, or the stored approximation of a procedural curve)
-// Each face is triangulated in the parameter space of its surface between its boundary loops, the boundary
-// points being those of the shared edges, so neighbouring faces meet without gaps.
+// Sub-type blocks "{ ref n }" refer to the n-th block of the file (counted where each block opens).
+// Each face is triangulated in the parameter space of its surface between its boundary loops (brep.js), the
+// boundary points being those of the shared edges, so neighbouring faces meet without gaps.
 //
-// Conventions relied on (stated here because they decide the geometry):
+// Conventions relied on (stated here because they decide the geometry; checked on files written by Autodesk
+// Inventor, AutoCAD-family writers, Revit, Fusion, SESAM and ACIS 1.x – 28 — see docs/geometry.md):
 //   * cone-surface: radius at axial distance z from the base ellipse is R + z·sin/cos; the surface normal points
 //     away from the axis when cos > 0 and towards it when cos < 0. sphere / torus: a negative (minor) radius
 //     turns the normal inwards.
 //   * a face whose sense is "reversed" has its normal opposite to the surface normal; loops run counter-clockwise
-//     about the face normal (material on the left).
+//     about the face normal (material on the left). Before 2.0 coedge and edge senses are written as 0 / 1.
+//   * an edge stores the curve parameters of its end vertices (5.0 and later); a reversed edge runs through the
+//     curve at the negated parameters, and so does a reversed intcurve through its B-spline.
 //   * transform: row-vector convention, p′ = scale·(p·A) + t.
 //   * B-spline knot lists hold (value, multiplicity) pairs with one end knot fewer than the usual clamped
 //     vector at each end; rational control points are stored as x y z w, not premultiplied.
 //
-// Not read: spline-surface faces without stored control points (and other procedural surfaces) — counted and
-// reported; trimming of explicit B-spline surfaces; pcurves, attributes, subshells, history. SAB (binary) is
-// not read. Record types that are not recognised are reported, never interpreted.
+// Not read: spline-surface faces without a stored B-spline, or whose boundary cannot be placed on it — counted
+// and reported per reason; spindle tori; pcurves, attributes, subshells, history. Record types that are not
+// recognised are reported, never interpreted.
 
 import { inputText, baseName, finish, surfaceModel, Welder, V3, tally, cleanName, Warnings } from './common.js';
 import { resolveUnits } from '../units.js';
-import { sampleCurve, tessellateSurface } from './nurbs.js';
-import { triangulateSection } from '../../mesh/generate.js';
+import { sampleCurve } from './nurbs.js';
+import { stepper, planeSurface, coneSurface, sphereSurface, torusSurface, splineSurface, tessellateFace, BodyMesh, CROSSING } from './brep.js';
 
 const TAU = 2 * Math.PI, D2R = Math.PI / 180;
 const NUM = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/;
 const UNIT_BY_MM = [[1, 'mm'], [10, 'cm'], [100, 'dm'], [1000, 'm'], [1e6, 'km'], [25.4, 'in'], [304.8, 'ft'], [914.4, 'yd'], [0.001, 'um']];
 // record kinds that carry no geometry of their own and are passed over without comment
-const QUIET = new Set(['attrib', 'pcurve', 'asmheader', 'subshell', 'wire', 'lump', 'shell', 'body', 'loop', 'coedge', 'edge', 'vertex', 'point', 'face', 'transform', 'curve', 'surface', 'eye_refinement', 'vertex_template', 'history_stream', 'delta_state', 'annotation']);
+const QUIET = new Set(['attrib', 'pcurve', 'asmheader', 'subshell', 'wire', 'lump', 'shell', 'body', 'loop', 'coedge', 'edge', 'vertex', 'point', 'face', 'transform', 'curve', 'surface', 'eye_refinement', 'vertex_template', 'history_stream', 'delta_state', 'annotation', 'pattern', 'law_data', 'entity']);
+
+/** Record names that end the entity data: the end marker, or the start of a history section (not read). */
+export const END_MARK = /^(End-of-(ACIS|ASM)-data|Begin-of-(ACIS|ASM)-History-Data)$/i;
 
 const isWs = (c) => c === 32 || (c >= 9 && c <= 13);
 const lerp3 = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-const nearest = (u, ref) => u + TAU * Math.round((ref - u) / TAU);
 
 // ---------------------------------------------------------------------------------------------------------
 // Text → header and records
@@ -93,6 +105,9 @@ export function readSat(text, fname = 'SAT') {
       [header.product, header.acis, header.date] = strs.map((s) => s.trim());
       header.mmPerUnit = nums[0].v; header.resabs = nums[1].v; header.resnor = nums[2].v;
     } else i = save;
+    // from R27 on a fourth header line may follow: "T @len <stream identifier>" or "F"
+    const mark = i, flag = next();
+    if (flag && flag.t === 'w' && flag.v === 'T') { const id = next(); if (!id || id.t !== 's') i = mark; } else if (!(flag && flag.t === 'w' && flag.v === 'F' && (() => { const k = i, q = next(); i = k; return q && q.t === 'w'; })())) i = mark;
   }
   const records = [];
   let numbered = false;
@@ -106,7 +121,7 @@ export function readSat(text, fname = 'SAT') {
       throw new Error(`${fname}: record ${records.length} does not start with an entity name${t ? '' : ' — the file is truncated'}.`);
     }
     const type = t.v;
-    if (/^(End-of-(ACIS|ASM)-data|Begin-of-(ACIS|ASM)-History-Data)$/i.test(type)) break;
+    if (END_MARK.test(type)) break;
     const tok = [];
     for (;;) {
       const q = next();
@@ -126,6 +141,8 @@ export function readSat(text, fname = 'SAT') {
 
 const isN = (t) => t && t.t === 'n';
 const isW = (t, ...v) => t && t.t === 'w' && v.includes(t.v);
+// a keyword of the text form, or the enumeration value the binary form stores in its place
+const isTag = (t) => t && (t.t === 'w' || t.t === 'e');
 
 function knotList(tok, j, count) {
   const vals = [];
@@ -143,9 +160,9 @@ function knotList(tok, j, count) {
 /** B-spline curve stored at tok[i] = nubs | nurbs. */
 function bs3Curve(tok, i) {
   const rational = tok[i].v === 'nurbs';
-  if (!isN(tok[i + 1]) || !(tok[i + 2] && tok[i + 2].t === 'w') || !isN(tok[i + 3])) return null;
-  const deg = tok[i + 1].v, closure = tok[i + 2].v;
-  if (!(deg >= 1 && deg <= 25) || closure === 'periodic') return null;
+  if (!isN(tok[i + 1]) || !isTag(tok[i + 2]) || !isN(tok[i + 3])) return null;
+  const deg = tok[i + 1].v;
+  if (!(deg >= 1 && deg <= 25)) return null;
   const k = knotList(tok, i + 4, tok[i + 3].v);
   if (!k) return null;
   const ncp = k.sum - deg + 1, dim = rational ? 4 : 3;
@@ -157,7 +174,7 @@ function bs3Curve(tok, i) {
     P[3 * c] = tok[j].v; P[3 * c + 1] = tok[j + 1].v; P[3 * c + 2] = tok[j + 2].v;
     if (rational) { if (!(tok[j + 3].v > 0)) return null; W[c] = tok[j + 3].v; }
   }
-  return { deg, U: k.U, P, W };
+  return { deg, U: k.U, P, W, end: j };
 }
 
 /** B-spline surface stored at tok[i] = nubs | nurbs; control points kept in file order with both counts. */
@@ -166,9 +183,11 @@ function bs3Surface(tok, i) {
   if (!isN(tok[i + 1]) || !isN(tok[i + 2])) return null;
   const pu = tok[i + 1].v, pv = tok[i + 2].v;
   let j = i + 3;
+  // newer files name the rational direction ("u", "v", "both") before the closure and singularity keywords
+  if (isW(tok[j], 'u', 'v', 'both') && isTag(tok[j + 4])) j++;
   const words = [];
-  while (tok[j] && tok[j].t === 'w' && words.length < 4) words.push(tok[j++].v);
-  if (words.length !== 4 || words[0] === 'periodic' || words[1] === 'periodic') return null;
+  while (isTag(tok[j]) && words.length < 4) words.push(tok[j++].v);
+  if (words.length !== 4) return null;
   if (!isN(tok[j]) || !isN(tok[j + 1]) || !(pu >= 1 && pv >= 1 && pu <= 25 && pv <= 25)) return null;
   const ku = knotList(tok, j + 2, tok[j].v);
   if (!ku) return null;
@@ -186,396 +205,31 @@ function bs3Surface(tok, i) {
   return { pu, pv, U: ku.U, V: kv.U, nu, nv, P, W };
 }
 
-/** Sub-type block of a record: its name and the position of a stored B-spline, if one follows the name. */
-function subtype(tok) {
-  const a = tok.findIndex((t) => t.t === '{');
-  if (a < 0) return null;
-  const name = tok[a + 1] && tok[a + 1].t === 'w' ? tok[a + 1].v : '';
-  let j = a + 2;
-  if (isW(tok[j], 'full')) j++;
-  return { name, at: isW(tok[j], 'nubs', 'nurbs') ? j : -1, reversed: tok.slice(0, a).some((t) => isW(t, 'reversed')) };
-}
-
-// ---------------------------------------------------------------------------------------------------------
-// Analytic surfaces: 3-D ↔ parameter space. Parameters are chosen so that ∂u × ∂v points away from the axis /
-// centre (plane: along its normal); `inward` records that the ACIS surface normal is the opposite.
-// ---------------------------------------------------------------------------------------------------------
-
-function anyPerp(n) {
-  const s = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-  return V3.norm(V3.sub(s, V3.scale(n, V3.dot(s, n))));
-}
-function perpTo(x, n) {
-  if (!x || !(V3.len(x) > 0)) return anyPerp(n);
-  const p = V3.sub(x, V3.scale(n, V3.dot(x, n)));
-  return V3.len(p) > 1e-9 * V3.len(x) ? V3.norm(p) : anyPerp(n);
-}
-
-function makeSurface(type, n, stepFor) {
-  const ok = (k) => n.length >= k && n.slice(0, k).every(Number.isFinite);
-  if (type === 'plane-surface') {
-    if (!ok(6)) return null;
-    const O = n.slice(0, 3), N = V3.norm(n.slice(3, 6));
-    if (!(V3.len(N) > 0)) return null;
-    const e1 = perpTo(n.length >= 9 ? n.slice(6, 9) : null, N), e2 = V3.cross(N, e1);
-    return {
-      type: 'plane', inward: false, perU: false, perV: false,
-      toParam: (p) => { const d = V3.sub(p, O); return [V3.dot(d, e1), V3.dot(d, e2)]; },
-      fromParam: (u, v) => [O[0] + u * e1[0] + v * e2[0], O[1] + u * e1[1] + v * e2[1], O[2] + u * e1[2] + v * e2[2]],
-      scales: () => ({ su: 1, sv: 1, size: undefined }),
-    };
-  }
-  if (type === 'cone-surface') {
-    if (!ok(12)) return null;
-    const C = n.slice(0, 3), A = V3.norm(n.slice(3, 6)), M = n.slice(6, 9), ratio = n[9], sin = n[10], cos = n[11];
-    const R0 = V3.len(M);
-    if (!(V3.len(A) > 0) || !(R0 > 0) || !(ratio > 0) || !(Math.abs(cos) > 1e-12) || Math.abs(Math.hypot(sin, cos) - 1) > 1e-3) return null;
-    const X = perpTo(M, A), Y = V3.cross(A, X), tan = sin / cos;
-    const eps = 1e-9 * R0;
-    const surf = {
-      type: Math.abs(sin) < 1e-12 ? 'cylinder' : 'cone', inward: cos < 0, perU: true, perV: false, straightV: true,
-      apex: Math.abs(tan) > 1e-12 ? -R0 / tan : null,
-      toParam: (p) => { const d = V3.sub(p, C); const x = V3.dot(d, X), y = V3.dot(d, Y) / ratio; return [Math.hypot(x, y) > eps ? Math.atan2(y, x) : NaN, V3.dot(d, A)]; },
-      fromParam: (u, v) => { const r = R0 + v * tan, cx = r * Math.cos(u), cy = r * ratio * Math.sin(u); return [C[0] + cx * X[0] + cy * Y[0] + v * A[0], C[1] + cx * X[1] + cy * Y[1] + v * A[1], C[2] + cx * X[2] + cy * Y[2] + v * A[2]]; },
-      radiusAt: (v) => Math.abs(R0 + v * tan) * Math.max(1, ratio),
-      // generators are straight: only the angle a triangle spans matters, so the axial extent of a face is
-      // squeezed below one target size (see `squeeze`) and triangles run from one end of the face to the other
-      scales: (rmax) => { const st = stepFor(rmax); return { su: 1 / st, sv: 1 / (8 * rmax * st), size: 1, stepU: st, stepV: Infinity, squeeze: 0.6 }; },
-    };
-    return surf;
-  }
-  if (type === 'sphere-surface') {
-    if (!ok(4)) return null;
-    const C = n.slice(0, 3), R = Math.abs(n[3]);
-    if (!(R > 0)) return null;
-    const Z = n.length >= 10 && V3.len(n.slice(7, 10)) > 0 ? V3.norm(n.slice(7, 10)) : [0, 0, 1];
-    const X = perpTo(n.length >= 7 ? n.slice(4, 7) : null, Z), Y = V3.cross(Z, X);
-    return {
-      type: 'sphere', inward: n[3] < 0, perU: true, perV: false, poles: true, C, R,
-      toParam: (p) => { const d = V3.sub(p, C); const x = V3.dot(d, X), y = V3.dot(d, Y), z = V3.dot(d, Z); const h = Math.hypot(x, y); return [h > 1e-9 * R ? Math.atan2(y, x) : NaN, Math.atan2(z, h)]; },
-      fromParam: (u, v) => { const c = R * Math.cos(v), cx = c * Math.cos(u), cy = c * Math.sin(u), cz = R * Math.sin(v); return [C[0] + cx * X[0] + cy * Y[0] + cz * Z[0], C[1] + cx * X[1] + cy * Y[1] + cz * Z[1], C[2] + cx * X[2] + cy * Y[2] + cz * Z[2]]; },
-      scales: () => { const st = stepFor(R); return { su: 1 / st, sv: 1 / st, size: 1, stepU: st, stepV: st }; },
-    };
-  }
-  if (type === 'torus-surface') {
-    if (!ok(8)) return null;
-    const C = n.slice(0, 3), N = V3.norm(n.slice(3, 6)), R = n[6], r = Math.abs(n[7]);
-    // spindle ("apple" / "lemon") tori, where the tube crosses the axis, are not handled
-    if (!(V3.len(N) > 0) || !(r > 0) || !(R > r)) return null;
-    const X = perpTo(n.length >= 11 ? n.slice(8, 11) : null, N), Y = V3.cross(N, X);
-    return {
-      type: 'torus', inward: n[7] < 0, perU: true, perV: true, C, R, r,
-      toParam: (p) => { const d = V3.sub(p, C); const x = V3.dot(d, X), y = V3.dot(d, Y); return [Math.atan2(y, x), Math.atan2(V3.dot(d, N), Math.hypot(x, y) - R)]; },
-      fromParam: (u, v) => { const c = R + r * Math.cos(v), cx = c * Math.cos(u), cy = c * Math.sin(u), cz = r * Math.sin(v); return [C[0] + cx * X[0] + cy * Y[0] + cz * N[0], C[1] + cx * X[1] + cy * Y[1] + cz * N[1], C[2] + cx * X[2] + cy * Y[2] + cz * N[2]]; },
-      // around the axis the facets may not sag more than they do around the tube, or the chords of a slender
-      // torus would cut through it
-      scales: () => { const b = stepFor(r), a = Math.min(stepFor(R + r), 2 * Math.acos(1 - (r * (1 - Math.cos(b / 2))) / (R + r))); return { su: 1 / a, sv: 1 / b, size: 1, stepU: a, stepV: b }; },
-    };
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------------------------------------
-// Face domain in parameter space
-// ---------------------------------------------------------------------------------------------------------
-
-const areaOf = (L) => { let a = 0; for (let i = 0, j = L.length - 1; i < L.length; j = i++) a += L[j].x * L[i].y - L[i].x * L[j].y; return a / 2; };
-const meanOf = (L, k) => { let s = 0; for (const q of L) s += q[k]; return s / L.length; };
-const shifted = (L, dx, dy = 0) => (dx || dy ? L.map((q) => ({ x: q.x + dx, y: q.y + dy, p: q.p })) : L);
-
-/**
- * Boundary loops of a face in the parameter plane of a periodic surface, unwrapped. A vertex at a pole or apex
- * (where u is undefined) becomes the stretch of the degenerate row between the u of its neighbours.
- * @returns {{ pts: Array<{x, y, p}>, wu: number, wv: number }|null}
- */
-function unwrapLoop(surf, pts3) {
-  const raw = pts3.map((p) => { const [u, v] = surf.toParam(p); return { u, v, p, sing: u !== u }; });
-  const m = raw.length;
-  if (raw.every((q) => q.sing)) return null;
-  const out = [];
-  const firstSing = raw.findIndex((q, i) => q.sing && !raw[(i + 1) % m].sing);
-  const fixV = (v, ref) => (surf.perV ? nearest(v, ref) : v);
-  if (firstSing < 0) {
-    let lu = raw[0].u, lv = raw[0].v;
-    out.push({ x: lu, y: lv, p: raw[0].p });
-    for (let i = 1; i < m; i++) { lu = nearest(raw[i].u, lu); lv = fixV(raw[i].v, lv); out.push({ x: lu, y: lv, p: raw[i].p }); }
-    return { pts: out, wu: Math.round((nearest(raw[0].u, lu) - raw[0].u) / TAU), wv: surf.perV ? Math.round((nearest(raw[0].v, lv) - raw[0].v) / TAU) : 0 };
-  }
-  // start just after a degenerate vertex so that the loop closes along the degenerate row without winding
-  const seq = [];
-  for (let k = 1; k <= m; k++) seq.push(raw[(firstSing + k) % m]);
-  let lu = seq[0].u, lv = seq[0].v;
-  out.push({ x: lu, y: lv, p: seq[0].p });
-  for (let i = 1; i < m; i++) {
-    const q = seq[i];
-    if (!q.sing) { lu = nearest(q.u, lu); lv = fixV(q.v, lv); out.push({ x: lu, y: lv, p: q.p }); continue; }
-    out.push({ x: lu, y: q.v, p: q.p });
-    let nx = null;
-    for (let k = i + 1; k < m && !nx; k++) if (!seq[k].sing) nx = seq[k];
-    const un = nx ? nearest(nx.u, lu) : out[0].x;
-    if (un !== lu) out.push({ x: un, y: q.v, p: q.p });
-    lu = un;
-  }
-  return { pts: out, wu: 0, wv: 0 };
-}
-
-/**
- * Polygons (even–odd rule) bounding a face on a periodic surface.
- * @param {boolean} flip face normal opposes ∂u × ∂v, so loops run clockwise in the parameter plane
- * @returns {Array<Array<{x, y, p}>>|string} loops, or the reason the domain could not be built
- */
-function periodicDomain(surf, loops, flip, sc) {
-  const orient = flip ? -1 : 1;
-  const mk = (x, y) => ({ x, y, p: surf.fromParam(x, y) });
-  const copy = (q, dx, dy) => ({ x: q.x + dx, y: q.y + dy, p: q.p });
-  const divs = (a, b) => Math.max(1, Math.ceil(Math.max(Math.abs(b.x - a.x) / sc.stepU, Number.isFinite(sc.stepV) ? Math.abs(b.y - a.y) / sc.stepV : 0) - 1e-9));
-  // interior points of the straight parameter-space line a → b (shared by both sides of a seam)
-  const between = (a, b) => { const k = divs(a, b), o = []; for (let i = 1; i < k; i++) o.push(mk(a.x + ((b.x - a.x) * i) / k, a.y + ((b.y - a.y) * i) / k)); return o; };
-  const wind = loops.filter((l) => l.wu || l.wv), flat = loops.filter((l) => !l.wu && !l.wv);
-  if (wind.some((l) => l.wu && l.wv)) return 'a boundary loop winds around both directions of the surface';
-
-  // full parameter rectangle of a closed surface, cut where no hole lies
-  const rectangle = (holes) => {
-    const place = (list, k, lo) => list.map((h) => { const d = -TAU * Math.floor((meanOf(h, k) - lo) / TAU); return k === 'x' ? shifted(h, d, 0) : shifted(h, 0, d); });
-    const clear = (hs, k, lo) => hs.every((h) => h.every((q) => q[k] > lo + 1e-6 && q[k] < lo + TAU - 1e-6));
-    let u0 = null, hs = holes;
-    for (let c = 0; c < 16 && u0 === null; c++) { const lo = -Math.PI + 0.0137 + (c * Math.PI) / 8; const t = place(holes, 'x', lo); if (clear(t, 'x', lo)) { u0 = lo; hs = t; } }
-    if (u0 === null) return 'its holes leave no meridian free for the seam';
-    if (surf.poles) {
-      const s = mk(u0, -Math.PI / 2), nth = mk(u0, Math.PI / 2);
-      const side = between(s, nth);
-      return [[s, copy(s, TAU, 0), ...side.map((q) => copy(q, TAU, 0)), copy(nth, TAU, 0), nth, ...side.slice().reverse()], ...hs];
-    }
-    let v0 = null;
-    for (let c = 0; c < 16 && v0 === null; c++) { const lo = -Math.PI + 0.0137 + (c * Math.PI) / 8; const t = place(hs, 'y', lo); if (clear(t, 'y', lo)) { v0 = lo; hs = t; } }
-    if (v0 === null) return 'its holes leave no parallel free for the seam';
-    const o = mk(u0, v0), bu = between(o, { x: u0 + TAU, y: v0 }), bv = between(o, { x: u0, y: v0 + TAU });
-    return [[o, ...bu, copy(o, TAU, 0), ...bv.map((q) => copy(q, TAU, 0)), copy(o, TAU, TAU), ...bu.slice().reverse().map((q) => copy(q, 0, TAU)), copy(o, 0, TAU), ...bv.slice().reverse()], ...hs];
-  };
-
-  if (!wind.length) {
-    if (!flat.length) return surf.poles || surf.perV ? rectangle([]) : 'the face has no boundary on an unbounded surface';
-    const withArea = flat.map((l) => ({ l, a: areaOf(l.pts) }));
-    if (withArea.some((q) => q.a * orient > 0) || !(surf.poles || surf.perV)) {
-      withArea.sort((p, q) => Math.abs(q.a) - Math.abs(p.a));
-      const ref = withArea[0].l.pts, mu = meanOf(ref, 'x'), mv = meanOf(ref, 'y');
-      return withArea.map((q) => shifted(q.l.pts, TAU * Math.round((mu - meanOf(q.l.pts, 'x')) / TAU), surf.perV ? TAU * Math.round((mv - meanOf(q.l.pts, 'y')) / TAU) : 0));
-    }
-    return rectangle(flat.map((l) => l.pts));
-  }
-
-  // work with "along" = the winding direction; swap coordinates for loops that wind in v
-  const alongV = !!wind[0].wv;
-  if (wind.some((l) => !!l.wv !== alongV)) return 'its boundary loops wind around different directions of the surface';
-  const sw = (L) => (alongV ? L.map((q) => ({ x: q.y, y: q.x, p: q.p })) : L);
-  const back = (polys) => (alongV ? polys.map(sw) : polys);
-  const mkA = (x, y) => (alongV ? { x, y, p: surf.fromParam(y, x) } : mk(x, y));
-  const betweenA = (a, b) => (alongV ? between({ x: a.y, y: a.x }, { x: b.y, y: b.x }).map((q) => ({ x: q.y, y: q.x, p: q.p })) : between(a, b));
-  const A = sw(wind[0].pts), wA = alongV ? wind[0].wv : wind[0].wu;
-  const crossPeriodic = alongV ? surf.perU : surf.perV;
-  // side of loop A on which the face lies, as a sign on the cross coordinate
-  const side = Math.sign(wA) * (alongV ? -1 : 1) * orient;
-  const lo = Math.min(A[0].x, A[0].x + TAU * wA);
-  const holes = flat.map((l) => { const h = sw(l.pts); return shifted(h, -TAU * Math.floor((meanOf(h, 'x') - lo) / TAU), 0); });
-  if (holes.some((h) => h.some((q) => !(q.x > lo + 1e-6 && q.x < lo + TAU - 1e-6)))) return 'an inner loop crosses the seam chosen for the face';
-  const a0 = A[0], aEnd = copy(a0, TAU * wA, 0);
-
-  if (wind.length === 1) {
-    if (alongV) return 'a single boundary loop winds around the tube of the surface';
-    let vp;
-    if (surf.poles) vp = side * Math.PI / 2;
-    else if (surf.apex !== null && surf.apex !== undefined) vp = surf.apex;
-    else return 'a single closed boundary leaves the face unbounded along the axis';
-    const pole = mkA(a0.x, vp);
-    const seam = surf.straightV ? [] : betweenA(a0, pole);
-    return back([[...A, aEnd, ...seam.map((q) => copy(q, TAU * wA, 0)), copy(pole, TAU * wA, 0), pole, ...seam.slice().reverse()], ...holes]);
-  }
-  if (wind.length !== 2) return `${wind.length} boundary loops wind around the surface`;
-  let B = sw(wind[1].pts);
-  const wB = alongV ? wind[1].wv : wind[1].wu;
-  if (Math.sign(wB) === Math.sign(wA)) B = B.slice().reverse();
-  // start B at its vertex nearest (in angle) to the start of A, so that the seam is as short as possible
-  let best = 0, bd = Infinity;
-  for (let k = 0; k < B.length; k++) { const d = Math.abs(nearest(B[k].x, a0.x) - a0.x); if (d < bd) { bd = d; best = k; } }
-  const base = B[best].x;
-  // B runs against A: rebuild it continuously from its new start
-  const Br = [];
-  for (let k = 0; k < B.length; k++) { const q = B[(best + k) % B.length]; let x = q.x; if (k) { x = nearest(q.x, Br[k - 1].x); } Br.push({ x, y: q.y, p: q.p }); }
-  let dx = nearest(base, a0.x) - base, dy = 0;
-  if (crossPeriodic) { const ca = meanOf(A, 'y'), cb = meanOf(Br, 'y'); let d = side * (cb - ca); d -= TAU * Math.floor(d / TAU); dy = ca + side * d - cb; }
-  const Bs = shifted(Br, dx, dy);
-  const b0 = Bs[0];
-  const seam = betweenA(a0, b0);
-  return back([[...A, aEnd, ...seam.map((q) => copy(q, TAU * wA, 0)), ...Bs.map((q) => copy(q, TAU * wA, 0)), b0, ...seam.slice().reverse()], ...holes]);
-}
-
-/**
- * Triangulate a face domain and lift it to 3-D. Vertices the triangulation adds on a boundary segment are put on
- * the chord between the 3-D end points of that segment, so that a neighbouring face can be matched to them.
- */
-function liftDomain(surf, polys, sc) {
-  const loops = [];
-  const input = [];
-  for (const L of polys) {
-    const flat = [];
-    const kept = [];
-    for (const q of L) {
-      const X = q.x * sc.su, Y = q.y * sc.sv;
-      if (kept.length && kept[kept.length - 1].X === X && kept[kept.length - 1].Y === Y) continue;
-      kept.push({ X, Y, p: q.p });
-    }
-    if (kept.length > 1 && kept[0].X === kept[kept.length - 1].X && kept[0].Y === kept[kept.length - 1].Y) kept.pop();
-    if (kept.length < 3) continue;
-    for (const k of kept) flat.push(k.X, k.Y);
-    loops.push(Float64Array.from(flat));
-    input.push(kept);
-  }
-  if (!loops.length) return null;
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const L of input) for (const q of L) { if (q.X < x0) x0 = q.X; if (q.X > x1) x1 = q.X; if (q.Y < y0) y0 = q.Y; if (q.Y > y1) y1 = q.Y; }
-  const span = Math.max(x1 - x0, y1 - y0);
-  if (!(span > 0)) return null;
-  const tri = triangulateSection({ loops }, { minAngle: 0, size: sc.size });
-  if (!tri.indices.length) return null;
-  const cell = span * 1e-7;
-  const grid = new Map();
-  for (const L of input) for (const q of L) grid.set(`${Math.round(q.X / cell)},${Math.round(q.Y / cell)}`, q);
-  const onBoundary = new Uint8Array(tri.xy.length / 2);
-  for (let i = 0; i < tri.boundary.length; i++) onBoundary[tri.boundary[i]] = 1;
-  const pts = [];
-  for (let i = 0; i < tri.xy.length / 2; i++) {
-    const X = tri.xy[2 * i], Y = tri.xy[2 * i + 1];
-    const gx = Math.round(X / cell), gy = Math.round(Y / cell);
-    let hit = null;
-    for (let a = -1; a <= 1 && !hit; a++) for (let b = -1; b <= 1 && !hit; b++) { const q = grid.get(`${gx + a},${gy + b}`); if (q && Math.abs(q.X - X) <= cell && Math.abs(q.Y - Y) <= cell) hit = q; }
-    if (hit) { pts.push(hit.p); continue; }
-    if (onBoundary[i]) {
-      let bd = Infinity, bp = null;
-      for (const L of input) for (let k = 0, j = L.length - 1; k < L.length; j = k++) {
-        const a = L[j], b = L[k], ex = b.X - a.X, ey = b.Y - a.Y, l2 = ex * ex + ey * ey;
-        const f = l2 > 0 ? Math.max(0, Math.min(1, ((X - a.X) * ex + (Y - a.Y) * ey) / l2)) : 0;
-        const d = Math.hypot(X - a.X - f * ex, Y - a.Y - f * ey);
-        if (d < bd) { bd = d; bp = a.p === b.p ? a.p : lerp3(a.p, b.p, f); }
-      }
-      pts.push(bp);
-      continue;
-    }
-    pts.push(surf.fromParam(X / sc.su, Y / sc.sv));
-  }
-  return { pts, indices: tri.indices };
-}
-
-// ---------------------------------------------------------------------------------------------------------
-// Mesh clean-up shared by all faces of a body
-// ---------------------------------------------------------------------------------------------------------
-
-/**
- * Close T-junctions: wherever a vertex lies on an edge that only one triangle uses, that triangle is split there.
- * They arise where the triangulation of one face subdivided a shared boundary segment and its neighbour did not.
- * @param {Float64Array} P welded coordinates @param {number[]} T triangles (flat) @param {number[]} F face id per triangle
- */
-function closeTJunctions(P, T, F, tol) {
-  for (let pass = 0; pass < 12; pass++) {
-    const nV = P.length / 3;
-    const use = new Map();
-    for (let t = 0; t < T.length; t += 3) for (let k = 0; k < 3; k++) {
-      const a = T[t + k], b = T[t + (k + 1) % 3];
-      const key = a < b ? a * nV + b : b * nV + a;
-      const e = use.get(key);
-      if (e) e.n++; else use.set(key, { n: 1, t, k });
-    }
-    const open = [];
-    const bv = new Set();
-    for (const e of use.values()) if (e.n === 1) { open.push(e); bv.add(T[e.t + e.k]); bv.add(T[e.t + (e.k + 1) % 3]); }
-    if (!open.length) return;
-    const cand = [...bv];
-    const split = new Map(); // triangle offset → { k, mids }
-    for (const e of open) {
-      if (split.has(e.t)) continue;
-      const a = T[e.t + e.k], b = T[e.t + (e.k + 1) % 3];
-      const ax = P[3 * a], ay = P[3 * a + 1], az = P[3 * a + 2];
-      const ex = P[3 * b] - ax, ey = P[3 * b + 1] - ay, ez = P[3 * b + 2] - az;
-      const l2 = ex * ex + ey * ey + ez * ez;
-      if (!(l2 > 0)) continue;
-      const mids = [];
-      for (const c of cand) {
-        if (c === a || c === b) continue;
-        const dx = P[3 * c] - ax, dy = P[3 * c + 1] - ay, dz = P[3 * c + 2] - az;
-        const f = (dx * ex + dy * ey + dz * ez) / l2;
-        if (!(f > 0 && f < 1)) continue;
-        if (Math.hypot(dx - f * ex, dy - f * ey, dz - f * ez) <= tol && f * Math.sqrt(l2) > tol && (1 - f) * Math.sqrt(l2) > tol) mids.push([f, c]);
-      }
-      if (mids.length) { mids.sort((p, q) => p[0] - q[0]); split.set(e.t, { k: e.k, mids: mids.map((q) => q[1]) }); }
-    }
-    if (!split.size) return;
-    const nT = [], nF = [];
-    for (let t = 0; t < T.length; t += 3) {
-      const s = split.get(t);
-      if (!s) { nT.push(T[t], T[t + 1], T[t + 2]); nF.push(F[t / 3]); continue; }
-      const a = T[t + s.k], b = T[t + (s.k + 1) % 3], o = T[t + (s.k + 2) % 3];
-      const chain = [a, ...s.mids, b];
-      for (let i = 0; i + 1 < chain.length; i++) { nT.push(chain[i], chain[i + 1], o); nF.push(F[t / 3]); }
-    }
-    T.length = 0; F.length = 0;
-    for (const v of nT) T.push(v);
-    for (const v of nF) F.push(v);
-  }
-}
-
-/** True when every edge is used by exactly two triangles. */
-function isClosed(T, nV) {
-  const use = new Map();
-  for (let t = 0; t < T.length; t += 3) for (let k = 0; k < 3; k++) { const a = T[t + k], b = T[t + (k + 1) % 3]; const key = a < b ? a * nV + b : b * nV + a; use.set(key, (use.get(key) || 0) + 1); }
-  for (const n of use.values()) if (n !== 2) return false;
-  return use.size > 0;
-}
-
-function volumeOf(P, T) {
-  let s = 0;
-  for (let t = 0; t < T.length; t += 3) {
-    const a = 3 * T[t], b = 3 * T[t + 1], c = 3 * T[t + 2];
-    s += P[a] * (P[b + 1] * P[c + 2] - P[b + 2] * P[c + 1]) - P[a + 1] * (P[b] * P[c + 2] - P[b + 2] * P[c]) + P[a + 2] * (P[b] * P[c + 1] - P[b + 1] * P[c]);
-  }
-  return s / 6;
-}
-
 // ---------------------------------------------------------------------------------------------------------
 // Reader
 // ---------------------------------------------------------------------------------------------------------
 
+const ANALYTIC = /^(plane|cone|sphere|torus)-surface$/;
+// names the binary form (and the text form of recent releases) uses for the sub-types, mapped to the classic ones
+const SUBTYPE_ALIAS = {
+  exact_int_cur: 'exactcur', surf_int_cur: 'surfintcur', int_int_cur: 'intcur', par_int_cur: 'parcur', off_int_cur: 'offintcur', law_int_cur: 'lawintcur', proj_int_cur: 'projcur', blend_int_cur: 'bldcur', spring_int_cur: 'springcur', offset_int_cur: 'offsetintcur', sil_int_cur: 'silcur', helix_int_cur: 'helixcur',
+  exact_spl_sur: 'exactsur', sum_spl_sur: 'sumsur', cyl_spl_sur: 'cylsur', rot_spl_sur: 'rotsur', off_spl_sur: 'offsur', sweep_spl_sur: 'sweepsur', skin_spl_sur: 'skinsur', loft_spl_sur: 'loftsur', net_spl_sur: 'netsur', rb_blend_spl_sur: 'rbblnsur', law_spl_sur: 'lawsur', pipe_spl_sur: 'pipesur', ruled_spl_sur: 'ruledsur', tube_spl_sur: 'tubesur', vertex_blend_spl_sur: 'vertexblendsur', g2_blend_spl_sur: 'g2blnsur', sub_spl_sur: 'subsur', var_blend_spl_sur: 'varblendsplsur', exp_par_cur: 'exppc',
+};
+
 /**
- * ACIS SAT (text).
- * @param {{ name?: string, text?: string, bytes?: Uint8Array }} input
- * @param {{ units?: string, scale?: number, deflection?: number, angularStep?: number }} [opts] `deflection`:
- *   largest distance between a curved edge or surface and its facets [m] (default 1 % of the bounding-box
- *   diagonal of each body); `angularStep`: largest angle one facet spans [deg], default 15
+ * Tessellate the bodies of a decoded ACIS file. Coordinates stay in model units; the body transforms are applied.
+ * @param {{ header: object, records: object[] }} sat result of readSat (or of sab.js readSab)
+ * @param {{ deflection?: number, angularStep?: number, name?: string }} [opts] `deflection` in model units
+ * @returns {{ bodies: Array<{ name, coords: Float64Array, indices: Uint32Array, groups: object[], closed: boolean, oriented: boolean, volume: number|null }>,
+ *   wires: Array<{ a: number[], b: number[], group: string }>, warnings: string[], hist: object, skipped: object, stats: object }}
  */
-export function parseAcis(input, opts = {}) {
-  const fname = input.name || 'SAT';
-  if (input.bytes && input.bytes.length >= 15) {
-    const sig = String.fromCharCode(...input.bytes.subarray(0, 15));
-    if (sig === 'ACIS BinaryFile' || sig.startsWith('ASM BinaryFile')) throw new Error(`${fname}: this is a binary ACIS file (SAB), which is not read. Save it as SAT (text) or STEP in the originating program.`);
-  }
-  if (opts.deflection !== undefined && !(opts.deflection > 0)) throw new RangeError('deflection: must be a positive length in metres.');
-  if (opts.angularStep !== undefined && !(opts.angularStep > 0 && opts.angularStep <= 90)) throw new RangeError('angularStep: must be within 0…90 degrees.');
-  const { header, records } = readSat(inputText(input), fname);
-  const name = baseName(input.name);
+export function acisBodies(sat, opts = {}) {
+  const { header, records } = sat;
+  const name = opts.name || 'body';
   const W = new Warnings();
   const extra = [];
-  const skipped = {}, hist = {};
+  const skipped = {}, hist = {}, faceSkips = {};
   const modern = header.version >= 700;
-
-  // ---- units ----
-  let units;
-  const mm = header.mmPerUnit;
-  if (mm > 0) {
-    const known = UNIT_BY_MM.find(([v]) => Math.abs(v - mm) <= 1e-9 * v);
-    units = known || opts.units || (Number.isFinite(opts.scale) && opts.scale > 0) ? resolveUnits(opts, known ? known[1] : null, 'mm') : { unit: 'custom', scale: mm / 1000, basis: 'file' };
-  } else {
-    units = resolveUnits(opts, null, 'mm');
-    if (units.basis === 'assumed') extra.push('The file declares no length unit; millimetres were assumed. Re-import with units set if the model was drawn in another unit.');
-  }
-  const S = units.scale;
 
   // ---- record access ----
   const byIdx = new Map();
@@ -599,17 +253,133 @@ export function parseAcis(input, opts = {}) {
     return (r.d = t.slice(k));
   };
   const firstOf = (r, kind) => { for (const t of dataOf(r)) if (t.t === 'p') { const q = t.v >= 0 ? byIdx.get(t.v) : null; if (q && q.kind === kind) return q; } return null; };
-  const allOf = (r, kind) => { const o = []; for (const t of dataOf(r)) if (t.t === 'p') { const q = t.v >= 0 ? byIdx.get(t.v) : null; if (q && q.kind === kind) o.push(q); } return o; };
-  const reversedWord = (r) => { for (const t of dataOf(r)) { if (t.t === '{') break; if (t.t === 'w' && (t.v === 'forward' || t.v === 'reversed')) return t.v === 'reversed'; } return false; };
-  // numbers outside sub-type blocks; "F <value>" interval bounds are not data
+  /** Sense of a face, coedge, edge or curve: true = reversed. Before 2.0 the sense is written as 0 / 1 after the last pointer of the record's fixed part. */
+  const reversedOf = (r) => {
+    const d = dataOf(r);
+    let np = 0;
+    for (let i = 0; i < d.length; i++) {
+      const t = d[i];
+      if (t.t === '{') break;
+      if (t.t === 'b') return t.v;
+      if (t.t === 'w' && (t.v === 'forward' || t.v === 'reversed')) return t.v === 'reversed';
+      if (t.t === 'p') np++;
+      else if (t.t === 'n' && d[i - 1].t === 'p' && (t.v === 0 || t.v === 1) && (((r.kind === 'coedge' || r.kind === 'edge') && np === 4) || (r.kind === 'face' && np === 5))) return t.v === 1;
+    }
+    return false;
+  };
+  // numbers outside sub-type blocks; the bounds of finite intervals ("F <value>", binary: true + value) are not data
   const numsOf = (r) => {
     const o = [], d = dataOf(r);
     let depth = 0;
     for (let i = 0; i < d.length; i++) {
       if (d[i].t === '{') depth++; else if (d[i].t === '}') depth--;
-      else if (!depth && d[i].t === 'n' && !(i && isW(d[i - 1], 'F'))) o.push(d[i].v);
+      else if (!depth && d[i].t === 'n' && !(i && (isW(d[i - 1], 'F') || (d[i - 1].t === 'b' && d[i - 1].v)))) o.push(d[i].v);
     }
     return o;
+  };
+
+  // ---- sub-type blocks, numbered where they open, for "{ ref n }" ----
+  let blocks = null;
+  const blockTable = () => {
+    if (blocks) return blocks;
+    blocks = [];
+    for (const r of records) for (let i = 0; i < r.tok.length; i++) if (r.tok[i].t === '{' && !(isW(r.tok[i + 1], 'ref') && isN(r.tok[i + 2]))) blocks.push({ tok: r.tok, at: i });
+    return blocks;
+  };
+  /** Follow "{ ref n }" at tok[at] to the block that holds the data. */
+  const resolveBlock = (tok, at) => {
+    for (let guard = 0; guard < 8; guard++) {
+      if (!(isW(tok[at + 1], 'ref') && isN(tok[at + 2]))) return { tok, at };
+      const b = blockTable()[tok[at + 2].v];
+      if (!b) return null;
+      tok = b.tok; at = b.at;
+    }
+    return null;
+  };
+  /** Name of a block and, for curves, the position of the B-spline that follows the name. */
+  const blockHead = (b) => {
+    const nm = b.tok[b.at + 1];
+    const name = nm && (nm.t === 'w' || nm.t === 's') ? nm.v : '';
+    let j = b.at + 2;
+    // from R21 on the name is followed by the release the definition was saved for
+    if (isN(b.tok[j]) && b.tok[j + 1] && (isW(b.tok[j + 1], 'full', 'none', 'summary', 'nubs', 'nurbs', 'nullbs') || b.tok[j + 1].t === 'e')) j++;
+    if (isW(b.tok[j], 'full') || (b.tok[j] && b.tok[j].t === 'e')) j++;
+    return { name: SUBTYPE_ALIAS[name] || name, at: isW(b.tok[j], 'nubs', 'nurbs') ? j : -1 };
+  };
+  /** B-spline surface stored at the top level of a spline-surface block: "… full nubs|nurbs pu pv …". */
+  const storedSurface = (b) => {
+    let depth = 0;
+    for (let i = b.at; i < b.tok.length; i++) {
+      const t = b.tok[i];
+      if (t.t === '{') depth++;
+      else if (t.t === '}') { if (--depth === 0) break; } else if (depth === 1 && isW(t, 'nubs', 'nurbs') && isN(b.tok[i + 1]) && isN(b.tok[i + 2]) && isTag(b.tok[i + 3])) { const s = bs3Surface(b.tok, i); if (s) return s; }
+    }
+    return null;
+  };
+
+  // ---- sum surfaces kept as their definition: S(u, v) = c1(u) + c2(v) − P ----
+  const isBool = (t) => t && (t.t === 'b' || isW(t, 'F', 'I'));
+  const finite = (t) => (t.t === 'b' ? t.v : t.v === 'F');
+  /** Interval end at tok[j]: "I", or "F value" (binary: false, or true and the value). Returns [value|null, next]. */
+  const bound = (tok, j) => (isBool(tok[j]) ? (finite(tok[j]) ? (isN(tok[j + 1]) ? [tok[j + 1].v, j + 2] : null) : [null, j + 1]) : null);
+  /** Curve written inside a surface definition: "intcurve sense { … } range" or "straight P D range". */
+  const inlineCurve = (tok, j) => {
+    if (isW(tok[j], 'straight')) {
+      const n = tok.slice(j + 1, j + 7);
+      if (n.length < 6 || !n.every(isN)) return null;
+      const a = bound(tok, j + 7), b = a && bound(tok, a[1]);
+      return b ? { line: { O: n.slice(0, 3).map((t) => t.v), D: n.slice(3, 6).map((t) => t.v) }, range: [a[0], b[0]], next: b[1] } : null;
+    }
+    if (isW(tok[j], 'intcurve') && tok[j + 2] && tok[j + 2].t === '{') {
+      const rev = tok[j + 1].t === 'b' ? tok[j + 1].v : isW(tok[j + 1], 'reversed');
+      const blk = resolveBlock(tok, j + 2);
+      const head = blk && blockHead(blk);
+      const bs = head && head.at >= 0 ? bs3Curve(blk.tok, head.at) : null;
+      let k = j + 2, depth = 0;
+      for (; k < tok.length; k++) { if (tok[k].t === '{') depth++; else if (tok[k].t === '}' && --depth === 0) break; }
+      const a = bound(tok, k + 1), b = a && bound(tok, a[1]);
+      if (!bs || !b) return null;
+      if (rev) {
+        // the same curve run backwards: parameter t ↦ −t
+        const m = bs.P.length / 3, P = new Float64Array(bs.P.length), Wt = bs.W ? new Float64Array(m) : null;
+        for (let i = 0; i < m; i++) { const q = m - 1 - i; P[3 * i] = bs.P[3 * q]; P[3 * i + 1] = bs.P[3 * q + 1]; P[3 * i + 2] = bs.P[3 * q + 2]; if (Wt) Wt[i] = bs.W[q]; }
+        return { bs: { deg: bs.deg, U: bs.U.map((u) => -u).reverse(), P, W: Wt }, range: [a[0], b[0]], next: b[1] };
+      }
+      return { bs, range: [a[0], b[0]], next: b[1] };
+    }
+    return null;
+  };
+  /** Control net of the sum surface of a block "{ sumsur [release] curve1 curve2 P … }", or null. */
+  const sumSurface = (b) => {
+    let j = b.at + 2;
+    if (isN(b.tok[j])) j++;
+    const c1 = inlineCurve(b.tok, j), c2 = c1 && inlineCurve(b.tok, c1.next);
+    if (!c2) return null;
+    const pn = b.tok.slice(c2.next, c2.next + 3);
+    if (pn.length < 3 || !pn.every(isN)) return null;
+    const P0 = pn.map((t) => t.v);
+    // the parameter ranges of the surface follow the approximation keyword; they bound the straight lines
+    let k = c2.next + 3;
+    if (isTag(b.tok[k])) k++;
+    const ranges = [];
+    for (let q = 0; q < 4; q++) { const r = bound(b.tok, k); if (!r) break; ranges.push(r[0]); k = r[1]; }
+    const asSpline = (c, lo, hi) => {
+      if (c.bs) return c.bs;
+      const t0 = c.range[0] ?? lo, t1 = c.range[1] ?? hi;
+      if (!(Number.isFinite(t0) && Number.isFinite(t1) && t1 > t0)) return null;
+      const { O, D } = c.line;
+      return { deg: 1, U: [t0, t0, t1, t1], P: Float64Array.from([O[0] + t0 * D[0], O[1] + t0 * D[1], O[2] + t0 * D[2], O[0] + t1 * D[0], O[1] + t1 * D[1], O[2] + t1 * D[2]]), W: null };
+    };
+    const A = asSpline(c1, ranges[0], ranges[1]), B = asSpline(c2, ranges[2], ranges[3]);
+    if (!A || !B) return null;
+    const nu = A.P.length / 3, nv = B.P.length / 3;
+    const P = new Float64Array(nu * nv * 3), Wt = A.W || B.W ? new Float64Array(nu * nv) : null;
+    for (let iv = 0; iv < nv; iv++) for (let iu = 0; iu < nu; iu++) {
+      const o = iu + nu * iv;
+      for (let d = 0; d < 3; d++) P[3 * o + d] = A.P[3 * iu + d] + B.P[3 * iv + d] - P0[d];
+      if (Wt) Wt[o] = (A.W ? A.W[iu] : 1) * (B.W ? B.W[iv] : 1);
+    }
+    return { pu: A.deg, pv: B.deg, U: A.U, V: B.U, nu, nv, P, W: Wt, exact: true };
   };
 
   for (const r of records) if (!QUIET.has(r.kind)) tally(skipped, `record type "${r.type}"`);
@@ -650,289 +420,372 @@ export function parseAcis(input, opts = {}) {
     return [...seen].sort((a, b) => a.idx - b.idx);
   };
 
-  const bodies = records.filter((r) => r.kind === 'body');
-  const roots = bodies.length ? bodies.map((b) => ({ body: b, recs: owned(b) })) : [{ body: null, recs: records }];
-  const models = [];
+  const bodyRecs = records.filter((r) => r.kind === 'body');
+  const roots = bodyRecs.length ? bodyRecs.map((b) => ({ body: b, recs: owned(b) })) : [{ body: null, recs: records }];
+  const bodies = [], wires = [];
   const anyFace = records.some((r) => r.kind === 'face');
-  let freeForm = 0, untrimmed = 0, facesRead = 0, wireEdges = 0, closedBodies = 0;
-  const frameNodes = [], frameMembers = [];
-  let chordM = 0;
+  let facesRead = 0, faceTotal = 0, wireEdges = 0, chord = 0, approxCurves = 0;
   const angStep = (opts.angularStep ?? 15) * D2R;
+  const skipFace = (why) => { tally(faceSkips, why); };
 
   roots.forEach((root, bi) => {
     const bodyName = roots.length > 1 ? `${name} body ${bi + 1}` : name;
     const tf = transformOf(root.body);
-    // extent of the body for the default deflection: its vertices and the spheres, tori and circles it holds
+    const faces = root.recs.filter((r) => r.kind === 'face');
+    faceTotal += faces.length;
+    // extent of the body for the default deflection: its vertices and the spheres, tori and full circles it holds
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
     const see = (p, r = 0) => { for (let k = 0; k < 3; k++) { if (p[k] - r < lo[k]) lo[k] = p[k] - r; if (p[k] + r > hi[k]) hi[k] = p[k] + r; } };
     for (const r of root.recs) {
-      if (r.kind === 'vertex') { const p = pointOf(r); if (p) see(p); } else if (r.type === 'sphere-surface') { const n = numsOf(r); if (n.length >= 4) see(n, Math.abs(n[3])); } else if (r.type === 'torus-surface') { const n = numsOf(r); if (n.length >= 8) see(n, Math.abs(n[6]) + Math.abs(n[7])); } else if (r.type === 'ellipse-curve') { const n = numsOf(r); if (n.length >= 9) see(n, Math.hypot(n[6], n[7], n[8])); }
+      if (r.kind === 'vertex') { const p = pointOf(r); if (p) see(p); } else if (r.type === 'sphere-surface') { const n = numsOf(r); if (n.length >= 4) see(n, Math.abs(n[3])); } else if (r.type === 'torus-surface') { const n = numsOf(r); if (n.length >= 8) see(n, Math.abs(n[6]) + Math.abs(n[7])); } else if (r.kind === 'edge') {
+        // a full circle or ellipse reaches beyond its single vertex; an arc is covered well enough by its ends
+        const ps = dataOf(r).filter((t) => t.t === 'p');
+        const cv = ps.length >= 2 && ps[0].v === ps[1].v ? firstOf(r, 'curve') : null;
+        if (cv && cv.type === 'ellipse-curve') { const n = numsOf(cv); if (n.length >= 9) see(n, Math.hypot(n[6], n[7], n[8])); }
+      }
     }
     const diag = lo[0] === Infinity ? 0 : Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
     if (!(diag > 0)) {
       // nothing with an extent: only faces on surfaces that are not read, or records without coordinates
-      for (const r of root.recs) {
-        if (r.kind !== 'face') continue;
+      for (const r of faces) {
         const sr = firstOf(r, 'surface');
-        if (sr && !/^(plane|cone|sphere|torus)-surface$/.test(sr.type)) freeForm++; else W.add('A face without any vertex or extent was skipped');
+        if (sr && !ANALYTIC.test(sr.type)) skipFace(sr.type === 'spline-surface' ? 'spline surface on a body without any vertex' : `surface type "${sr.type}"`); else skipFace('face without any vertex or extent');
       }
       return;
     }
-    const defl = opts.deflection !== undefined ? opts.deflection / S : 0.01 * diag;
-    chordM = Math.max(chordM, defl * S);
-    const stepFor = (r) => {
-      let s = angStep;
-      if (r > defl) s = Math.min(s, 2 * Math.acos(1 - defl / r));
-      return Math.max(s, 0.25 * D2R);
-    };
-    const tol = diag * 1e-9;
+    let defl = opts.deflection !== undefined ? opts.deflection : 0.01 * diag;
+    // One pass over the edges and faces of the body at a given facet size. Where the facets of two boundary
+    // loops of a face cross (a hole close to a coarsely faceted outline), the body is done again more finely.
+    const attempt = (defl) => {
+      const loc = { W: new Warnings(), hist: {}, skips: {}, read: 0, approx: 0, crossing: 0, skip(why) { tally(this.skips, why); } };
+      for (const r of root.recs) { delete r.pts; delete r.surf; delete r.spl; }
+      const stepFor = stepper(defl, angStep);
+      const tol = diag * 1e-9;
+      // an end point computed from the stored curve parameters must meet its vertex this closely to be believed
+      const meet = Math.max(1e-4 * diag, 100 * (header.resabs > 0 ? header.resabs : 0));
 
-    // ---- edges: one polyline per edge, shared by every face that uses it ----
-    const edgePts = (e) => {
-      if (e.pts) return e.pts;
-      const vs = allOf(e, 'vertex');
-      const Sp = pointOf(vs[0]), Ep = pointOf(vs.length > 1 ? vs[1] : vs[0]);
-      const cv = firstOf(e, 'curve');
-      const rev = reversedWord(e);
-      const chord = (why) => { if (why) W.add(why); return Sp && Ep && Sp !== Ep ? [Sp, Ep] : Sp ? [Sp] : []; };
-      if (!cv) return (e.pts = Sp ? [Sp] : []);
-      const same = !Sp || !Ep || Sp === Ep || dist3(Sp, Ep) <= tol;
-      if (cv.type === 'straight-curve') return (e.pts = chord());
-      if (cv.type === 'ellipse-curve') {
-        const n = numsOf(cv);
-        if (n.length < 9 || !n.slice(0, 9).every(Number.isFinite)) return (e.pts = chord('An ellipse-curve record could not be read; its edge was replaced by a straight chord'));
-        const C = n.slice(0, 3), N = V3.norm(n.slice(3, 6)), M = n.slice(6, 9), ratio = n.length >= 10 && n[9] > 0 ? n[9] : 1;
-        const Y = V3.scale(V3.cross(N, M), ratio), m2 = V3.dot(M, M), y2 = V3.dot(Y, Y);
-        if (!(m2 > 0) || !(y2 > 0)) return (e.pts = chord('An ellipse-curve record has no radius; its edge was replaced by a straight chord'));
-        const ang = (p) => { const d = V3.sub(p, C); return Math.atan2(V3.dot(d, Y) / y2, V3.dot(d, M) / m2); };
-        const dir = rev ? -1 : 1;
-        const a0 = Sp ? ang(Sp) : 0;
-        let sweep = dir * TAU;
-        if (!same) { sweep = ang(Ep) - a0; if (dir > 0) { while (sweep <= 1e-12) sweep += TAU; } else { while (sweep >= -1e-12) sweep -= TAU; } }
-        const k = Math.max(same ? 3 : 1, Math.ceil(Math.abs(sweep) / stepFor(Math.sqrt(Math.max(m2, y2))) - 1e-9));
-        const pts = [];
-        for (let i = 0; i <= k; i++) {
-          if (i === 0 && Sp) pts.push(Sp);
-          else if (i === k && (same ? Sp : Ep)) pts.push(same ? Sp : Ep);
-          else { const t = a0 + (sweep * i) / k, c = Math.cos(t), s = Math.sin(t); pts.push([C[0] + c * M[0] + s * Y[0], C[1] + c * M[1] + s * Y[1], C[2] + c * M[2] + s * Y[2]]); }
-        }
-        if (same && !Sp) pts[k] = pts[0];
-        return (e.pts = pts);
-      }
-      if (cv.type === 'intcurve-curve') {
-        const st = subtype(dataOf(cv));
-        const bs = st && st.at >= 0 ? bs3Curve(dataOf(cv), st.at) : null;
-        const flat = bs ? sampleCurve(bs.deg, bs.U, bs.P, bs.W, 8) : null;
-        if (!flat) return (e.pts = chord('An intcurve-curve without stored B-spline data was replaced by a straight chord between its end points'));
-        const sm = [];
-        for (let i = 0; i < flat.length; i += 3) sm.push([flat[i], flat[i + 1], flat[i + 2]]);
-        if (!Sp || !Ep) return (e.pts = sm);
-        const closedCurve = dist3(sm[0], sm[sm.length - 1]) <= tol * 1e3;
-        // a vertex belongs to the curve when it lies on the sampled polyline to within a tenth of the local spacing
-        const offSeg = (p, a, b) => { const e = V3.sub(b, a), l2 = V3.dot(e, e); const f = l2 > 0 ? Math.max(0, Math.min(1, V3.dot(V3.sub(p, a), e) / l2)) : 0; return dist3(p, lerp3(a, b, f)); };
-        const near = (p) => {
-          let b = 0, d = Infinity;
-          sm.forEach((q, i) => { const x = dist3(p, q); if (x < d) { d = x; b = i; } });
-          const sp = Math.max(b > 0 ? dist3(sm[b], sm[b - 1]) : 0, b + 1 < sm.length ? dist3(sm[b], sm[b + 1]) : 0);
-          const off = Math.min(b > 0 ? offSeg(p, sm[b - 1], sm[b]) : Infinity, b + 1 < sm.length ? offSeg(p, sm[b], sm[b + 1]) : Infinity);
-          return { i: b, ok: off <= 0.1 * sp + tol };
-        };
-        let pts = null;
-        if (same) { if (closedCurve && dist3(Sp, sm[0]) <= tol * 1e3 + defl * 1e-3) pts = sm.slice(); } else if (!closedCurve) {
-          const a = near(Sp), b = near(Ep);
-          if (a.ok && b.ok && a.i !== b.i) pts = a.i < b.i ? sm.slice(a.i, b.i + 1) : sm.slice(b.i, a.i + 1).reverse();
-        }
-        if (!pts) return (e.pts = chord('An intcurve-curve whose B-spline does not pass through its edge vertices in an unambiguous way was replaced by a straight chord'));
-        if (st.name !== 'exactcur') W.add(`The stored approximating B-spline of a procedural curve ("${st.name}") was used for its edge`);
-        pts[0] = Sp; pts[pts.length - 1] = same ? Sp : Ep;
-        return (e.pts = pts);
-      }
-      return (e.pts = chord(`A curve of type "${cv.type}" is not read; its edge was replaced by a straight chord`));
-    };
-
-    const usedEdges = new Set();
-    const loopsOf = (face) => {
-      const loops = [];
-      const seenLoops = new Set();
-      for (let lp = firstOf(face, 'loop'); lp && !seenLoops.has(lp); lp = firstOf(lp, 'loop')) {
-        seenLoops.add(lp);
-        const c0 = firstOf(lp, 'coedge');
-        const pts = [];
-        const seen = new Set();
-        for (let c = c0; c && !seen.has(c);) {
-          seen.add(c);
-          const e = firstOf(c, 'edge');
-          if (e) {
-            usedEdges.add(e);
-            const ep = edgePts(e);
-            const seq = reversedWord(c) ? ep.slice().reverse() : ep;
-            for (let i = 0; i + 1 < seq.length; i++) if (!pts.length || pts[pts.length - 1] !== seq[i]) pts.push(seq[i]);
+      // ---- edges: one polyline per edge, shared by every face that uses it ----
+      const edgePts = (e) => {
+        if (e.pts) return e.pts;
+        const d = dataOf(e);
+        const ends = [];
+        for (let i = 0; i < d.length && ends.length < 2; i++) if (d[i].t === 'p') { const q = d[i].v >= 0 ? byIdx.get(d[i].v) : null; ends.push({ v: q && q.kind === 'vertex' ? q : null, t: isN(d[i + 1]) ? d[i + 1].v : null }); }
+        const Sp = pointOf(ends[0] && ends[0].v), Ep = pointOf(ends[1] && ends[1].v ? ends[1].v : ends[0] && ends[0].v);
+        const cv = firstOf(e, 'curve');
+        const rev = reversedOf(e);
+        const chordPts = (why) => { if (why) loc.W.add(why); return Sp && Ep && Sp !== Ep ? [Sp, Ep] : Sp ? [Sp] : []; };
+        if (!cv) return (e.pts = Sp ? [Sp] : []);
+        const same = !Sp || !Ep || Sp === Ep || dist3(Sp, Ep) <= tol;
+        // curve parameters of the two ends, when the record gives them
+        let c0 = null, c1 = null;
+        if (ends.length === 2 && ends[0].t !== null && ends[1].t !== null && ends[1].t > ends[0].t) { c0 = rev ? -ends[0].t : ends[0].t; c1 = rev ? -ends[1].t : ends[1].t; }
+        if (cv.type === 'straight-curve') return (e.pts = chordPts());
+        if (cv.type === 'ellipse-curve') {
+          const n = numsOf(cv);
+          if (n.length < 9 || !n.slice(0, 9).every(Number.isFinite)) return (e.pts = chordPts('An ellipse-curve record could not be read; its edge was replaced by a straight chord'));
+          const C = n.slice(0, 3), N = V3.norm(n.slice(3, 6)), M = n.slice(6, 9), ratio = n.length >= 10 && n[9] > 0 ? n[9] : 1;
+          const Y = V3.scale(V3.cross(N, M), ratio), m2 = V3.dot(M, M), y2 = V3.dot(Y, Y);
+          if (!(m2 > 0) || !(y2 > 0)) return (e.pts = chordPts('An ellipse-curve record has no radius; its edge was replaced by a straight chord'));
+          const at = (t) => { const c = Math.cos(t), s = Math.sin(t); return [C[0] + c * M[0] + s * Y[0], C[1] + c * M[1] + s * Y[1], C[2] + c * M[2] + s * Y[2]]; };
+          const ang = (p) => { const dd = V3.sub(p, C); return Math.atan2(V3.dot(dd, Y) / y2, V3.dot(dd, M) / m2); };
+          let a0, sweep;
+          if (c0 !== null && Sp && Ep && Math.abs(c1 - c0) <= TAU * (1 + 1e-9) && dist3(at(c0), Sp) <= meet && dist3(at(c1), Ep) <= meet) { a0 = c0; sweep = c1 - c0; } else {
+            const dir = rev ? -1 : 1;
+            a0 = Sp ? ang(Sp) : 0;
+            sweep = dir * TAU;
+            if (!same) { sweep = ang(Ep) - a0; if (dir > 0) { while (sweep <= 1e-12) sweep += TAU; } else { while (sweep >= -1e-12) sweep -= TAU; } }
           }
-          const nx = dataOf(c).find((t) => t.t === 'p');
-          c = nx ? deref(nx.v) : null;
-          if (c && c.kind !== 'coedge') c = null;
+          const closedArc = same || !Ep;
+          const k = Math.max(closedArc ? 3 : 1, Math.ceil(Math.abs(sweep) / stepFor(Math.sqrt(Math.max(m2, y2))) - 1e-9));
+          const pts = [];
+          for (let i = 0; i <= k; i++) {
+            if (i === 0 && Sp) pts.push(Sp);
+            else if (i === k && (closedArc ? Sp : Ep)) pts.push(closedArc ? Sp : Ep);
+            else pts.push(at(a0 + (sweep * i) / k));
+          }
+          if (closedArc && !Sp) pts[k] = pts[0];
+          return (e.pts = pts);
         }
-        while (pts.length > 1 && pts[0] === pts[pts.length - 1]) pts.pop();
-        if (pts.length) loops.push(pts);
-      }
-      return loops;
-    };
-
-    // ---- faces ----
-    const weld = new Welder(tol, 4096);
-    const T = [], F = [];
-    const faceNames = [];
-    const faces = root.recs.filter((r) => r.kind === 'face');
-    for (const face of faces) {
-      const sr = firstOf(face, 'surface');
-      const flipFace = reversedWord(face);
-      const label = `face ${faceNames.length + 1}`;
-      const emit = (pts, idx, flip) => {
-        const ids = pts.map((p) => weld.add(p[0], p[1], p[2]));
-        let n = 0;
-        for (let i = 0; i < idx.length; i += 3) {
-          const a = ids[idx[i]], b = ids[idx[i + (flip ? 2 : 1)]], c = ids[idx[i + (flip ? 1 : 2)]];
-          if (a === b || b === c || a === c) continue;
-          T.push(a, b, c); F.push(faceNames.length); n++;
+        if (cv.type === 'intcurve-curve') {
+          const at0 = cv.tok.findIndex((t) => t.t === '{');
+          const blk = at0 >= 0 ? resolveBlock(cv.tok, at0) : null;
+          const head = blk ? blockHead(blk) : null;
+          const bs = head && head.at >= 0 ? bs3Curve(blk.tok, head.at) : null;
+          if (!bs) return (e.pts = chordPts(`An intcurve-curve without stored B-spline data${head && head.name ? ` ("${head.name}")` : ''} was replaced by a straight chord between its end points`));
+          const curveRev = reversedOf(cv);
+          const kLo = bs.U[bs.deg], kHi = bs.U[bs.U.length - 1 - bs.deg];
+          const toPts = (flat) => { const o = []; for (let i = 0; i < flat.length; i += 3) o.push([flat[i], flat[i + 1], flat[i + 2]]); return o; };
+          const ends3 = sampleCurve(bs.deg, bs.U, bs.P, bs.W, 1, kLo, kHi);
+          if (!ends3) return (e.pts = chordPts('An intcurve-curve whose B-spline data are inconsistent was replaced by a straight chord'));
+          const closedCurve = Math.hypot(ends3[0] - ends3[ends3.length - 3], ends3[1] - ends3[ends3.length - 2], ends3[2] - ends3[ends3.length - 1]) <= meet;
+          let pts = null;
+          if (c0 !== null && Sp && Ep) {
+            // parameters on the B-spline, increasing; `back` when the edge runs against it
+            let b0 = curveRev ? -c0 : c0, b1 = curveRev ? -c1 : c1;
+            const back = b1 < b0;
+            if (back) { const x = b0; b0 = b1; b1 = x; }
+            const T = kHi - kLo, slack = 1e-6 * T;
+            let piece = null;
+            if (closedCurve && b1 - b0 <= T + slack) {
+              const sh = T * Math.floor((b0 - kLo + slack) / T);
+              b0 -= sh; b1 -= sh;
+              if (b0 < kLo) b0 = kLo;
+              if (b1 <= kHi + slack) piece = toPts(sampleCurve(bs.deg, bs.U, bs.P, bs.W, 8, b0, Math.min(b1, kHi)));
+              else piece = toPts(sampleCurve(bs.deg, bs.U, bs.P, bs.W, 8, b0, kHi)).concat(toPts(sampleCurve(bs.deg, bs.U, bs.P, bs.W, 8, kLo, b1 - T)).slice(1));
+            } else if (b0 >= kLo - slack && b1 <= kHi + slack) piece = toPts(sampleCurve(bs.deg, bs.U, bs.P, bs.W, 8, Math.max(b0, kLo), Math.min(b1, kHi)));
+            if (piece && piece.length >= 2) {
+              if (back) piece.reverse();
+              if (dist3(piece[0], Sp) <= meet && dist3(piece[piece.length - 1], Ep) <= meet) pts = piece;
+            }
+          }
+          if (!pts) {
+            // no usable parameters: cut the sampled curve where the vertices lie on it
+            const sm = toPts(sampleCurve(bs.deg, bs.U, bs.P, bs.W, 8));
+            if (!Sp || !Ep) return (e.pts = sm);
+            const offSeg = (p, a, b) => { const ee = V3.sub(b, a), l2 = V3.dot(ee, ee); const f = l2 > 0 ? Math.max(0, Math.min(1, V3.dot(V3.sub(p, a), ee) / l2)) : 0; return dist3(p, lerp3(a, b, f)); };
+            const near = (p) => {
+              let b = 0, dd = Infinity;
+              sm.forEach((q, i) => { const x = dist3(p, q); if (x < dd) { dd = x; b = i; } });
+              const sp = Math.max(b > 0 ? dist3(sm[b], sm[b - 1]) : 0, b + 1 < sm.length ? dist3(sm[b], sm[b + 1]) : 0);
+              const off = Math.min(b > 0 ? offSeg(p, sm[b - 1], sm[b]) : Infinity, b + 1 < sm.length ? offSeg(p, sm[b], sm[b + 1]) : Infinity);
+              return { i: b, ok: off <= 0.1 * sp + tol };
+            };
+            if (same) { if (closedCurve && dist3(Sp, sm[0]) <= tol * 1e3 + defl * 1e-3) pts = (rev !== curveRev) ? sm.slice().reverse() : sm.slice(); } else if (!closedCurve) {
+              const a = near(Sp), b = near(Ep);
+              if (a.ok && b.ok && a.i !== b.i) pts = a.i < b.i ? sm.slice(a.i, b.i + 1) : sm.slice(b.i, a.i + 1).reverse();
+            }
+          }
+          if (!pts) return (e.pts = chordPts('An intcurve-curve whose B-spline does not pass through its edge vertices in an unambiguous way was replaced by a straight chord'));
+          if (head.name !== 'exactcur') loc.approx++;
+          pts[0] = Sp; pts[pts.length - 1] = same ? Sp : Ep;
+          return (e.pts = pts);
         }
-        if (n) { faceNames.push(label); facesRead++; }
-        return n;
+        return (e.pts = chordPts(`A curve of type "${cv.type}" is not read; its edge was replaced by a straight chord`));
       };
-      if (!sr) { W.add('A face without a surface record was skipped'); continue; }
-      let loops;
-      try { loops = loopsOf(face); } catch (e) { W.add(`A face was skipped because its boundary could not be followed (${e.message})`); continue; }
 
-      if (sr.type === 'spline-surface') {
-        const st = subtype(dataOf(sr));
-        const bs = st && st.name === 'exactsur' && st.at >= 0 ? bs3Surface(dataOf(sr), st.at) : null;
-        const corners = [];
-        for (const L of loops) for (const p of L) corners.push(p);
-        let done = false;
-        if (bs && corners.length) {
-          // the order of the control net in the record is settled by the face's own boundary: the net must pass by it
-          const alt = new Float64Array(bs.P.length), altW = bs.W ? new Float64Array(bs.W.length) : null;
-          for (let iu = 0; iu < bs.nu; iu++) for (let iv = 0; iv < bs.nv; iv++) {
-            const from = iv + bs.nv * iu, to = iu + bs.nu * iv;
-            alt[3 * to] = bs.P[3 * from]; alt[3 * to + 1] = bs.P[3 * from + 1]; alt[3 * to + 2] = bs.P[3 * from + 2];
-            if (altW) altW[to] = bs.W[from];
+      // how many coedges of the faces use each edge: 2 on a closed manifold solid
+      const usedEdges = new Map();
+      const loopsOf = (face) => {
+        const loops = [];
+        const seenLoops = new Set();
+        for (let lp = firstOf(face, 'loop'); lp && !seenLoops.has(lp); lp = firstOf(lp, 'loop')) {
+          seenLoops.add(lp);
+          const c0 = firstOf(lp, 'coedge');
+          const pts = [];
+          const seen = new Set();
+          for (let c = c0; c && !seen.has(c);) {
+            seen.add(c);
+            const e = firstOf(c, 'edge');
+            if (e) {
+              usedEdges.set(e, (usedEdges.get(e) || 0) + 1);
+              const ep = edgePts(e);
+              const seq = reversedOf(c) ? ep.slice().reverse() : ep;
+              for (let i = 0; i + 1 < seq.length; i++) if (!pts.length || pts[pts.length - 1] !== seq[i]) pts.push(seq[i]);
+              if (seq.length === 1 && (!pts.length || pts[pts.length - 1] !== seq[0])) pts.push(seq[0]);
+            }
+            const nx = dataOf(c).find((t) => t.t === 'p');
+            c = nx ? deref(nx.v) : null;
+            if (c && c.kind !== 'coedge') c = null;
           }
-          let best = null;
-          for (const [P, Wt] of [[bs.P, bs.W], [alt, altW]]) {
-            const m = tessellateSurface(bs.pu, bs.pv, bs.U, bs.V, P, Wt, bs.nu - 1, bs.nv - 1, 6);
-            if (!m) continue;
-            let miss = 0, edge = 0;
-            for (const p of corners) { let d = Infinity; for (let i = 0; i < m.coords.length; i += 3) { const x = Math.hypot(m.coords[i] - p[0], m.coords[i + 1] - p[1], m.coords[i + 2] - p[2]); if (x < d) d = x; } if (d > miss) miss = d; }
-            for (let i = 0; i + 3 < m.coords.length; i += 3) { const x = Math.hypot(m.coords[i + 3] - m.coords[i], m.coords[i + 4] - m.coords[i + 1], m.coords[i + 5] - m.coords[i + 2]); if ((i / 3 + 1) % m.nu && x > edge) edge = x; }
-            for (let i = 0; i + 3 * m.nu < m.coords.length; i += 3) { const j = i + 3 * m.nu; const x = Math.hypot(m.coords[j] - m.coords[i], m.coords[j + 1] - m.coords[i + 1], m.coords[j + 2] - m.coords[i + 2]); if (x > edge) edge = x; }
-            if (miss <= edge + tol && (!best || miss < best.miss - tol)) best = { m, miss };
-          }
-          if (best) {
-            const pts = [];
-            for (let i = 0; i < best.m.coords.length; i += 3) pts.push([best.m.coords[i], best.m.coords[i + 1], best.m.coords[i + 2]]);
-            if (emit(pts, best.m.indices, st.reversed !== flipFace)) { untrimmed++; tally(hist, 'spline (untrimmed)'); done = true; }
-          }
+          while (pts.length > 1 && pts[0] === pts[pts.length - 1]) pts.pop();
+          if (pts.length) loops.push(pts);
         }
-        if (!done) freeForm++;
-        continue;
+        return loops;
+      };
+
+      const surfaceOf = (sr) => {
+        if (sr.surf !== undefined) return sr.surf;
+        const n = numsOf(sr);
+        const ok = (k) => n.length >= k && n.slice(0, k).every(Number.isFinite);
+        let s = null;
+        if (sr.type === 'plane-surface') {
+          if (ok(6) && V3.len(n.slice(3, 6)) > 0) s = planeSurface(n.slice(0, 3), V3.norm(n.slice(3, 6)), n.length >= 9 ? n.slice(6, 9) : null);
+        } else if (sr.type === 'cone-surface') {
+          if (ok(12)) {
+            const A = n.slice(3, 6), M = n.slice(6, 9), ratio = n[9], sin = n[10], cos = n[11], R0 = V3.len(M);
+            if (V3.len(A) > 0 && R0 > 0 && ratio > 0 && Math.abs(cos) > 1e-12 && Math.abs(Math.hypot(sin, cos) - 1) <= 1e-3) s = coneSurface(n.slice(0, 3), V3.norm(A), M, R0, ratio, sin / cos, cos < 0, stepFor);
+          }
+        } else if (sr.type === 'sphere-surface') {
+          if (ok(4) && Math.abs(n[3]) > 0) {
+            const Z = n.length >= 10 && V3.len(n.slice(7, 10)) > 0 ? V3.norm(n.slice(7, 10)) : [0, 0, 1];
+            s = sphereSurface(n.slice(0, 3), Math.abs(n[3]), Z, n.length >= 7 ? n.slice(4, 7) : null, n[3] < 0, stepFor);
+          }
+        } else if (sr.type === 'torus-surface') {
+            if (ok(8) && V3.len(n.slice(3, 6)) > 0) s = torusSurface(n.slice(0, 3), V3.norm(n.slice(3, 6)), n[6], Math.abs(n[7]), n.length >= 11 ? n.slice(8, 11) : null, n[7] < 0, stepFor);
+        }
+        return (sr.surf = s);
+      };
+      /** Stored B-spline of a spline-surface record: { nets: both readings of the control-net order, name } or { why }. */
+      const splineOf = (sr) => {
+        if (sr.spl !== undefined) return sr.spl;
+        const at0 = sr.tok.findIndex((t) => t.t === '{');
+        const blk = at0 >= 0 ? resolveBlock(sr.tok, at0) : null;
+        if (!blk) return (sr.spl = { why: 'spline surface whose definition could not be found' });
+        const nm = blockHead(blk).name || 'unnamed';
+        let bs = storedSurface(blk), how = nm === 'exactsur' ? 'spline' : `spline (stored approximation of ${nm})`;
+        if (!bs && nm === 'sumsur') { bs = sumSurface(blk); how = 'spline (sum of two curves)'; }
+        if (!bs) return (sr.spl = { why: `procedural spline surface without a stored B-spline ("${nm}")` });
+        // the net is listed row by row with u running fastest (seen in every file checked); the other reading is
+      // tried only when the boundary of the face does not lie on the first
+        const vFast = new Float64Array(bs.P.length), vFastW = bs.W ? new Float64Array(bs.W.length) : null;
+        for (let iu = 0; iu < bs.nu; iu++) for (let iv = 0; iv < bs.nv; iv++) {
+          const from = iv + bs.nv * iu, to = iu + bs.nu * iv;
+          vFast[3 * to] = bs.P[3 * from]; vFast[3 * to + 1] = bs.P[3 * from + 1]; vFast[3 * to + 2] = bs.P[3 * from + 2];
+          if (vFastW) vFastW[to] = bs.W[from];
+        }
+        const mk = (P, Wt) => splineSurface({ pu: bs.pu, pv: bs.pv, U: bs.U, V: bs.V, nu: bs.nu, nv: bs.nv, P, W: Wt }, defl, angStep);
+        const nets = (bs.exact ? [mk(bs.P, bs.W)] : [mk(bs.P, bs.W), mk(vFast, vFastW)]).filter(Boolean);
+        return (sr.spl = nets.length ? { nets, name: nm, how } : { why: `spline surface whose stored B-spline is collapsed or inconsistent ("${nm}")` });
+      };
+
+      // ---- faces ----
+      const mesh = new BodyMesh(diag);
+      let faceNo = 0;
+      for (const face of faces) {
+        const sr = firstOf(face, 'surface');
+        const flipFace = reversedOf(face);
+        const label = `face ${++faceNo}`;
+        if (!sr) { loc.skip('face without a surface record'); continue; }
+        let loops;
+        try { loops = loopsOf(face); } catch (e) { loc.skip(`boundary could not be followed (${e.message})`); continue; }
+
+        if (sr.type === 'spline-surface') {
+          const sp = splineOf(sr);
+          if (sp.why) { loc.skip(sp.why); continue; }
+          const srRev = reversedOf(sr);
+          let done = false, why = '';
+          for (const surf of sp.nets) {
+            let res;
+            try { res = tessellateFace(surf, loops, (surf.inward !== srRev) !== flipFace, Math.max(2 * defl, 1e-3 * diag)); } catch (e) { res = `triangulation failed (${e.message})`; }
+            if (typeof res === 'string') { if (!why) why = res; continue; }
+            if (mesh.addFace(res.pts, res.indices, (surf.inward !== srRev) !== flipFace, label)) { loc.read++; tally(loc.hist, sp.how); done = true; break; }
+          }
+          if (!done) { if (why === CROSSING) loc.crossing++; loc.skip(`spline surface: ${why || 'its boundary is degenerate'}`); }
+          continue;
+        }
+
+        const surf = surfaceOf(sr);
+        if (!surf) { loc.skip(ANALYTIC.test(sr.type) ? `${sr.type} record with missing or unsupported values` : `surface type "${sr.type}"`); continue; }
+        const flip = surf.inward !== flipFace;
+        let res;
+        try { res = tessellateFace(surf, loops, flip, Math.max(2 * defl, 1e-3 * diag)); } catch (e) { res = `triangulation failed (${e.message})`; }
+        if (typeof res === 'string') { if (res === CROSSING) loc.crossing++; loc.skip(`${surf.type}: ${res}`); continue; }
+        if (!mesh.addFace(res.pts, res.indices, flip, label)) { loc.skip(`${surf.type}: its boundary is degenerate`); continue; }
+        loc.read++;
+        tally(loc.hist, surf.type);
       }
 
-      const surf = makeSurface(sr.type, numsOf(sr), stepFor);
-      if (!surf) {
-        if (/^(plane|cone|sphere|torus)-surface$/.test(sr.type)) W.add(`A ${sr.type} record could not be read (missing or unsupported values); its face was skipped`);
-        else freeForm++;
-        continue;
-      }
-      const flip = surf.inward !== flipFace;
-      try {
-        let polys, sc;
-        if (surf.type === 'plane') {
-          sc = surf.scales();
-          polys = loops.map((L) => L.map((p) => { const [x, y] = surf.toParam(p); return { x, y, p }; }));
-          if (!polys.length) { W.add('A planar face without boundary loops was skipped'); continue; }
-        } else {
-          let rmax = 0;
-          if (surf.radiusAt) { for (const L of loops) for (const p of L) rmax = Math.max(rmax, surf.radiusAt(surf.toParam(p)[1])); if (!(rmax > 0)) { W.add('A conical face without boundary was skipped'); continue; } }
-          sc = surf.scales(rmax);
-          const un = loops.map((L) => unwrapLoop(surf, L)).filter(Boolean);
-          polys = periodicDomain(surf, un, flip, sc);
-          if (typeof polys === 'string') { W.add(`A ${surf.type} face was skipped: ${polys}`); continue; }
-        }
-        if (sc.squeeze) {
-          let v0 = Infinity, v1 = -Infinity;
-          for (const L of polys) for (const q of L) { if (q.y < v0) v0 = q.y; if (q.y > v1) v1 = q.y; }
-          if (v1 > v0) sc.sv = sc.squeeze / (v1 - v0);
-        }
-        const lifted = liftDomain(surf, polys, sc);
-        if (!lifted || !emit(lifted.pts, lifted.indices, flip)) { W.add(`A ${surf.type} face with a degenerate boundary was skipped`); continue; }
-        tally(hist, surf.type);
-      } catch (e) {
-        W.add(`A ${surf.type} face could not be triangulated and was skipped (${e.message})`);
-      }
-    }
-
-    if (T.length) {
-      const P = weld.finish();
-      closeTJunctions(P, T, F, diag * 1e-7);
-      const closed = isClosed(T, P.length / 3);
-      if (closed && volumeOf(P, T) < 0) {
-        for (let t = 0; t < T.length; t += 3) { const x = T[t + 1]; T[t + 1] = T[t + 2]; T[t + 2] = x; }
-        extra.push(`${bodyName}: the faces enclose a negative volume as stored, so their orientation was reversed to point outwards.`);
-      }
-      const mirror = tf && tf.mirror;
-      const coords = new Float64Array(P.length);
-      for (let i = 0; i < P.length; i += 3) { const p = tf ? tf.apply([P[i], P[i + 1], P[i + 2]]) : [P[i], P[i + 1], P[i + 2]]; coords[i] = p[0] * S; coords[i + 1] = p[1] * S; coords[i + 2] = p[2] * S; }
-      // triangles grouped by face, in face order
-      const order = Array.from({ length: F.length }, (_, i) => i).sort((a, b) => F[a] - F[b] || a - b);
-      const indices = new Uint32Array(T.length);
-      const groups = [];
-      order.forEach((t, k) => {
-        indices[3 * k] = T[3 * t]; indices[3 * k + 1] = T[3 * t + (mirror ? 2 : 1)]; indices[3 * k + 2] = T[3 * t + (mirror ? 1 : 2)];
-        const g = groups[groups.length - 1];
-        if (g && g.face === F[t]) g.count += 3; else groups.push({ name: faceNames[F[t]], start: 3 * k, count: 3, face: F[t] });
-      });
-      for (const g of groups) delete g.face;
-      models.push(surfaceModel(cleanName(bodyName), coords, indices, groups));
-      if (closed) closedBodies++;
+      return { loc, mesh, usedEdges, edgePts };
+    };
+    let pass = attempt(defl);
+    for (let k = 0; k < 3 && pass.loc.crossing; k++) { defl /= 4; pass = attempt(defl); }
+    if (defl !== (opts.deflection !== undefined ? opts.deflection : 0.01 * diag)) extra.push(`${bodyName}: tessellated with a chord error of ${defl.toPrecision(3)} model units instead of ${(opts.deflection !== undefined ? opts.deflection : 0.01 * diag).toPrecision(3)}, because the coarser facets of neighbouring boundary loops crossed.`);
+    chord = Math.max(chord, defl);
+    const { loc, mesh, usedEdges, edgePts } = pass;
+    facesRead += loc.read;
+    for (const k in loc.hist) tally(hist, k, loc.hist[k]);
+    for (const k in loc.skips) tally(faceSkips, k, loc.skips[k]);
+    if (!mesh.empty) {
+      const m = mesh.finish(tf);
+      if (m.reoriented) extra.push(`${bodyName}: the faces enclose a negative volume as stored, so their orientation was reversed to point outwards.`);
+      let free = 0, shared = 0;
+      for (const [e, n] of usedEdges) { if (firstOf(e, 'curve') === null && edgePts(e).length < 2) continue; if (n === 1) free++; else if (n > 2) shared++; }
+      bodies.push({ name: cleanName(bodyName), coords: m.coords, indices: m.indices, groups: m.groups, closed: m.closed, oriented: m.oriented, volume: m.volume, faces: faces.length, facesRead: m.groups.length, freeEdges: free, nonManifoldEdges: shared });
     }
 
     // ---- wire edges (edges no face uses) ----
-    const wires = root.recs.filter((r) => r.kind === 'edge' && !usedEdges.has(r));
-    if (wires.length && anyFace) wireEdges += wires.length;
-    else for (const e of wires) {
+    const loose = root.recs.filter((r) => r.kind === 'edge' && !usedEdges.has(r));
+    if (loose.length && anyFace) wireEdges += loose.length;
+    else for (const e of loose) {
       const pts = edgePts(e);
-      for (let i = 0; i + 1 < pts.length; i++) {
-        const a = tf ? tf.apply(pts[i]) : pts[i], b = tf ? tf.apply(pts[i + 1]) : pts[i + 1];
-        frameNodes.push([a[0] * S, a[1] * S, a[2] * S], [b[0] * S, b[1] * S, b[2] * S]);
-        frameMembers.push(bodyName);
-      }
+      for (let i = 0; i + 1 < pts.length; i++) wires.push({ a: tf ? tf.apply(pts[i]) : pts[i], b: tf ? tf.apply(pts[i + 1]) : pts[i + 1], group: bodyName });
     }
+    approxCurves += loc.approx;
+    for (const [t, n] of loc.W.m) for (let q = 0; q < n; q++) W.add(t);
   });
 
-  if (frameMembers.length) {
-    let lo = Infinity, hi = -Infinity;
-    for (const p of frameNodes) for (const v of p) { if (v < lo) lo = v; if (v > hi) hi = v; }
-    const weld = new Welder(Math.max(hi - lo, 1e-12) * 1e-9, frameNodes.length);
-    const members = [];
-    for (let i = 0; i < frameMembers.length; i++) {
-      const a = weld.add(...frameNodes[2 * i]), b = weld.add(...frameNodes[2 * i + 1]);
-      if (a !== b) members.push({ a, b, group: frameMembers[i] });
-    }
-    if (members.length) { models.push({ kind: 'frame', name: cleanName(models.length ? `${name} (wires)` : name), nodes: weld.finish(), members }); tally(hist, 'wire edge', frameMembers.length); }
-  }
-
   const warnings = [];
-  if (freeForm) warnings.push(`${freeForm} free-form face${freeForm > 1 ? 's' : ''} could not be read — export those bodies as STEP.`);
-  if (untrimmed) warnings.push(`${untrimmed} B-spline surface face${untrimmed > 1 ? 's were' : ' was'} tessellated over the whole surface: trimming by the face boundary was not applied, so the patch may extend beyond the face and does not join its neighbours.`);
+  const nSkip = Object.values(faceSkips).reduce((a, b) => a + b, 0);
+  if (nSkip) warnings.push(`${nSkip} of ${faceTotal} face${faceTotal > 1 ? 's' : ''} could not be read (${Object.entries(faceSkips).map(([k, v]) => `${v} × ${k}`).join('; ')}) — export those bodies as STEP to get them complete.`);
+  if (approxCurves) warnings.push(`${approxCurves} edge${approxCurves > 1 ? 's follow' : ' follows'} the B-spline approximation stored with a procedural curve.`);
   if (wireEdges) warnings.push(`${wireEdges} wire edge${wireEdges > 1 ? 's' : ''} outside any face ${wireEdges > 1 ? 'were' : 'was'} not imported (wire bodies are read only from files without faces).`);
   for (const k in skipped) warnings.push(`${skipped[k]} × ${k} not recognised and ignored.`);
   for (const w of W.list()) warnings.push(`${w}.`);
   warnings.push(...extra);
-  if (!models.length) throw new Error(`${fname}: no geometry could be read from the SAT file.${warnings.length ? ` ${warnings.join(' ')}` : ''}`);
-  if (freeForm) skipped['free-form face'] = freeForm;
+  for (const k in faceSkips) skipped[`face: ${k}`] = faceSkips[k];
+  return {
+    bodies, wires, warnings, hist, skipped,
+    stats: { bodies: bodyRecs.length, faces: faceTotal, facesRead, facesSkipped: nSkip, closedBodies: bodies.filter((b) => b.closed).length, chord, angularStepDeg: opts.angularStep ?? 15 },
+  };
+}
+
+/** Importer result from a decoded file; shared by the text and the binary reader. */
+export function acisModels(sat, input, opts = {}, format = 'acis') {
+  const fname = input.name || (format === 'acis' ? 'SAT' : 'SAB');
+  const label = format === 'acis' ? 'SAT' : 'SAB';
+  if (opts.deflection !== undefined && !(opts.deflection > 0)) throw new RangeError('deflection: must be a positive length in metres.');
+  if (opts.angularStep !== undefined && !(opts.angularStep > 0 && opts.angularStep <= 90)) throw new RangeError('angularStep: must be within 0…90 degrees.');
+  const { header } = sat;
+  const name = baseName(input.name);
+  const lead = [];
+
+  let units;
+  const mm = header.mmPerUnit;
+  if (mm > 0) {
+    const known = UNIT_BY_MM.find(([v]) => Math.abs(v - mm) <= 1e-9 * v);
+    units = known || opts.units || (Number.isFinite(opts.scale) && opts.scale > 0) ? resolveUnits(opts, known ? known[1] : null, 'mm') : { unit: 'custom', scale: mm / 1000, basis: 'file' };
+  } else {
+    units = resolveUnits(opts, null, 'mm');
+    if (units.basis === 'assumed') lead.push('The file declares no length unit; millimetres were assumed. Re-import with units set if the model was drawn in another unit.');
+  }
+  const S = units.scale;
+
+  const res = acisBodies(sat, { deflection: opts.deflection !== undefined ? opts.deflection / S : undefined, angularStep: opts.angularStep, name });
+  const models = [];
+  for (const b of res.bodies) {
+    const c = b.coords;
+    for (let i = 0; i < c.length; i++) c[i] *= S;
+    models.push(surfaceModel(b.name, c, b.indices, b.groups));
+  }
+  if (res.wires.length) {
+    let lo = Infinity, hi = -Infinity;
+    for (const w of res.wires) for (const p of [w.a, w.b]) for (const v of p) { if (v * S < lo) lo = v * S; if (v * S > hi) hi = v * S; }
+    const weld = new Welder(Math.max(hi - lo, 1e-12) * 1e-9, res.wires.length * 2);
+    const members = [];
+    for (const w of res.wires) {
+      const a = weld.add(w.a[0] * S, w.a[1] * S, w.a[2] * S), b = weld.add(w.b[0] * S, w.b[1] * S, w.b[2] * S);
+      if (a !== b) members.push({ a, b, group: w.group });
+    }
+    if (members.length) { models.push({ kind: 'frame', name: cleanName(models.length ? `${name} (wires)` : name), nodes: weld.finish(), members }); tally(res.hist, 'wire edge', res.wires.length); }
+  }
+  // the unit note goes after the notes on what was read, as before
+  const warnings = res.warnings.slice();
+  const at = warnings.findIndex((w) => /^The header announces|the faces enclose a negative volume/.test(w));
+  warnings.splice(at < 0 ? warnings.length : at, 0, ...lead);
+  if (!models.length) throw new Error(`${fname}: no geometry could be read from the ${label} file.${warnings.length ? ` ${warnings.join(' ')}` : ''}`);
   return finish(models, warnings, {
-    format: 'acis', units, crs: null, elementTypes: hist, skipped,
+    format, units, crs: null, elementTypes: res.hist, skipped: res.skipped,
     acisVersion: header.version, product: header.product, acisRelease: header.acis, saved: header.date,
-    bodies: bodies.length, closedBodies, faces: facesRead, resabs: header.resabs,
-    tessellation: { chord: chordM, angularStepDeg: opts.angularStep ?? 15 },
+    bodies: res.stats.bodies, closedBodies: res.stats.closedBodies, orientedBodies: res.bodies.filter((b) => b.closed && b.oriented).length,
+    solidBodies: res.bodies.filter((b) => !b.freeEdges && !b.nonManifoldEdges).length,
+    faces: res.stats.facesRead, faceTotal: res.stats.faces, facesSkipped: res.stats.facesSkipped,
+    volumes: res.bodies.map((b) => (b.volume === null ? null : b.volume * S * S * S)), resabs: header.resabs,
+    tessellation: { chord: res.stats.chord * S, angularStepDeg: res.stats.angularStepDeg },
   });
+}
+
+/**
+ * ACIS SAT (text).
+ * @param {{ name?: string, text?: string, bytes?: Uint8Array }} input
+ * @param {{ units?: string, scale?: number, deflection?: number, angularStep?: number }} [opts] `deflection`:
+ *   largest distance between a curved edge or surface and its facets [m] (default 1 % of the bounding-box
+ *   diagonal of each body); `angularStep`: largest angle one facet spans [deg], default 15
+ */
+export function parseAcis(input, opts = {}) {
+  const fname = input.name || 'SAT';
+  if (input.bytes && input.bytes.length >= 15) {
+    const sig = String.fromCharCode(...input.bytes.subarray(0, 15));
+    if (sig === 'ACIS BinaryFile' || sig.startsWith('ASM BinaryFile')) throw new Error(`${fname}: this is a binary ACIS file (SAB), which the SAT (text) reader does not take. Open it as ACIS SAB (importers/sab.js reads it).`);
+  }
+  return acisModels(readSat(inputText(input), fname), input, opts, 'acis');
 }

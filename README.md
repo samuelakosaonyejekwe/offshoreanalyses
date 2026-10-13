@@ -20,20 +20,24 @@ https://raw.githack.com/samuelakosaonyejekwe/offshoreanalyses/main/index.html
   and reduced to design values. Values you enter from measurements override them and survive a new pull.
 * **Checked against instruments.** The modelled waves, wind, sea temperature and sea level at a site can be
   compared with what the nearest buoy and tide gauge measured over the last weeks.
-* **Your geometry and data.** 68 CAD, mesh, structural, centreline, bathymetry, point-cloud and tabular formats
-  are recognised; geometry is checked, repaired, refined or coarsened, and viewed in 3-D. The compatibility table
-  in the app states exactly what is read natively, what loads an adapter on first use, and the few proprietary
-  formats that must be exported to a neutral format first.
+* **Your geometry and data.** 69 CAD, mesh, structural, centreline, bathymetry, point-cloud and tabular formats
+  are recognised (53 read natively, 12 through an adapter loaded on first use, 4 that must be exported to a
+  neutral format first); geometry is checked, repaired, refined or coarsened, and viewed in 3-D. ACIS (SAT, SAB,
+  and solids inside DXF) and Parasolid text are read natively and were checked on several hundred real files
+  (`docs/geometry.md`). DWG is read through LibreDWG, which is not part of this app: the browser downloads it only
+  when a user agrees, and one switch turns it off (`docs/vendor.md`).
 * **Every result explains itself.** Each number, check, chart and table carries a plain-language explanation;
   each run ends with engineering and economic recommendations, their basis, and the sustainability consequence.
 * **Studies on every module.** Sensitivity ranking, parameter sweeps, uncertainty propagation, discretisation
   convergence with automatic mesh selection (observed order, Richardson extrapolation, Grid Convergence Index),
   calibration against measurements and validation against independent data.
-* **Managed assurance.** A code-factor register lists every standards-derived factor (1,242 of them) with a
-  sign-off against the governing edition; an evidence register records calibration and validation against
+* **Managed assurance.** A code-factor register lists every standards-derived factor with a sign-off against
+  the governing edition, and shows which were cross-checked against an openly published source (quote, edition
+  and link); an evidence register records calibration and validation against
   measurements with the range covered; the modelled sea level can be checked against tide-gauge measurements.
 * **Hand-off to high-fidelity solvers.** Ready-to-run cases for OpenFOAM, NEMOH, Capytaine, WAMIT and CalculiX are
-  written from the app's own models and their results read back; a built-in boundary-element solver gives the
+  written from the app's own models and their results read back (NEMOH, Capytaine and CalculiX cases were run and
+  compared with the built-in models; the comparisons are on the Verification page); a built-in boundary-element solver gives the
   added-mass matrix of any imported hull. `docs/interop.md` states which exports were run with the solver.
 * **Works offline.** Installable on desktop, Android and iOS; all calculations run on the device; projects stay
   on the device.

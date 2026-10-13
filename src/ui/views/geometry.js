@@ -28,12 +28,20 @@ export async function importFiles(fileList, onStatus) {
   const all = new Map();
   for (const f of files) all.set(f.name, new Uint8Array(await f.arrayBuffer()));
   const companions = /\.(dbf|prj|shx|cpg|bin|mtl)$/i;
+  // DWG is read by a GPL-licensed library that is not part of the app: it is downloaded only if the user agrees, once per batch
+  let dwg = null;
+  if (files.some((f) => /\.dwg$/i.test(f.name))) {
+    const a = await import('../../geometry/adapters/dwg.js');
+    dwg = { on: a.ENABLED, consent: a.ENABLED && window.confirm(`Reading a DWG drawing needs the LibreDWG library, which is not part of this app.\n\nIf you continue, your browser downloads it (${a.library.licence}, about ${Math.round(a.sizeBytes / 1e6)} MB${a.fetchedBefore() ? ', probably already in this browser\'s cache' : ''}) from cdn.jsdelivr.net and runs it in a separate worker on this device. Your drawing is not uploaded anywhere.\n\nCancel to skip the DWG files — you can save them as DXF and import those instead.`) };
+  }
   for (const f of files) {
     if (companions.test(f.name) && files.length > 1) continue;
     onStatus?.(`Reading ${f.name}…`);
     try {
       const bytes = all.get(f.name);
-      const res = await importFile({ name: f.name, bytes, files: all }, {});
+      const isDwg = /\.dwg$/i.test(f.name);
+      if (isDwg && dwg.on && !dwg.consent) throw new Error('Skipped: the DWG library was not downloaded. Save the drawing as DXF in the originating program and import that, or import again and agree to the download.');
+      const res = await importFile({ name: f.name, bytes, files: all }, isDwg ? { consent: dwg.consent } : {});
       if (!res.models?.length) throw new Error('The file was read but contains no geometry this application can use.');
       const kinds = [...new Set(res.models.map((m) => m.kind))];
       const id = await addGeometry({ name: f.name, kind: kinds[0], kinds, format: res.format?.name || res.format || '', stats: res.models.map(statsOf).filter(Boolean).slice(0, 2).join('; '), warnings: (res.warnings || []).slice(0, 12), imported: new Date().toISOString() }, res.models);

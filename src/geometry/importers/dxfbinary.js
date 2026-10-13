@@ -8,7 +8,8 @@
 // one-byte booleans (290–299) and binary chunks with a leading length byte (310–319 and 1004).
 //
 // The pairs are decoded into the (code, trimmed string) stream of the ASCII form and handed to the entity
-// handling of dxf.js, so both encodings of a drawing give the same models. Numbers are written with the
+// handling of dxf.js, so both encodings of a drawing give the same models — including the solids stored as
+// ACIS data (SAT text in groups 1 / 3, or SAB chunks in the ACDSDATA section, see dxf.js). Numbers are written with the
 // shortest decimal text that reads back to the same double.
 
 import { dxfModels } from './dxf.js';
@@ -24,7 +25,8 @@ export function groupType(code) {
   if (code <= 59) return F64;
   if (code <= 79) return I16;
   if (code >= 90 && code <= 99) return I32;
-  if (code === 100 || code === 102 || code === 105) return STR;
+  // 101 is the embedded-object marker, met in the ACDSDATA section that holds the binary ACIS data of solids
+  if (code === 100 || code === 101 || code === 102 || code === 105) return STR;
   if (code >= 110 && code <= 149) return F64;
   if (code >= 160 && code <= 169) return I64;
   if (code >= 170 && code <= 179) return I16;
@@ -79,7 +81,9 @@ function decode(bytes, wide, limit = Infinity) {
         let e = o;
         while (e < end && bytes[e] !== 0) e++;
         if (e >= end) throw new Truncated(`the file ends inside the string of group ${code} at byte ${o} (pair ${count + 1})`);
-        v = utf8.decode(bytes.subarray(o, e)).trim();
+        // groups 1 and 3 keep their blanks: embedded ACIS text is split across them at any character
+        v = utf8.decode(bytes.subarray(o, e));
+        if (code !== 1 && code !== 3) v = v.trim();
         o = e + 1;
         break;
       }
@@ -144,11 +148,11 @@ export function readBinaryDxfPairs(input) {
 export function parseDxfBinary(input, opts = {}) {
   const fname = input.name || 'DXF';
   const { pairs, codeBytes } = readBinaryDxfPairs(input);
-  const sec = { HEADER: [], TABLES: [], BLOCKS: [], ENTITIES: [] };
+  const sec = { HEADER: [], TABLES: [], BLOCKS: [], ENTITIES: [], ACDSDATA: [] };
   let target = null;
   for (let i = 0; i < pairs.length; i += 2) {
     const code = pairs[i], v = pairs[i + 1];
-    if (code === 0 && v === 'SECTION') { i += 2; target = i < pairs.length ? sec[String(pairs[i + 1]).toUpperCase()] || null : null; continue; }
+    if (code === 0 && v === 'SECTION') { i += 2; target = i < pairs.length ? sec[String(pairs[i + 1]).trim().toUpperCase()] || null : null; continue; }
     if (code === 0 && v === 'ENDSEC') { target = null; continue; }
     if (code === 0 && v === 'EOF') break;
     if (target) target.push(code, v);

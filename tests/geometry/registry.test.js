@@ -30,7 +30,7 @@ test('FORMATS: every entry is complete, consistent and truthful about how it is 
       assert.equal(typeof mod.parse, 'function', `${f.id} load() gives parse`);
       assert.ok(f.kinds.length > 0, `${f.id} declares kinds`);
     } else if (f.status === 'adapter') {
-      assert.match(f.via, /^adapter:(occt|web-ifc|hdf5|laz|sqlite)$/, f.id);
+      assert.match(f.via, /^adapter:(occt|web-ifc|hdf5|laz|sqlite|dwg)$/, f.id);
       assert.ok(typeof f.missing === 'string' && f.missing.length > 20, `${f.id} says what to do without the adapter`);
     } else if (f.status === 'convert') {
       assert.equal(f.via, null);
@@ -108,7 +108,7 @@ test('detection: magic bytes, content sniffing and extensions', () => {
 test('formatFor and acceptString', () => {
   assert.equal(formatFor('hull.stl').id, 'stl');
   assert.equal(formatFor('hull.STL', binaryStl(CUBE_T, CUBE_V)).status, 'native');
-  assert.equal(formatFor('part.x_t').status, 'convert');
+  assert.equal(formatFor('part.x_t').status, 'native');
   assert.equal(formatFor('scan.laz').via, 'adapter:laz');
   assert.equal(formatFor('model.stp.gz', Uint8Array.from([0x1f, 0x8b, 8, 0])).id, 'step');
   assert.equal(formatFor('set.zip', makeZip([{ name: 'r.shp', data: new Uint8Array(4) }, { name: 'r.dbf', data: new Uint8Array(4) }])).id, 'shapefile');
@@ -198,9 +198,6 @@ test('importFile: gzip and zip containers, multi-file sets', async () => {
 
 test('importFile: convert-only formats say exactly what to export', async () => {
   const cases = [
-    ['part.x_t', '**ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz**\n', /Parasolid files are not read\. Export STEP \(AP214 or AP242\)/],
-    ['part.sab', 'ACIS BinaryFile\0\0\0\0', /ACIS SAB \(binary\) files are not read\..*save as SAT \(text\) or STEP/],
-    ['plan.dwg', 'AC1032\0\0\0\0\0', /DWG drawings are not read\..*save the drawing as ASCII DXF/],
     ['scan.e57', 'ASTM-E57\0\0\0\0', /E57 scans are not read\. Export the cloud as LAS/],
     ['part.sldprt', '\0\0\0\0binary', /Native CAD files are not read\..*export STEP/],
     ['mesh.hst', 'HYDROSTAR\n', /Export the panel mesh as WAMIT GDF or NEMOH/],

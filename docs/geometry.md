@@ -2,7 +2,8 @@
 
 Reference for `src/geometry/registry.js`, `detect.js`, `units.js`, `zip.js`, `xml.js`, `exporters.js` and
 `src/geometry/importers/*`. The WebAssembly readers in `src/geometry/adapters/*`, the mesh tools and the viewer are
-described in `docs/mesh.md`.
+described in `docs/mesh.md`; the DWG adapter, whose library is not part of the application, in §5.1 and
+`docs/vendor.md`.
 
 Everything here is plain ES modules with no DOM and no `fetch`: the same code runs in Node, on the page and in a
 Web Worker. Tests: `node --test tests/geometry/`.
@@ -32,17 +33,19 @@ member CSVs); a ZIP of the same files works too.
 
 * `native` — read here in JavaScript; `via` is the importer module and `load()` resolves to `{ parse }`.
 * `adapter` — needs the reader named in `via` (`adapter:occt`, `adapter:web-ifc`, `adapter:hdf5`, `adapter:laz`,
-  `adapter:sqlite`). If the adapter module is absent, or exports `available()` returning `false`, `importFile`
+  `adapter:sqlite`, `adapter:dwg`). The first five are part of the build. `adapter:dwg` is not: its library is
+  downloaded at the user's request, so `importFile` needs `consent: true` for DWG and throws with the text to
+  show the user otherwise (§5.1, `docs/vendor.md`); it is not listed by `adapterStatus()`. If the adapter module is absent, or exports `available()` returning `false`, `importFile`
   throws `GeometryFormatError('adapter-missing')` whose message ends with the conversion to make (`missing`).
   STEP and IGES carry a `nativeSubset`: that part is read without the adapter, the adapter is called only when
   the file contains exact B-rep geometry, and if the adapter is missing or fails on the file, whatever the
   built-in reader found is returned with a warning.
-* `convert` — never read (Parasolid, ACIS SAB, DWG, E57, Fluent, HydroStar, native CAD files).
+* `convert` — never read (E57, Fluent, HydroStar, native CAD files).
   `importFile` throws `GeometryFormatError('convert')` with the text of `convert`.
 
 Options understood by `importFile` itself: `format` (registry id, skips detection — archives are still opened),
 `fullGeometry` (IFC → `ifc-full`), `adapters` (`{ occt: module }` to supply an adapter, `{ occt: null }` to
-declare it unavailable).
+declare it unavailable). `consent: true` is passed on to the DWG adapter.
 
 ## 2. Importer contract
 
@@ -91,7 +94,8 @@ with each format in §5.
 Format-specific: `variable` (NetCDF), `expandSymmetry` (GDF, NEMOH), `dxfLines` (`'auto' | 'frame' | 'section'`),
 `polygons: 'polyline'` (vector formats), `axisOrder: 'xy' | 'yx'` (GML), `tessellation` (IGES surface segments per
 knot span, 2–16), `chord` (airfoil chord in metres), `grid: false` (keep lattice soundings as points),
-`deflection` (metres) and `angularStep` (degrees) for the facets of ACIS SAT curved faces.
+`deflection` (metres) and `angularStep` (degrees) for the facets of curved B-rep faces (ACIS SAT / SAB,
+solids in DXF and DWG drawings, Parasolid).
 
 ## 3. Conventions
 
@@ -224,9 +228,9 @@ The Suites column lists the suites whose specification names the format ("—": 
 | `pts`, `ptx` | Leica PTS / PTX | .pts .ptx | native | points | 1 2 4 5 7 8 11 14 15 16 |
 | `xyzrgb` | XYZ + colour / intensity / normals | .xyzrgb .xyzn .txt | native | points | 1 2 4 5 7 8 11 14 15 16 |
 | `e57` | ASTM E57 | .e57 | convert | — | all |
-| `dxf` | AutoCAD DXF, ASCII | .dxf | native | frame, surface, polyline, section, points | all |
+| `dxf` | AutoCAD DXF, ASCII (with embedded ACIS solids) | .dxf | native | frame, surface, polyline, section, points | all |
 | `dxf-binary` | AutoCAD binary DXF (R12 and R13+ group-code widths) | .dxf | native | frame, surface, polyline, section, points | — |
-| `dwg` | AutoCAD DWG | .dwg | convert | — | all |
+| `dwg` | AutoCAD DWG (library downloaded on request, not included) | .dwg | adapter:dwg | frame, surface, polyline, section, points | all |
 | `sdnf` | SDNF 3.0 | .sdnf | native | frame, surface | 1–6 16 |
 | `cis2` | CIS/2 STEP file | .stp .step | native | frame | 1 2 5 6 |
 | `ifc` | IFC 2x3 / 4 / 4.3, linear elements and alignments | .ifc | native | frame, polyline | 1–7 10 15 16 |
@@ -234,9 +238,9 @@ The Suites column lists the suites whose specification names the format ("—": 
 | `step` | STEP AP203 / AP214 / AP242 | .step .stp | adapter:occt + subset | surface, polyline, points | all |
 | `iges` | IGES | .igs .iges | adapter:occt + subset | frame, polyline, surface, points, section | all |
 | `brep` | OpenCascade BREP | .brep .brp | adapter:occt | surface | — |
-| `parasolid` | Parasolid | .x_t .x_b | convert | — | all |
-| `acis` | ACIS SAT (text), analytic B-rep | .sat .asat | native | surface, frame | all |
-| `acis-sab` | ACIS SAB (binary) | .sab .asab | convert | — | — |
+| `parasolid` | Parasolid XT, text (.x_b binary is refused) | .x_t .x_b | native | surface, frame | all |
+| `acis` | ACIS SAT (text) | .sat .asat | native | surface, frame | all |
+| `acis-sab` | ACIS SAB (binary) | .sab .asab | native | surface, frame | — |
 | `native-cad` | SolidWorks, Inventor, CATIA, NX, Creo, Rhino, Revit, JT, FBX, SketchUp, DGN … | many | convert | — | 2 9 11 |
 | `svg` | SVG vector profile | .svg | native | section, polyline | 12 13 14 |
 | `airfoil` | Airfoil coordinates, Selig / Lednicer | .dat | native | section | 16 |
@@ -306,13 +310,26 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
   drawn as a quadratic curve tangent at both ends, with the stated length for stationing.
 * LAS — formats 0–10; `attrs.classification`, `intensity`, `rgb`; CRS from GeoKey or WKT VLRs; stride thinning.
 
-**Drawings, structural and CAD text** (`dxf.js`, `dxfbinary.js`, `acis.js`, `sdnf.js`, `step.js`, `ifc.js`,
-`iges.js`, `profiles.js`, `panels.js`)
+**Drawings, structural and CAD text** (`dxf.js`, `dxfbinary.js`, `acis.js`, `sab.js`, `parasolid.js`, `brep.js`,
+`sdnf.js`, `step.js`, `ifc.js`, `iges.js`, `profiles.js`, `panels.js`; `adapters/dwg.js`)
 
 * DXF — see the header of `dxf.js` for the entity → kind mapping. LINE entities become a frame unless the drawing
   is flat and *every* line / arc closes into loops (a profile drawing), in which case they are assembled into
   section loops; `dxfLines` overrides. Blocks are expanded through INSERT (scale, rotation, arrays, nesting);
   entities on layer 0 inside a block take the INSERT's layer.
+  * Solids: 3DSOLID, REGION, BODY and SURFACE entities (and the EXTRUDED / REVOLVED / LOFTED / SWEPT / PLANE /
+    NURBS surface classes) are stored as ACIS data and read through `acis.js`. Up to R2010 the entity holds SAT
+    text in groups 1 (a line) and 3 (its continuation), each character replaced by a fixed substitution: a
+    blank stays, any other character `c` becomes `159 − c`, and the blank AutoCAD writes after `^` (the
+    substitute of `A`) is dropped (`decodeAcisText`; the rule was checked against the drawings below and is
+    the one the ezdxf project documents). From R2013 on the entity is empty and an `ACDSRECORD` of the
+    `ACDSDATA` section, keyed by the entity handle, holds SAB bytes in 310 groups (`sab.js`). Each body gives one
+    `surface` model named `<layer> <ENTITY> <n>` with one group per B-rep face; coordinates are drawing units
+    in the space of the entity, so block transforms (mirrored inserts keep the triangles outward) and
+    `$INSUNITS` apply; `deflection` and `angularStep` as for SAT. `meta.acis` gives
+    `{ entities, text, binary, bodies, solidBodies, closedBodies, faces, facesRead, encoding }`. An entity
+    whose data are missing or cannot be decoded is counted in `meta.skipped` with the reason, and named in a
+    warning.
 * Binary DXF (`dxfbinary.js`) — after the 22-byte sentinel `AutoCAD Binary DXF\r\n\x1a\0` the file is a run of
   (group code, value) pairs. The group code is a 16-bit little-endian integer in files of R13 and later and a
   single byte in R12 and earlier, where 255 announces a 16-bit code; the reader tries both layouts on the first
@@ -323,35 +340,66 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
   `dxfModels` of `dxf.js`, so both encodings of a drawing give identical models and everything said about DXF
   above applies. A file that ends inside a pair, or without the `0 EOF` group, is rejected as truncated; a group
   code outside the tables stops the reader (the length of its value is unknown). `meta.encoding` states the
-  code width found. `parseDxf` itself still refuses binary input; the registry routes it here.
-* ACIS SAT (`acis.js`) — text B-rep with analytic geometry, in both record layouts: up to 6.x
-  (`-0 body $-1 $1 …`, sequence numbers optional, strings as `len text`) and 7.0 onwards
-  (`body $-1 -1 $-1 $1 …`, strings as `@len text`, `End-of-ACIS-data`).
+  code width found. `parseDxf` itself still refuses binary input; the registry routes it here. Embedded ACIS
+  solids are read as from the ASCII form (groups 1 and 3 keep their blanks; the `ACDSDATA` section is passed on).
+* DWG (`adapters/dwg.js`, `adapters/dwg.worker.js`) — read with LibreDWG (GPL-3.0), which is not part of this
+  application. With `consent: true` a dedicated module worker imports the library from its public CDN address
+  (one pinned version, about 11 MB, first use needs a connection), the DWG bytes are passed in, and a plain
+  description of the drawing comes back, which `drawingToDxfSections` turns into DXF group codes for
+  `dxfModels` — so everything said about DXF applies, and a DWG gives the models its DXF export would give.
+  Without consent `importFile` throws an error whose message is the text to show the user. Not in Node, not
+  without module workers. `meta.library` names what was loaded and from where; `meta.dwgVersion` the `AC10xx`
+  string. Solids are read only where the library passes on their ACIS text. See `docs/vendor.md` for the
+  arrangement and the checks made in a browser.
+* ACIS SAT (`acis.js`) — text B-rep of the ACIS kernel and of Autodesk's ShapeManager (ASM), in all record
+  layouts met: before 2.0 (`body $-1 $1 …`, senses written `0` / `1`), 2.0 – 6.x (three-line header, strings as
+  `len text`), 7.0 onwards (`body $-1 -1 $-1 $1 …`, strings as `@len text`, `End-of-ACIS-data`) and 27 onwards
+  (a fourth header line, two integers before the history pointer, bounding boxes in the records).
   * Header: version, record count, product / ACIS release / date, millimetres per model unit (→ `meta.units`;
     values the unit table does not name are kept as a custom scale; no header unit → millimetres assumed, with
-    a warning), `resabs`.
+    a warning), `resabs`. Reading stops at `End-of-ACIS-data` / `End-of-ASM-data` or where a history section
+    begins (`Begin-of-ACIS-History-Data`).
   * Topology: what a body owns is found by following pointers from the body record, and fields are located by
     the type of record they point to (loop, coedge, edge, vertex, point, surface, curve), so the reader does not
-    depend on the exact field positions of a release; only the first pointer of a coedge (next coedge) is
-    taken by position. Body `transform` records are applied (`p′ = scale·(p·A) + t`); a mirroring transform
-    keeps the triangles outward.
+    depend on the exact field positions of a release; only the first pointer of a coedge (next coedge) and the
+    first two of an edge (its vertices, each followed by its curve parameter from 5.0 on) are taken by
+    position. Tolerant topology (`tcoedge`, `tedge`, `tvertex`) is read like the exact one. Attribute chains,
+    `eye_refinement`, `vertex_template`, pcurves and history records are passed over. Body `transform` records
+    are applied (`p′ = scale·(p·A) + t`); a mirroring transform keeps the triangles outward. Several lumps and
+    shells of a body end up in its one model.
   * Surfaces: `plane-surface`; `cone-surface` — cylinders and cones, with the elliptical ratio; `sphere-surface`;
-    `torus-surface` (not spindle tori, where the tube radius reaches the axis).
-  * Curves: `straight-curve`; `ellipse-curve` — circles, ellipses and their arcs, the arc taken from the start to
-    the end vertex in the direction of the edge sense; `intcurve-curve` when the record stores its B-spline
-    (`exactcur`, or the approximating B-spline stored with a procedural curve — the latter with a warning) and
-    that B-spline passes by the edge's vertices. Any other curve, and an intcurve without stored data, becomes
-    the straight chord between its vertices, with a warning.
-  * Tessellation: every edge is divided once and shared by the faces that use it. Each face is triangulated in
-    the parameter plane of its surface — plane: local coordinates; cylinder / cone: (angle, axial distance);
-    sphere / torus: (longitude, latitude) and (major, minor angle) — with `triangulateSection` of
-    `src/mesh/generate.js`; holes are further loops. Loops that run around a periodic direction are unwrapped
-    and joined by a seam (two rings of a cylinder, the two ends of a pipe bend), a single ring on a sphere or
-    cone is closed at the pole or apex, a vertex at a pole becomes the stretch of the degenerate row between
-    its neighbours, and faces without loops (full sphere, full torus) use the whole parameter rectangle. Points
-    the triangulation adds on a boundary are placed on the chord of that boundary segment and the neighbouring
-    triangle is split there, so that bodies come out closed. Cylinders and cones are triangulated from end to
-    end of the face (straight generators), which gives slender triangles on long tubes.
+    `torus-surface` — ring tori and the outer sheet of spindle ("apple") tori, whose two points on the axis are
+    treated like poles; `spline-surface` when a B-spline is stored for it: `exactsur`, the approximation ACIS
+    keeps beside a procedural definition (`rbblnsur`, `sumsur`, `skinsur`, `cylsur`, `offsur`, `rotsur` … — the
+    block is searched for `full nubs|nurbs pu pv …` at its top level), or, for a `sumsur` without one, the
+    surface built from its two curves (B-splines and straight lines). The face is trimmed by its boundary: the
+    boundary points are projected on the surface (nearest sample, then Gauss–Newton with damping), and a face
+    whose boundary lies further from the stored surface than `max(2·deflection, 0.1 % of the body diagonal)` is
+    refused with that distance in the warning. Surfaces closed in one direction are unwrapped like a cylinder;
+    rows of control points collapsed to a point are treated like poles.
+  * Curves: `straight-curve`; `ellipse-curve` — circles, ellipses and their arcs; `intcurve-curve` when the record
+    stores its B-spline (`exactcur`, or the approximating B-spline of a procedural curve such as `surfintcur`,
+    `bldcur`, `offintcur` — counted in a warning). The stretch of the curve an edge covers is taken from the
+    curve parameters stored with its two vertices (a reversed edge, and a reversed intcurve, run at the negated
+    parameters); when the points computed from them do not meet the vertices — or the record has none, as before
+    5.0 — the vertices are located on the curve instead. Any other curve, and an intcurve without stored data
+    (`lawintcur` helices), becomes the straight chord between its vertices, with a warning.
+  * Sub-type blocks: `{ ref n }` stands for the n-th block of the file, counted where each block opens (nested
+    blocks after their parent); the names of the binary form (`exact_int_cur`, `sum_spl_sur` …) are mapped to
+    the classic ones.
+  * Tessellation (`brep.js`, shared with the Parasolid reader): every edge is divided once and shared by the
+    faces that use it. Each face is triangulated in the parameter plane of its surface — plane: local
+    coordinates; cylinder / cone: (angle, axial distance); sphere / torus: (longitude, latitude) and (major,
+    minor angle); B-spline: its parameters, rescaled. The loop polygons are ear-clipped with their holes joined
+    by bridges, improved by Delaunay edge flips, and interior edges that span more than one angular step are
+    bisected; boundary segments are never subdivided, and a triangulation that does not use every boundary
+    segment is not accepted, so neighbouring faces share their points exactly. Loops that run around a periodic
+    direction are unwrapped and joined by a seam (two rings of a cylinder, the two ends of a pipe bend), a
+    single ring on a sphere or cone is closed at the pole or apex, a boundary through a pole continues on the
+    opposite meridian, and faces without loops (full sphere, full torus) use the whole parameter rectangle. If
+    the facets of two loops of a face cross — a hole close to a coarsely faceted outline — the body is done
+    again with a quarter of the chord error (up to three times; reported). Cylinders and cones are triangulated
+    from end to end of the face (straight generators), which gives slender triangles on long tubes.
   * Tolerance: `opts.deflection` — largest distance between a curved edge or surface and its facets, in
     metres; default 1 % of the bounding-box diagonal of the body. `opts.angularStep` — largest angle one facet
     spans, default 15°. The finer of the two governs; `meta.tessellation` reports them.
@@ -360,30 +408,109 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
     if a closed body still encloses a negative volume it is reversed as a whole and that is reported. A file
     that holds only wire bodies (edges that no face uses) gives one `frame` model, curved edges as chains of
     members; wire edges in a file that also has faces are counted in a warning, not imported.
-  * Free-form faces: a `spline-surface` whose record stores its control points and knots (`exactsur`) is
-    tessellated over the *whole* surface, without trimming by the face boundary, and a warning says so; the
-    order of the control net in the record is accepted only if the resulting surface passes by the vertices of
-    the face. Every other spline surface (procedural definitions, references to another record, nets that do
-    not fit the face) is skipped and the count is reported as "n free-form faces could not be read — export
-    those bodies as STEP"; `meta.skipped['free-form face']` holds the number.
+    `meta`: `bodies`, `solidBodies` (every edge shared by exactly two faces in the file's own topology),
+    `closedBodies` and `orientedBodies` (the triangles came out watertight, and consistently oriented),
+    `faces` / `faceTotal` / `facesSkipped`, `volumes` (m³ per body, `null` when open), `skipped` with one entry
+    per reason a face was left out.
   * Conventions relied on: cone radius at axial distance z from the base ellipse = R + z·sin/cos, normal away
     from the axis when cos > 0; loops counter-clockwise about the face normal; B-spline knots stored as
     (value, multiplicity) with one end knot fewer at each end than a clamped vector; rational control points as
-    x y z w, not premultiplied.
-  * Not read: pcurves, attributes (names, colours), subshells, history, tolerant-edge data beyond the base
-    record; SAB.
-  * **Provenance of the checks.** The fixtures in `tests/geometry/acis.test.js` were written by hand from the
-    published structure of the SAT format (box, cylinder, plate with a hole, sphere, tube, cones, torus, pipe
-    elbow, wire body, spline faces). None was exported from an ACIS-based CAD system, and the reader has not
-    been run against such exports. Files from real CAD systems may contain record variants these fixtures do not
-    cover — the sign conventions above are the ones most likely to matter. The reader is written so that what it
-    does not recognise is reported and left out rather than interpreted: unknown record types, unreadable
-    surface records, faces whose boundary cannot be turned into a domain, and curves replaced by chords each
-    produce a warning. After importing a SAT file from a new source, compare volume, area and bounding box with
-    the values the CAD system reports, and check that the body is closed (`inspect`).
-* ACIS SAB — not read. The binary form is a tagged token stream whose values (sense flags, enumerations,
-  interval bounds) take their meaning from their position in each record; that mapping could not be established
-  reliably from published material, so the file is rejected with the advice to save as SAT (text) or STEP.
+    x y z w, not premultiplied; the control net of a surface listed with u running fastest.
+  * Not read: spline surfaces kept only as a definition (`sweepsur` of threads and helical sweeps, `rbblnsur`
+    blends of ACIS 5 files that store no approximation), the inner sheet of spindle tori, intcurves without
+    stored data; pcurves, attributes (names, colours), subshells, history.
+* ACIS SAB (`sab.js`) — the same records as a stream of tagged values: after the 15-byte signature
+  (`ACIS BinaryFile`, `ASM BinaryFile4`, or `ASM BinaryFile8` with 64-bit integers) four integers and the
+  header strings and numbers, then per value one tag byte — integers, doubles, strings with 8-, 16- or 32-bit
+  lengths, `true` / `false` for the keyword pairs of the text form (`reversed` / `forward`, `double` / `single`,
+  `F` + value / `I` for interval ends …), pointers, name parts (`0E plane 0D surface` = `plane-surface`),
+  sub-type braces, positions and directions (three doubles), enumeration values, record end. `readSab` turns
+  them into the token lists of `readSat`; logical values and enumerations stay what they are, since their
+  keyword depends on the field, and `acis.js` accepts either form wherever it looks for one. Geometry, options,
+  `meta` and limits are those of SAT; `meta.encoding` states the integer width. The tag values and the header
+  layout follow the description of the format in the ezdxf project (`ezdxf/acis/sab.py`, MIT licence) and, for
+  the string, vector and 64-bit variants, the notes in InventorLoader; the decoder is this application's own.
+* Parasolid XT (`parasolid.js`) — text transmit files. After the `**…` header the file is one stream (line breaks
+  mean nothing): `T`, modeller version and schema name as counted strings, the user-field size, then nodes
+  `<type> [<variable length>] <index> <fields…> [<user field>]` and the terminator `1 0`. Numbers end with a
+  blank, characters and logicals do not, `?` is an unset value.
+  * Schema: the field list of every node type is taken from the base schema 13006, entered from the "Parasolid
+    XT Format Reference" (Siemens). Files of Parasolid 14 and later name that base
+    (`SCH_<version>_<schema>_13006`) and carry, in front of the first node of each type, the flag 255 or an
+    edit sequence (`C` copy, `D` delete, `I` insert, `A` append a described field, `Z` end; new node types in
+    full), which is applied — so fields added by later releases are read past without knowing them. Files that
+    do not describe their schema (Parasolid 9 – 13; later files saved for an older release) are read with the
+    layouts known for those releases — attribute definitions before 12.1, bodies and fins of 9, the list and
+    body layouts since 14 and the later additions seen in embedded schemas — tried in turn against the *whole*
+    stream; the first that reads consistently to the terminator is used (`meta.schemaLayout` names it) and the
+    file is refused if none does. The user field follows every node.
+  * Topology: body → region → shell → face → loop → fin → edge → vertex → point. Start and end of an edge are
+    the vertices of a fin against and along it. An assembly places its bodies through the transforms of its
+    instances (`x′ = (R·x + t)·scale`); several bodies without an assembly are returned as they are.
+  * Surfaces: PLANE, CYLINDER, CONE, SPHERE, TORUS (doughnut and apple), B_SURFACE (NURBS; rational vertices are
+    stored multiplied by their weight, v runs fastest) trimmed by the face boundary, SWEPT_SURF over a straight
+    line or a B-curve. Curves: LINE, CIRCLE, ELLIPSE, B_CURVE, TRIMMED_CURVE over one of these, SP_CURVE (a 2-D
+    B-curve in the parameter space of a surface that is read), INTERSECTION (the chart of points the file
+    stores, joined by straight segments — counted in a warning). An edge runs from its start to its end vertex
+    in the direction of the curve sense; tolerant edges take the curve of their first fin. A vertex that does
+    not lie on the curve of its edge turns the edge into a chord, with a warning.
+  * Orientation: the face normal is the natural normal of the surface when face sense and surface sense are
+    equal. For the cone the reference prints `R = P − v·A + …`; in every file checked the boundary of a cone face
+    lies on `R = P + v·A + (X cos u + Y sin u)(r + v·tan a)` and the faces are consistently oriented with the
+    normal pointing away from the axis, which is what the reader uses.
+  * Tessellation, options and `meta` as for ACIS (shared `brep.js`), plus `schema`, `schemaLayout`,
+    `modellerVersion`, `application`, `instances`, `nodeTypes`. Coordinates are metres: the kernel's unit.
+  * Strictness: a node type the file does not describe and the reader does not know, a value of the wrong kind,
+    a doubled index or a missing terminator refuse the whole file ("the node stream could not be interpreted
+    … after n nodes"); a pointer of the wrong kind in the topology of a body leaves that body out, with a
+    warning that says nothing of it is shown. Faces on surfaces that are not read are left out and counted per
+    type.
+  * Not read: binary transmit files (`.x_b`, refused with the advice to save as text); BLENDED_EDGE (rolling-ball
+    blends, which Parasolid keeps as a definition — most fillets), OFFSET_SURF, SPUN_SURF, foreign (PE)
+    geometry, SWEPT_SURF over other curves; periodic B-curves and B-surfaces whose knots are not stored in
+    the unwrapped form (number of knots = vertices + degree + 1) — refused as inconsistent; attributes and groups.
+* **Checks on real files** (ACIS, DXF solids, Parasolid, DWG). The fixtures of `tests/geometry/acis.test.js` are
+  written by hand so that areas and volumes are known in closed form; in addition the readers were run on files
+  written by CAD systems, collected from public repositories. A few small ones whose licence allows it are in
+  `tests/geometry/fixtures/real/` (sources and licences in its README) and are read by the test suite; the
+  rest were used locally. "Solid" below means that the file's own topology is that of a closed solid; "closed"
+  that the triangles came out watertight *and* consistently oriented.
+  | Set | Files | Written by | Result |
+  | --- | --- | --- | --- |
+  | SAT files | 155 (4 of them hold a header and no records, and are refused as empty) | Autodesk Inventor (97), IronCAD / ACIS 5.0 (13), ACIS 1.03 – 1.07 (11), ODA-based writers (9), ACIS 6.0 tools (8), ACIS 2.0 and 4.0 (5), Revit 2014 (2), Fusion 360, Ansys (ACIS 28), SESAM GeniE, Cobalt and others; save versions 103 – 2800 and 20800 | 160 bodies, 151 of them solids; 135 solids closed; 3789 of 3863 faces read |
+  | DXF drawings with ACIS entities | 158 of 189 drawings collected, R14 – R2018 (`AC1014` … `AC1032`) | AutoCAD, BricsCAD and other ODA-based programs, Fusion 360 exports | 447 of 467 solid / region / surface entities read — 288 from SAT text, 159 from SAB; the other 20 carry no ACIS data in the drawing. All 105 3DSOLID bodies closed; 333 regions and 9 surfaces (open by nature); 3601 of 3601 faces read |
+  | SAB | the 159 entities above (no free-standing `.sab` file was found) | AutoCAD, ODA; save versions 21800 – 22300, 32-bit integers | as above. No body was available in both forms, so SAT and SAB could not be compared on the same body as written by a CAD system; the test suite re-encodes the records of real SAT files as SAB and checks that the same geometry comes out. `ASM BinaryFile8` (64-bit) was never met and is covered by that test only |
+  | Parasolid text | 125, Parasolid 9.0 – 37.0 (schemas 9003 … 36001) | NX / Unigraphics (38), SolidWorks (43), IronCAD (13), Simmetrix test parts (12), Onshape (6), MicroStation (3), Solid Edge, Autodesk and others | 112 read; 11 refused because the node stream could not be interpreted (10 of the 21 files of Parasolid 9 – 11, which use node types or layouts outside the published schema; one Parasolid 33 file saved without a schema description that uses a newer node type); 2 hold a body without geometry. 145 bodies in 178 placements, 169 of them solids, 146 closed; 5201 of 5409 faces read |
+  | DWG (in Chromium, library from its CDN) | 48, R11 and R2000 – R2018 | LibreDWG test collection | 42 give models; 6 hold nothing this reader keeps |
+
+  Where an independent value exists, the volume of the closed bodies was compared with it, at a chord error of
+  0.04 mm and 4° per facet:
+
+  | Comparison | Bodies | Difference in volume |
+  | --- | --- | --- |
+  | Inventor SAT files against the STEP export of the same part in the same repository, read by the `occt` adapter | 85 | median 0.03 %, largest 0.08 % |
+  | IronCAD parts of the NIST design repository, which exist as SAT, Parasolid and STEP: SAT against STEP | 9 | 0.0006 % – 0.19 % |
+  | the same parts: Parasolid against STEP | 6 | 0.0006 % – 0.18 % |
+  | the same parts: SAT against Parasolid, where both come out closed | 6 | below 0.06 % (four of them identical to five digits) |
+  | DWG against the DXF of the same drawing (`2000/entities-3d` of the LibreDWG collection) | 1 | identical models, entity counts and bounding box |
+  | fixtures with known dimensions (box, rod, sphere, block with spherical cavity, bars) | 9 | exact for planar bodies; converging from the inscribed side for curved ones (see the tests) |
+
+  What was not read, and why:
+
+  * SAT: 74 faces — 38 rolling-ball blends (`rbblnsur`) of the ACIS 5.0 files, which store no B-spline for
+    them; 16 helical sweeps (`sweepsur`) of threads in Inventor parts, with 4 cylinder faces bounded by those
+    helices; 15 faces whose boundary lies off their surface in files that are damaged or flag the geometry
+    themselves as illegal (Revit); 1 face whose loops still crossed at the finest facet size tried. These
+    account for the 16 solids that did not close.
+  * Parasolid: 208 faces — 175 on BLENDED_EDGE surfaces (rolling-ball blends, kept by Parasolid as a
+    definition: the fillets of SolidWorks and NX parts), 16 on OFFSET_SURF, 8 on periodic B-curves or
+    B-surfaces whose knot vector is stored in a form the reader does not accept, 4 on "lemon" tori, 1 on a
+    SPUN_SURF, 4 with boundaries that crossed or collapsed. These account for the 23 solids that did not close.
+    829 edges followed the chart of an intersection curve.
+  * DXF: nothing of the ACIS data present. Hatches, text and dimensions are not ACIS data and are not read.
+  After importing a file from a source not listed, compare volume and bounding box with the values the CAD
+  system reports and check that the body is closed (`inspect`, or `meta.closedBodies`); what the readers leave
+  out is always named in `warnings`.
 * SDNF — Packet 10 members and Packet 20 plates, read as a token stream so that record wrapping does not matter.
 * Part 21 (`P21` in `step.js`) — statements are indexed once and parsed on demand: strings with `''` and
   `\X2\…\X0\` escapes, typed values, nested lists, complex instances, comments.
@@ -421,21 +548,23 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
 ## 7. Detection (`detect.js`)
 
 Order: container magic (gzip, ZIP) → binary signatures (GLB, HDF5, NetCDF, TIFF, LAS, E57, SQLite, Surfer,
-shapefile, binary DXF, ACIS SAB, DWG, binary STL by exact length) → content sniffing of the first 64 kB (Part 21 schema →
+shapefile, binary DXF, ACIS SAB, DWG, Parasolid binary, binary STL by exact length) → content sniffing of the first 64 kB (Part 21 schema →
 `ifc` / `cis2` / `step`; XML root element; JSON markers; keyword lines of the solver decks; IGES column 73;
-DXF group codes; the four-integer SAT header followed by entity records; airfoil, NEMOH, panel and coloured-point row patterns) → file extension. Extensions that are
+DXF group codes; the four-integer SAT header followed by entity records; the `**…` header of a Parasolid transmit file; airfoil, NEMOH, panel and coloured-point row patterns) → file extension. Extensions that are
 ambiguous in practice (`.dat`, `.txt`, `.xml`, `.json`, `.msh`, `.grd`, `.asc`, `.stp`, `.nc`) are decided by
 content. `detectFileSet(names)` recognises polyMesh directories, shapefile sets, 3MF packages and glTF with
 side-cars. `meta.detected.reason` records why a format was chosen.
 
 ## 8. Not supported
 
-* Exact B-rep without the `occt` adapter (STEP solids, IGES trimmed surfaces); Parasolid (no open reader
-  exists), ACIS SAB, DWG (the only open reader is GPL-3-licensed and deliberately not bundled — export DXF or
-  STEP) and native CAD files with or without it.
-* ACIS SAT: free-form (spline) faces without stored control points, trimming of those that have them, spindle
-  tori, pcurves and attributes.
-* ACIS solids embedded in DXF (3DSOLID, REGION, SURFACE); DXF hatches, text, dimensions.
+* Exact B-rep without the `occt` adapter (STEP solids, IGES trimmed surfaces); native CAD files with or without
+  it.
+* DWG without the user's consent to download the LibreDWG library, without a network connection on first use,
+  or outside a browser — save as DXF instead.
+* ACIS SAT / SAB and Parasolid: faces whose surface is kept only as a procedure (helical sweeps, rolling-ball
+  blends, offsets, spun surfaces), which are left out and counted; Parasolid binary files (`.x_b`); Parasolid
+  text files of releases 9 – 11 that use node types or layouts not in the published schema.
+* DXF hatches, text, dimensions; solids in a DXF or DWG drawing whose ACIS data the drawing does not carry.
 * IFC geometry other than linear-element axes and alignments without the `web-ifc` adapter; ifcXML.
 * HDF5-based files without the `hdf5` adapter: NetCDF-4, MED, CGNS, Exodus on NetCDF-4; ADF-based CGNS always.
 * LAZ without the `laz` adapter; E57; GeoPackage without the `sqlite` adapter.

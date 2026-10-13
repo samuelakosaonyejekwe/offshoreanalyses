@@ -4,6 +4,8 @@
 //   status 'native'  — read here, in plain JavaScript (`via` names the importer module)
 //   status 'adapter' — needs a WebAssembly reader in src/geometry/adapters (`via: 'adapter:<name>'`); when the
 //                      adapter is not part of the build, importFile() says so and names what to export instead.
+//                      DWG is the one adapter whose library is not shipped at all: it is downloaded at the
+//                      user's request (opts.consent) and runs in a worker of its own.
 //                      Where `nativeSubset` is set, that part of the format is read without the adapter.
 //   status 'convert' — not read at all; importFile() throws with the exact export to make in the source program.
 // `suites` lists the suites (1–16) whose specification names the format; an empty list means the format is an
@@ -23,7 +25,13 @@ const ADAPTER_LOADERS = {
   laz: () => import('./adapters/laz.js'),
   sqlite: () => import('./adapters/sqlite.js'),
 };
-const adapter = (name) => () => ADAPTER_LOADERS[name]();
+// Readers that are not part of the build: their library is fetched at run time, at the user's request, by a worker
+// of its own (see adapters/dwg.js). They are resolved like the others but are not listed by adapterStatus().
+const REMOTE_LOADERS = {
+  dwg: () => import('./adapters/dwg.js'),
+};
+const loaderOf = (name) => ADAPTER_LOADERS[name] || REMOTE_LOADERS[name];
+const adapter = (name) => () => loaderOf(name)();
 
 /** @type {ReadonlyArray<object>} */
 export const FORMATS = Object.freeze([
@@ -139,11 +147,12 @@ export const FORMATS = Object.freeze([
 
   // ---- drawings, structural and CAD exchange ----
   { id: 'dxf', name: 'AutoCAD DXF (ASCII)', extensions: ['dxf'], kinds: ['frame', 'surface', 'polyline', 'section', 'points'], category: 'cad', status: 'native', via: 'importers/dxf.js', suites: ALL,
-    notes: 'LINE → frame, LWPOLYLINE / POLYLINE (bulges, polyface, mesh), 3DFACE, SOLID, CIRCLE, ARC, ELLIPSE, SPLINE, POINT, INSERT; layers; $INSUNITS; closed flat loops → section. Embedded ACIS solids (3DSOLID, REGION, SURFACE), hatches, text and dimensions are not read.', load: () => pick(import('./importers/dxf.js'), 'parseDxf') },
+    notes: 'LINE → frame, LWPOLYLINE / POLYLINE (bulges, polyface, mesh), 3DFACE, SOLID, CIRCLE, ARC, ELLIPSE, SPLINE, POINT, INSERT; layers; $INSUNITS; closed flat loops → section. 3DSOLID, REGION, BODY and SURFACE entities are read through the ACIS readers (SAT text of R13 – R2010 drawings with its character substitution undone, SAB data of the ACDSDATA section from R2013 on) and give one surface per body — on 158 real drawings (R14 – R2018) 447 of 467 such entities were read, the rest carrying no ACIS data, and all 105 solids came out watertight. Hatches, text and dimensions are not read.', load: () => pick(import('./importers/dxf.js'), 'parseDxf') },
   { id: 'dxf-binary', name: 'AutoCAD binary DXF', extensions: ['dxf'], kinds: ['frame', 'surface', 'polyline', 'section', 'points'], category: 'cad', status: 'native', via: 'importers/dxfbinary.js', suites: [],
     notes: 'The binary group stream (16-bit group codes of R13 and later, single-byte codes with the 255 escape of R12 and earlier) is decoded into the same group pairs as ASCII DXF and read by the same entity handling, so the entities, layers, blocks and units read are exactly those of ASCII DXF. A file that ends before its EOF group is rejected as truncated.', load: () => pick(import('./importers/dxfbinary.js'), 'parseDxfBinary') },
-  { id: 'dwg', name: 'AutoCAD DWG', extensions: ['dwg'], kinds: [], category: 'cad', status: 'convert', via: null, suites: ALL,
-    notes: 'Not read. DWG is a proprietary format; the only open reader for it is licensed under GPL-3 and is deliberately not bundled with this application.', convert: 'DWG drawings are not read. The only open DWG reader is GPL-3-licensed and is deliberately not bundled. In AutoCAD (or the free ODA File Converter / DWG TrueView) save the drawing as ASCII DXF or binary DXF; for 3-D solids export STEP instead.', load: null },
+  { id: 'dwg', name: 'AutoCAD DWG', extensions: ['dwg'], kinds: ['frame', 'surface', 'polyline', 'section', 'points'], category: 'cad', status: 'adapter', via: 'adapter:dwg', suites: ALL,
+    notes: 'Read with the LibreDWG library (GNU GPL 3), which is NOT included in this application: at the request of the user (opts.consent = true) a separate worker downloads it from the public CDN cdn.jsdelivr.net (one pinned version, about 11 MB) and runs it in the browser; only the drawing data come back, and they are read like a DXF drawing (same entities, layers, blocks and units). Needs a network connection the first time; works in a web browser only. Without consent importFile() throws with the text to show the user. Solids stored as binary ACIS data, hatches, text and dimensions are not read.',
+    missing: 'To read DWG, use the application in a web browser with a network connection and confirm the download of the DWG library (LibreDWG, GPL-3.0, not part of this application) when asked. Otherwise save the drawing as ASCII or binary DXF in AutoCAD (or the free ODA File Converter / DWG TrueView); for 3-D solids export STEP.', load: null },
   { id: 'sdnf', name: 'SDNF 3.0', extensions: ['sdnf', 'sdn'], kinds: ['frame', 'surface'], category: 'structural', status: 'native', via: 'importers/sdnf.js', suites: [1, 2, 3, 4, 5, 6, 16],
     notes: 'Packet 10 linear members (section names resolved for pipes, box sections, IPE / HE A / HE B and tabulated W shapes) and Packet 20 plates. Holes, loads, connection details, grids and curved members are not read.', load: () => pick(import('./importers/sdnf.js'), 'parseSdnf') },
   { id: 'cis2', name: 'CIS/2 (CIMsteel) STEP file', extensions: ['stp', 'step', 'p21', 'cis'], kinds: ['frame'], category: 'structural', status: 'native', via: 'importers/step.js', suites: [1, 2, 5, 6],
@@ -160,12 +169,12 @@ export const FORMATS = Object.freeze([
     notes: 'Trimmed and bounded surfaces (144, 143), surfaces of revolution, tabulated cylinders, ruled and offset surfaces and B-rep solids need the geometry-kernel reader.', missing: 'Without it, export wireframe and untrimmed NURBS surfaces (entities 110, 126, 128) or a mesh: STL, OBJ or glTF.', load: () => pick(import('./importers/iges.js'), 'parseIges') },
   { id: 'brep', name: 'OpenCascade BREP', extensions: ['brep', 'brp'], kinds: ['surface'], category: 'cad', status: 'adapter', via: 'adapter:occt', suites: [],
     notes: 'Read and tessellated by the geometry-kernel reader. The format has no unit: millimetres assumed unless stated.', missing: 'Without it, export the shape as tessellated STEP, STL, OBJ or glTF.', load: adapter('occt') },
-  { id: 'parasolid', name: 'Parasolid (.x_t / .x_b)', extensions: ['x_t', 'x_b', 'xmt_txt', 'xmt_bin', 'xt'], kinds: [], category: 'cad', status: 'convert', via: null, suites: ALL,
-    notes: 'Not read: no open reader exists for the Parasolid transmit formats.', convert: 'Parasolid files are not read. Export STEP (AP214 or AP242) from the CAD system; export STL, OBJ or glTF if only a surface mesh is needed.', load: null },
+  { id: 'parasolid', name: 'Parasolid XT (.x_t text)', extensions: ['x_t', 'x_b', 'xmt_txt', 'xmt_bin', 'xt'], kinds: ['surface', 'frame'], category: 'cad', status: 'native', via: 'importers/parasolid.js', suites: ALL,
+    notes: 'Text transmit files: node stream decoded with the published base schema 13006 and the schema edits newer files embed (Parasolid 14 – 37 as written by SolidWorks, NX, Solid Edge, Onshape and others); files that do not describe their schema (Parasolid 9 – 13, and files saved "as version n") are read with the known layouts of those releases and refused when the stream does not come out consistent — of 125 real files from NX, SolidWorks, IronCAD, Onshape and others (Parasolid 9.0 – 37.0) 112 were read, 146 of their 169 solid bodies came out watertight and 5201 of 5409 faces were read; 10 of the 21 files of Parasolid 9 – 11 were refused. Bodies, multi-body parts and assemblies with instance transforms; faces on PLANE, CYLINDER, CONE, SPHERE, TORUS, B_SURFACE (NURBS) and SWEPT_SURF over a line or B-curve, bounded by LINE, CIRCLE, ELLIPSE, B_CURVE, TRIMMED_CURVE, SP_CURVE and INTERSECTION edges (the latter as the chart of points the file stores), triangulated to opts.deflection (default 1 % of the body diagonal, 15° per facet); one surface per body with one group per face; wire bodies as a frame; coordinates are metres. Not read: binary files (.x_b); faces on BLENDED_EDGE (rolling-ball blends kept as a definition — the commonest loss: fillets of SolidWorks and NX parts), OFFSET_SURF, SPUN_SURF and foreign surfaces — counted per type in a warning, with the advice to export STEP; attributes and groups. A node that cannot be interpreted stops the file or the body; nothing is guessed.', load: () => pick(import('./importers/parasolid.js'), 'parseParasolid') },
   { id: 'acis', name: 'ACIS SAT (text)', extensions: ['sat', 'asat'], kinds: ['surface', 'frame'], category: 'cad', status: 'native', via: 'importers/acis.js', suites: ALL,
-    notes: 'B-rep with analytic geometry, both record layouts (up to 6.x and 7.0 onwards): faces on plane, cone (cylinders and cones, elliptical ratio), sphere and torus surfaces, bounded by straight, circular and elliptical edges and by intcurve edges that store their B-spline; body transforms and the header unit applied. Each face is triangulated between its boundary loops to opts.deflection (default: chord error 1 % of the body diagonal, 15° per facet); one surface per body with one group per face; files holding only wire bodies give a frame. Spline-surface faces are tessellated untrimmed when the record stores control points and knots (exactsur), and are otherwise skipped and counted with the advice to export those bodies as STEP. Intcurve edges without stored B-spline data become straight chords (reported). Pcurves, attributes and history are not read; unrecognised record types are reported. Checked against fixtures written from the published format, not against files exported by an ACIS-based CAD system.', load: () => pick(import('./importers/acis.js'), 'parseAcis') },
-  { id: 'acis-sab', name: 'ACIS SAB (binary)', extensions: ['sab', 'asab'], kinds: [], category: 'cad', status: 'convert', via: null, suites: [],
-    notes: 'Not read: the binary token stream is not decoded.', convert: 'ACIS SAB (binary) files are not read. In the originating program save as SAT (text) or STEP.', load: null },
+    notes: 'B-rep of the ACIS / ShapeManager kernel, save versions 1.03 – 28 and the ASM releases of Autodesk programs: faces on plane, cone (cylinders and cones, elliptical ratio), sphere and torus surfaces (apple tori included) and on spline surfaces that store a B-spline (exactsur, the approximation kept with rbblnsur / sumsur / skinsur / cylsur …, or a sum surface built from its two curves), all trimmed by the face boundary; edges on straight, circular and elliptical curves and on intcurves that store their B-spline, cut by the parameters the edge record gives; tolerant topology; "{ ref n }" sub-type references; body transforms and the header unit. Each face is triangulated between its boundary loops to opts.deflection (default: chord error 1 % of the body diagonal, 15° per facet); one surface per body with one group per face; files holding only wire bodies give a frame. Run on 155 real SAT files (Inventor, IronCAD, Revit, Fusion 360, ODA-based writers, ACIS 1.03 – 28): 3789 of 3863 faces read, 135 of 151 solid bodies watertight; volumes of 94 bodies within 0.2 % of the STEP export of the same part (docs/geometry.md, "Checks on real files"). Not read: procedural spline surfaces without a stored B-spline (helical sweeps of threads: sweepsur) — skipped and counted per reason with the advice to export STEP; intcurves without stored data become straight chords (reported); pcurves, attributes and history are passed over.', load: () => pick(import('./importers/acis.js'), 'parseAcis') },
+  { id: 'acis-sab', name: 'ACIS SAB (binary)', extensions: ['sab', 'asab'], kinds: ['surface', 'frame'], category: 'cad', status: 'native', via: 'importers/sab.js', suites: [],
+    notes: 'The binary form of ACIS SAT: the tagged value stream ("ACIS BinaryFile", "ASM BinaryFile4", and "ASM BinaryFile8" with 64-bit integers) is decoded into the records of the SAT reader, which reads the geometry (same surfaces, curves, options and limits as ACIS SAT). Checked on the SAB data of 159 solids and regions in DXF drawings written by AutoCAD and ODA-based programs (ACIS 218 – 223); the 64-bit variant is implemented from the description of the format and was not met in a real file.', load: () => pick(import('./importers/sab.js'), 'parseSab') },
   { id: 'native-cad', name: 'Native CAD / BIM / DCC files (SolidWorks, Inventor, CATIA, NX, Creo, Rhino, Revit, JT, FBX, SketchUp, DGN …)', extensions: ['sldprt', 'sldasm', 'ipt', 'iam', 'prt', 'asm', 'catpart', 'catproduct', '3dm', 'jt', 'rvt', 'rfa', 'skp', 'fbx', '3ds', 'par', 'psm', 'f3d', 'nwd', 'dgn'], kinds: [], category: 'cad', status: 'convert', via: null, suites: [2, 9, 11],
     notes: 'Not read (proprietary formats).', convert: 'Native CAD files are not read. In the originating program export STEP (AP214 / AP242) for solids, IFC for building and infrastructure models, DXF for drawings, or STL / OBJ / glTF for meshes.', load: null },
 
@@ -210,12 +219,12 @@ async function loadAdapter(fmt, opts) {
     return opts.adapters[name];
   }
   let mod;
-  try { mod = await ADAPTER_LOADERS[name](); } catch (e) {
+  try { mod = await loaderOf(name)(); } catch (e) {
     const notThere = !e || !e.message || /Cannot find module|Failed to fetch|ERR_MODULE_NOT_FOUND|error loading dynamically imported module|Importing a module script failed/i.test(e.message) || (e && e.code === 'ERR_MODULE_NOT_FOUND');
     throw missingAdapter(fmt, notThere ? 'is not available in this build' : `failed to load (${e.message})`);
   }
   if (!mod || typeof mod.parse !== 'function') throw missingAdapter(fmt, 'was found but does not export parse(input, opts)');
-  if (typeof mod.available === 'function' && !mod.available()) throw missingAdapter(fmt, 'is not included in this build');
+  if (typeof mod.available === 'function' && !mod.available()) throw missingAdapter(fmt, typeof mod.unavailableReason === 'function' ? mod.unavailableReason() : 'is not included in this build');
   return mod;
 }
 

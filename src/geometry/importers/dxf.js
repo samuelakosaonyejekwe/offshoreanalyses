@@ -15,16 +15,44 @@
 //   open polylines, arcs, splines      → polyline
 //   POINT                              → points
 //
-// Not read: 3DSOLID / REGION / BODY / SURFACE (embedded ACIS data), MESH, HATCH, text, dimensions, leaders,
-// images, viewports, paper space layout. These are counted in `meta.skipped`. Binary DXF is decoded by
+//   3DSOLID / REGION / BODY / SURFACE  → surface, one model per ACIS body with one group per B-rep face
+//
+// Solids are stored as ACIS data: as SAT text in groups 1 and 3 of the entity (R13 – R2010, each character
+// replaced by a fixed substitution, see decodeAcisText), or as SAB bytes in the ACDSDATA section keyed by the
+// entity handle (R2013 and later). Both are decoded here and tessellated by acis.js / sab.js; the coordinates
+// are drawing units in the space of the entity, so block transforms and $INSUNITS apply as for everything else.
+//
+// Not read: MESH, HATCH, text, dimensions, leaders, images, viewports, paper space layout. These are counted
+// in `meta.skipped`, as are solids whose ACIS data are missing or cannot be decoded. Binary DXF is decoded by
 // dxfbinary.js and enters at dxfModels().
 
 import { lineCursor, baseName, Grow, Welder, finish, surfaceModel, pointsModel, M4, V3, tally, cleanName, groupsFromBuckets, unitAdvice, closeLoop } from './common.js';
 import { resolveUnits, suggestUnits } from '../units.js';
 import { sampleCurve, arcPoints } from './nurbs.js';
+import { readSat, acisBodies } from './acis.js';
+import { readSab, isSab } from './sab.js';
 
 const INSUNITS = { 1: 'in', 2: 'ft', 3: 'mi', 4: 'mm', 5: 'cm', 6: 'm', 7: 'km', 9: 'mil', 10: 'yd', 13: 'um', 14: 'dm' };
 const D2R = Math.PI / 180;
+const ACIS_ENTITY = new Set(['3DSOLID', 'REGION', 'BODY', 'SURFACE', 'EXTRUDEDSURFACE', 'REVOLVEDSURFACE', 'LOFTEDSURFACE', 'SWEPTSURFACE', 'PLANESURFACE', 'NURBSSURFACE']);
+
+/**
+ * Undo the character substitution AutoCAD applies to the SAT text it stores in groups 1 and 3: a space stays a
+ * space, every other character c becomes 159 − c (which exchanges "_" and "@", digits and lower-case letters,
+ * and so on), and the space written after a "^" (the substitute of "A") is dropped.
+ */
+export function decodeAcisText(line) {
+  let out = '';
+  for (let i = 0; i < line.length; i++) {
+    const c = line.charCodeAt(i);
+    if (c === 32) out += ' ';
+    else if (c < 33 || c > 126) out += line[i];
+    else { out += String.fromCharCode(159 - c); if (c === 0x5e && line.charCodeAt(i + 1) === 32) i++; }
+  }
+  return out;
+}
+
+const hexBytes = (hex) => { const n = hex.length >> 1, b = new Uint8Array(n); for (let i = 0; i < n; i++) b[i] = parseInt(hex.substr(2 * i, 2), 16); return b; };
 
 /** Object-coordinate-system frame for an extrusion direction (arbitrary axis algorithm, DXF reference). */
 export function ocsMatrix(nx, ny, nz) {
@@ -50,7 +78,7 @@ export function bulgeArc(x1, y1, x2, y2, bulge, out) {
 
 function readPairs(input) {
   const cur = lineCursor(input);
-  const sections = { HEADER: [], TABLES: [], BLOCKS: [], ENTITIES: [] };
+  const sections = { HEADER: [], TABLES: [], BLOCKS: [], ENTITIES: [], ACDSDATA: [] };
   let target = null, n = 0, bad = 0;
   for (;;) {
     const a = cur.next();
@@ -60,7 +88,8 @@ function readPairs(input) {
     const code = parseInt(a, 10);
     if (code !== code) { bad++; if (bad > 20 && n < 5) return null; continue; }
     n++;
-    const v = b.trim();
+    // the text of groups 1 and 3 is kept as written: embedded ACIS lines are split across them at any character
+    const v = (code === 1 || code === 3) && (target === sections.ENTITIES || target === sections.BLOCKS) ? b : b.trim();
     if (code === 0 && v === 'SECTION') { const c2 = cur.next(), nm = cur.next(); if (c2 === null || nm === null) break; target = sections[nm.trim().toUpperCase()] || null; continue; }
     if (code === 0 && v === 'ENDSEC') { target = null; continue; }
     if (code === 0 && v === 'EOF') break;
@@ -74,12 +103,12 @@ function records(flat) {
   const out = [];
   let cur = null;
   for (let i = 0; i < flat.length; i += 2) {
-    if (flat[i] === 0) { cur = { type: flat[i + 1].toUpperCase(), g: [] }; out.push(cur); } else if (cur) cur.g.push(flat[i], flat[i + 1]);
+    if (flat[i] === 0) { cur = { type: String(flat[i + 1]).trim().toUpperCase(), g: [] }; out.push(cur); } else if (cur) cur.g.push(flat[i], flat[i + 1]);
   }
   return out;
 }
 
-const first = (g, code, d) => { for (let i = 0; i < g.length; i += 2) if (g[i] === code) return g[i + 1]; return d; };
+const first = (g, code, d) => { for (let i = 0; i < g.length; i += 2) if (g[i] === code) return code === 1 || code === 3 ? String(g[i + 1]).trim() : g[i + 1]; return d; };
 const num = (g, code, d = 0) => { const v = first(g, code); if (v === undefined) return d; const x = Number(v); return x === x ? x : d; };
 const all = (g, code) => { const o = []; for (let i = 0; i < g.length; i += 2) if (g[i] === code) o.push(Number(g[i + 1])); return o; };
 
@@ -94,8 +123,9 @@ export function parseDxf(input, opts = {}) {
 
 /**
  * Build the models from the group pairs of a drawing, whatever encoding they were stored in.
- * @param {{ HEADER: Array, TABLES: Array, BLOCKS: Array, ENTITIES: Array }} sec flat [code, value, …] lists per
- *   section, codes as numbers and values as trimmed strings (exactly what the ASCII form holds)
+ * @param {{ HEADER: Array, TABLES: Array, BLOCKS: Array, ENTITIES: Array, ACDSDATA?: Array }} sec flat
+ *   [code, value, …] lists per section, codes as numbers and values as trimmed strings (exactly what the ASCII
+ *   form holds; groups 1 and 3 of entities untrimmed)
  */
 export function dxfModels(sec, input, opts = {}) {
   const fname = input.name || 'DXF';
@@ -104,7 +134,7 @@ export function dxfModels(sec, input, opts = {}) {
   const hist = {}, skipped = {};
 
   const header = {};
-  for (let i = 0; i < sec.HEADER.length; i += 2) if (sec.HEADER[i] === 9 && i + 3 < sec.HEADER.length) header[sec.HEADER[i + 1]] = sec.HEADER[i + 3];
+  for (let i = 0; i < sec.HEADER.length; i += 2) if (sec.HEADER[i] === 9 && i + 3 < sec.HEADER.length) header[String(sec.HEADER[i + 1]).trim()] = String(sec.HEADER[i + 3]).trim();
   const insunits = Number(header.$INSUNITS);
   const layers = [];
   for (const r of records(sec.TABLES)) if (r.type === 'LAYER') layers.push(first(r.g, 2, ''));
@@ -130,8 +160,72 @@ export function dxfModels(sec, input, opts = {}) {
   }
   const entities = fold(records(sec.ENTITIES)).filter((r) => num(r.g, 67, 0) !== 1);
 
+  const units = resolveUnits(opts, INSUNITS[insunits] || null, 'm');
+  const s = units.scale;
+
+  // SAB data of the solids of R2013 and later drawings: ACDSRECORD entries with the owner handle and the bytes
+  const sabByHandle = new Map();
+  for (const r of records(sec.ACDSDATA || [])) {
+    if (r.type !== 'ACDSRECORD') continue;
+    let part = '', handle = '', hex = [];
+    for (let i = 0; i < r.g.length; i += 2) {
+      if (r.g[i] === 2) part = r.g[i + 1];
+      else if (r.g[i] === 320 && part === 'AcDbDs::ID') handle = String(r.g[i + 1]).toUpperCase();
+      else if (r.g[i] === 310 && part === 'ASM_Data') hex.push(r.g[i + 1]);
+    }
+    if (handle && hex.length) sabByHandle.set(handle, hex);
+  }
+
   // primitives in world coordinates
-  const segs = [], polys = [], faces = [], points = [];
+  const segs = [], polys = [], faces = [], points = [], solids = [];
+  // `solidBodies`: bodies whose topology is that of a closed solid (every edge shared by two faces);
+  // `closedBodies`: bodies whose triangles came out watertight and consistently oriented
+  const acis = { entities: 0, text: 0, binary: 0, bodies: 0, solidBodies: 0, closedBodies: 0, faces: 0, facesRead: 0 };
+  const acisNotes = new Map();
+  if (opts.deflection !== undefined && !(opts.deflection > 0)) throw new RangeError('deflection: must be a positive length in metres.');
+  if (opts.angularStep !== undefined && !(opts.angularStep > 0 && opts.angularStep <= 90)) throw new RangeError('angularStep: must be within 0…90 degrees.');
+  /** Decode and tessellate the ACIS data of one entity; false (with the reason tallied) when that is not possible. */
+  const emitAcis = (r, M, layer) => {
+    const g = r.g;
+    const lines = [];
+    for (let i = 0; i < g.length; i += 2) { if (g[i] === 1) lines.push(String(g[i + 1])); else if (g[i] === 3 && lines.length) lines[lines.length - 1] += String(g[i + 1]); }
+    let sat = null, why = '';
+    try {
+      if (lines.length) {
+        const plain = /^\s*\d{3,5}\s+\d+\s+\d+\s+\d+\s*$/.test(lines[0]);
+        sat = readSat((plain ? lines : lines.map(decodeAcisText)).join('\n'), `${fname}: ${r.type}`);
+        acis.text++;
+      } else {
+        const hex = sabByHandle.get(String(first(g, 5, '')).toUpperCase());
+        if (!hex) why = 'no ACIS data stored with the entity';
+        else {
+          const bytes = hexBytes(hex.join(''));
+          if (!isSab(bytes)) why = 'the data stored for the entity are not ACIS binary data';
+          else { sat = readSab(bytes, `${fname}: ${r.type}`); acis.binary++; }
+        }
+      }
+    } catch (e) { why = e.message.replace(/^.*?: /, '').replace(/\.$/, ''); }
+    let res = null;
+    if (sat) { try { res = acisBodies(sat, { deflection: opts.deflection !== undefined ? opts.deflection / s : undefined, angularStep: opts.angularStep, name: `${layer} ${r.type}` }); } catch (e) { why = e.message; } }
+    if (!res || (!res.bodies.length && !res.wires.length)) {
+      tally(skipped, `${r.type} (embedded ACIS geometry: ${why || (res && res.warnings[0]) || 'no faces could be read'})`);
+      return false;
+    }
+    acis.entities++;
+    acis.bodies += res.bodies.length; acis.faces += res.stats.faces; acis.facesRead += res.stats.facesRead;
+    for (const b of res.bodies) { if (!b.freeEdges && !b.nonManifoldEdges) acis.solidBodies++; if (b.closed && b.oriented) acis.closedBodies++; }
+    for (const w of res.warnings) acisNotes.set(w, (acisNotes.get(w) || 0) + 1);
+    const mirror = M ? M[0] * (M[5] * M[10] - M[6] * M[9]) - M[4] * (M[1] * M[10] - M[2] * M[9]) + M[8] * (M[1] * M[6] - M[2] * M[5]) < 0 : false;
+    for (const b of res.bodies) {
+      const c = b.coords;
+      if (M) for (let i = 0; i < c.length; i += 3) { const p = M4.apply(M, c[i], c[i + 1], c[i + 2]); c[i] = p[0]; c[i + 1] = p[1]; c[i + 2] = p[2]; }
+      if (mirror) for (let i = 0; i < b.indices.length; i += 3) { const x = b.indices[i + 1]; b.indices[i + 1] = b.indices[i + 2]; b.indices[i + 2] = x; }
+      solids.push({ c, indices: b.indices, groups: b.groups, layer, type: r.type });
+    }
+    for (const w of res.wires) segs.push({ a: P(M, w.a[0], w.a[1], w.a[2]), b: P(M, w.b[0], w.b[1], w.b[2]), layer });
+    tally(hist, r.type);
+    return true;
+  };
   const P = (M, x, y, z) => (M ? M4.apply(M, x, y, z) : [x, y, z]);
   const emitPoly = (M, flat2or3, dim, z, closed, layer, type) => {
     const n = flat2or3.length / dim;
@@ -271,18 +365,17 @@ export function dxfModels(sec, input, opts = {}) {
         tally(hist, 'INSERT');
         break;
       }
-      case '3DSOLID': case 'REGION': case 'BODY': case 'SURFACE': case 'EXTRUDEDSURFACE': case 'REVOLVEDSURFACE': case 'LOFTEDSURFACE': case 'SWEPTSURFACE': case 'PLANESURFACE': case 'NURBSSURFACE':
-        tally(skipped, `${r.type} (embedded ACIS geometry)`); break;
-      default: tally(skipped, r.type);
+      default: if (ACIS_ENTITY.has(r.type)) emitAcis(r, M, layer); else tally(skipped, r.type);
     }
   };
   for (const r of entities) emit(r, null, null, 0);
-  const acis = Object.keys(skipped).filter((k) => /ACIS/.test(k));
-  if (acis.length) warnings.push(`The drawing holds solids/surfaces stored as ACIS data (${acis.map((k) => `${skipped[k]} × ${k.split(' ')[0]}`).join(', ')}), which is not read. Export them as STEP or IGES, or mesh them (3DFACE / polyface), to bring them in.`);
+  const lost = Object.keys(skipped).filter((k) => /ACIS/.test(k));
+  if (lost.length) warnings.push(`${lost.reduce((n, k) => n + skipped[k], 0)} solid / surface entit${lost.reduce((n, k) => n + skipped[k], 0) > 1 ? 'ies' : 'y'} stored as ACIS data could not be read (${lost.map((k) => `${skipped[k]} × ${k}`).join('; ')}). Export them as STEP or IGES, or mesh them (3DFACE / polyface), to bring them in.`);
+  if (acis.entities) {
+    for (const [w, n] of acisNotes) warnings.push(`ACIS solids: ${w}${n > 1 ? ` (in ${n} entities)` : ''}`);
+  }
   for (const k in skipped) if (!/ACIS/.test(k)) warnings.push(`Skipped ${skipped[k]} × ${k}.`);
 
-  const units = resolveUnits(opts, INSUNITS[insunits] || null, 'm');
-  const s = units.scale;
   // extent, for tolerances
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
   const see = (x, y, z) => { if (x < lo[0]) lo[0] = x; if (y < lo[1]) lo[1] = y; if (z < lo[2]) lo[2] = z; if (x > hi[0]) hi[0] = x; if (y > hi[1]) hi[1] = y; if (z > hi[2]) hi[2] = z; };
@@ -290,6 +383,7 @@ export function dxfModels(sec, input, opts = {}) {
   for (const p of polys) for (let i = 0; i < p.c.length; i += 3) see(p.c[i], p.c[i + 1], p.c[i + 2]);
   for (const f of faces) for (const v of f.v) see(...v);
   for (const p of points) see(...p);
+  for (const q of solids) for (let i = 0; i < q.c.length; i += 3) see(q.c[i], q.c[i + 1], q.c[i + 2]);
   if (lo[0] === Infinity) throw new Error(`${fname}: the drawing contains no geometry this reader keeps${Object.keys(skipped).length ? ` (found only: ${Object.keys(skipped).join(', ')})` : ''}.`);
   const ext = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-12);
   const tol = ext * 1e-7;
@@ -307,6 +401,17 @@ export function dxfModels(sec, input, opts = {}) {
     }
     const { indices, groups } = groupsFromBuckets(buckets);
     if (indices.length) models.push(surfaceModel(name, weld.finish(), indices, groups));
+  }
+
+  if (solids.length) {
+    const counts = {};
+    for (const q of solids) {
+      const key = `${q.layer} ${q.type}`;
+      counts[key] = (counts[key] || 0) + 1;
+      const c = q.c;
+      if (s !== 1) for (let i = 0; i < c.length; i++) c[i] *= s;
+      models.push(surfaceModel(cleanName(`${key} ${counts[key]}`), c, q.indices, q.groups, { layer: q.layer, entity: q.type }));
+    }
   }
 
   // closed planar loops → section; optionally chain loose LINE/ARC pieces into loops first
@@ -386,6 +491,7 @@ export function dxfModels(sec, input, opts = {}) {
   const r = finish(models, warnings, {
     format: 'dxf', units, crs: null, elementTypes: hist, skipped, layers: layers.length ? layers : [...new Set([...segs.map((x) => x.layer), ...polys.map((x) => x.layer), ...faces.map((x) => x.layer)])],
     blocks: blocks.size, insunits: Number.isFinite(insunits) ? insunits : null, acadVersion: header.$ACADVER || null, planar: flat,
+    ...(acis.entities || lost.length ? { acis: { ...acis, encoding: acis.text && acis.binary ? 'SAT text and SAB binary' : acis.binary ? 'SAB binary (ACDSDATA)' : 'SAT text (groups 1 / 3)' } } : {}),
   });
   unitAdvice(units, r.meta.bbox, suggestUnits, r.warnings);
   return r;

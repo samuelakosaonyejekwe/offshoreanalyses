@@ -1,7 +1,8 @@
 # Vendored third-party runtimes
 
-Everything under `vendor/` is third-party code shipped unmodified so that the application works offline. Nothing
-is fetched from a CDN at run time. Each runtime is loaded lazily, relative to the module that uses it, the first
+Everything under `vendor/` is third-party code shipped unmodified so that the application works offline. With
+one exception, described under "DWG: a library that is not vendored" below and used only at the explicit request
+of the user, nothing is fetched from a CDN at run time. Each runtime is loaded lazily, relative to the module that uses it, the first
 time a file of the corresponding format is opened. Only the files that are actually loaded are kept: no source
 maps, type definitions, multi-threaded builds or bundles for other loaders.
 
@@ -125,6 +126,60 @@ unmodified and the npm package carries no NOTICE file.
 
 The decoder is compiled without C++ exception support: when it meets a damaged stream it aborts, and the
 adapter then discards the instance and creates a new one for the next file.
+
+## DWG: a library that is not vendored
+
+**Switching it off.** `ENABLED` at the top of `src/geometry/adapters/dwg.js` is the single switch: set it to
+`false` and this copy of the app never downloads or runs the library; DWG files are answered with "save it as DXF".
+
+The only open-source reader for AutoCAD DWG is LibreDWG, published under the GNU General Public License,
+version 3. A WebAssembly build of it is distributed on npm as `@mlightcad/libredwg-web`. That licence does not
+fit the way the runtimes above are shipped, so the library is **not** in this repository, is **not** part of
+any build of the application, and is **not** imported by any of its modules. DWG drawings are read through an
+arrangement that keeps the two apart:
+
+| Part | Where | What it is |
+| --- | --- | --- |
+| The library | `https://cdn.jsdelivr.net/npm/@mlightcad/libredwg-web@0.7.17/dist/libredwg-web.js` (and the `wasm/` files that module loads from the same package) | LibreDWG compiled to WebAssembly with its JavaScript wrapper, GPL-3.0. Served by the public CDN of the npm registry; about 11.2 MB (279 544 + 110 192 + 10 816 837 bytes). The address — one exact version — is the constant `LIBRARY_URL` in `src/geometry/adapters/dwg.js` and appears nowhere else. |
+| The worker | `src/geometry/adapters/dwg.worker.js` | A module Web Worker of this application that contains a message loop and nothing else. On a `read` request that carries the user's consent it executes `import(url)` with the address it was handed, passes the bytes of the drawing to the library, and posts back plain data: header variables, layer names, block definitions and entities with their coordinates. |
+| The adapter | `src/geometry/adapters/dwg.js` | Application code. Refuses to do anything unless called with `consent: true`, starts the worker, sends the DWG bytes, converts the data that come back into DXF group codes and hands them to the application's own DXF reader (`importers/dxf.js`). |
+
+What this means in practice:
+
+* **Consent.** `importFile(file)` on a DWG drawing throws an error whose text says that reading DWG downloads the
+  GPL-3.0-licensed LibreDWG library from a public CDN into the browser and asks for confirmation; only
+  `importFile(file, { consent: true })` proceeds. The user interface is expected to show that text and to pass
+  the option when the user agrees. No request to the CDN is made before that.
+* **Who obtains the library.** The user's browser fetches it from the library's own distribution, at the user's
+  request. The application neither stores nor forwards a copy; `precache.json` and the service worker do not
+  list it, so the offline cache of the application does not contain it.
+* **Where it runs.** In a dedicated worker, separate from the page and from the other workers of the
+  application. The only exchange is by messages: the bytes of the drawing in, a description of the drawing out.
+  The worker is terminated after each drawing.
+* **Network.** A connection is needed the first time. Afterwards the browser's HTTP cache may serve the files
+  (jsDelivr sends long-lived cache headers for versioned URLs), but that is the browser's decision, not something
+  the application controls: `available()` of the adapter reports DWG reading as possible when the device is on
+  line, or when this browser has fetched this version before, and `parse()` gives a clear error if the library
+  then cannot be loaded. In Node, and wherever module workers are missing, DWG is reported as not available and
+  the advice is to save the drawing as DXF.
+* **What is read.** The same entities as from DXF (lines, polylines with bulges, polyface and polygon meshes,
+  3DFACE, SOLID / TRACE, circles, arcs, ellipses, splines, points, blocks through INSERT, layers, `$INSUNITS`).
+  Checked in Chromium on 48 drawings of the LibreDWG test collection (R11, R2000 – R2018): 42 gave models, 6
+  hold nothing this reader keeps (text, rays, viewports); for the one drawing of that collection that also
+  exists as DXF with the same content (`2000/entities-3d`), the models, entity counts and bounding box from the
+  DWG are identical to those from the DXF.
+* **Tests.** `tests/geometry/dwg.test.js` checks the consent gate, the message protocol (with a stand-in for the
+  worker), the conversion to DXF group codes, and the separation itself: no file of the library in `src/` or
+  `vendor/`, no import of it from any module, the CDN address in exactly one constant, and a worker whose only
+  import is the dynamic one of the address it is given.
+
+To change the version, edit `LIBRARY_URL`, `library.version` and `sizeBytes` in `dwg.js` and this section, and
+repeat the browser check (the wrapper's interface — `LibreDwg.create()`, `dwg_read_data()`, `convert()`,
+`dwg_free()` — is what the worker relies on).
+
+This section describes how the software is separated technically. It is not legal advice; whether the
+arrangement meets the obligations of a particular distribution is for whoever distributes the application to
+decide.
 
 ## Updating a runtime
 
