@@ -25,6 +25,17 @@
 // Two planes of symmetry (x = 0 and y = 0) are used when the hull has them: only a quarter of the hull carries
 // unknowns and the six modes fall into four classes that are solved separately.
 //
+// Cost. The Rankine matrices are computed once per hull (closed form within 2.5 panel diameters, the panel's
+// 2 × 2 Gauss rule beyond: 3e-5 of the coefficients) and reused at every frequency and for every class. At a
+// frequency the wave part is assembled from data that do not depend on it (square roots, logarithms and
+// reciprocals of the pair distances are kept with the setup), and the system is solved as K_r + i U V^T: K_r
+// real, and U V^T the outgoing-wave part exp(K(z + zeta)) J0(K R), which separates into a short series of
+// products of functions of the field point and of the source point (Graf's addition theorem; 5–15 terms per
+// class). One real elimination with U as extra right-hand sides and a small complex system replace the complex
+// elimination; frequencies with null-field rows keep the complex one. The same series gives the heading integral
+// of the Haskind damping in closed form. Both are checked against the complex elimination and against the
+// heading quadrature in the tests.
+//
 // Exciting forces come from the Haskind relation, X_i = i omega rho ∫ (phi_0 n_i - phi_i d phi_0/dn) dS with the
 // radiation potentials phi_i and the undisturbed wave phi_0, so no diffraction problem is solved and any heading
 // costs one integral over the hull.
@@ -230,6 +241,8 @@ const MIRRORS = [[1, 1], [-1, 1], [1, -1], [-1, -1]];
 // parity of the six radiation potentials under x -> -x and y -> -y (surge … yaw)
 const PARITY = [[-1, 1], [1, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const G2 = 1 / Math.sqrt(3);
+// distance, in panel diameters, beyond which the Rankine integrals over a panel are taken with its Gauss rule
+const FAR = 2.5;
 
 /**
  * Prepares a set of quadrilateral hull panels for radiationSolve: centroids, normals, areas, the two triangles
@@ -238,12 +251,12 @@ const G2 = 1 / Math.sqrt(3);
  * @param {ArrayLike<number>} quads 12 numbers per panel: four vertices in order, counter-clockwise when seen
  *   from the fluid (the normal (v1 - v0) × (v3 - v0) points into the fluid), m; a triangle repeats its last
  *   vertex. With symmetry only the part of the hull in x >= 0 and/or y >= 0 is given.
- * @returns {object} panel set: { n, quads, centroids, normals, areas, tri, triGeo, triStart, gauss }
+ * @returns {object} panel set: { n, quads, centroids, normals, areas, diam, tri, triGeo, triStart, gauss }
  */
 export function hullPanels(quads) {
   if (!quads || quads.length < 12 || quads.length % 12 !== 0) throw new RangeError('quads must hold four vertices (12 numbers) per panel');
   const n = quads.length / 12;
-  const centroids = new Float64Array(3 * n); const normals = new Float64Array(3 * n); const areas = new Float64Array(n);
+  const centroids = new Float64Array(3 * n); const normals = new Float64Array(3 * n); const areas = new Float64Array(n); const diam = new Float64Array(n);
   const tv = []; const tn = []; const triStart = new Int32Array(n + 1);
   const gauss = new Float64Array(16 * n); // per panel 4 points: x, y, z, weight (m²)
   for (let p = 0; p < n; p++) {
@@ -267,6 +280,7 @@ export function hullPanels(quads) {
     if (!(at > 0) || !(al > 0)) throw new RangeError(`panel ${p} has no area`);
     normals[3 * p] = ax / al; normals[3 * p + 1] = ay / al; normals[3 * p + 2] = az / al;
     centroids[3 * p] = cx / at; centroids[3 * p + 1] = cy / at; centroids[3 * p + 2] = cz / at; areas[p] = at;
+    for (let c = 0; c < 4; c++) diam[p] = Math.max(diam[p], 2 * Math.hypot(quads[q + 3 * c] - centroids[3 * p], quads[q + 3 * c + 1] - centroids[3 * p + 1], quads[q + 3 * c + 2] - centroids[3 * p + 2]));
     if (centroids[3 * p + 2] >= 0) throw new RangeError('panels must lie below the still-water plane z = 0');
     for (const [i1, i2, nx, ny, nz] of tris) {
       tv.push(quads[q], quads[q + 1], quads[q + 2]);
@@ -286,7 +300,7 @@ export function hullPanels(quads) {
     }
   }
   const tri = { n: tn.length / 3, vertices: Float64Array.from(tv), normals: Float64Array.from(tn) };
-  return { n, quads: Float64Array.from(quads), centroids, normals, areas, tri, triGeo: panelGeometry(tri), triStart, gauss };
+  return { n, quads: Float64Array.from(quads), centroids, normals, areas, diam, tri, triGeo: panelGeometry(tri), triStart, gauss };
 }
 
 // Complex Gaussian elimination with partial pivoting; a: n×n interleaved (re, im) row-major, b: nrhs columns
@@ -326,6 +340,43 @@ function csolveDense(a, n, b) {
   }
 }
 
+const _r5 = new Float64Array(5);
+
+// One row of the frequency-independent matrices: field point pt (a panel centre or an interior point, possibly
+// mirrored) against every panel; `self` is the index of the panel the point is the centre of, or -1. Kept as a
+// function of its own (called once per row, with the point in a typed array) so that it is compiled early.
+function setupRow(row, i, self, pt) {
+  const { panels, n } = row;
+  const C = panels.centroids; const N = panels.normals; const gp = panels.gauss; const diam = panels.diam; const triStart = panels.triStart;
+  const px = pt[0]; const py = pt[1]; const pz = pt[2]; const r = _r5;
+  const Sm = row.S; const Dm = row.D; const Rm = row.R; const dm = row.dRn; const sq = row.sq; const lg = row.lg; const gd = row.gd; const iv = row.iv;
+  for (let j = 0; j < n; j++) {
+    let pot = 0; let ker = 0;
+    const cx = C[3 * j] - px; const cy = C[3 * j + 1] - py; const far2 = FAR * FAR * diam[j] * diam[j];
+    const nx = N[3 * j]; const ny = N[3 * j + 1]; const nz = N[3 * j + 2];
+    for (let im = 0; im < 2; im++) {
+      const fz = im === 0 ? pz : -pz; const cz = C[3 * j + 2] - fz;
+      if (cx * cx + cy * cy + cz * cz > far2) {
+        // far from the panel: 2 × 2 Gauss rule for ∫ 1/r dS and for the signed solid angle -∫ n·(p - xi)/r³ dS
+        for (let q = 16 * j; q < 16 * j + 16; q += 4) {
+          const dx = px - gp[q]; const dy = py - gp[q + 1]; const dz = fz - gp[q + 2];
+          const r2 = dx * dx + dy * dy + dz * dz; const w = gp[q + 3] / Math.sqrt(r2);
+          pot += w; ker -= (w * (dx * nx + dy * ny + dz * nz)) / r2;
+        }
+      } else {
+        for (let t = triStart[j]; t < triStart[j + 1]; t++) { panelIntegral(panels.tri, panels.triGeo, t, px, py, fz, self === j && im === 0, r); pot += r[0]; ker += r[4]; }
+      }
+    }
+    const q = i * n + j;
+    Sm[q] = pot; Dm[q] = ker;
+    const rr = Math.sqrt(cx * cx + cy * cy);
+    Rm[q] = rr; dm[q] = rr > 0 ? (cx * nx + cy * ny) / rr : 0;
+    const a = -(pz + C[3 * j + 2]); const d = Math.sqrt(rr * rr + a * a);
+    if (row.zs) { row.zs[q] = -a; row.sqA[q] = Math.sqrt(a); }
+    sq[q] = Math.sqrt(rr); lg[q] = Math.log(d + a); gd[q] = rr / (d * (d + a)); iv[q] = 1 / d;
+  }
+}
+
 /**
  * Frequency-independent part of the panel problem: Rankine influence matrices (1/r and its image in z = 0,
  * closed form) and the geometry the wave part needs, for the field points of every mirror copy.
@@ -345,33 +396,26 @@ export function radiationSetup({ panels, symmetry = {}, ref = [0, 0, 0], interio
   if ((symX && ref[0] !== 0) || (symY && ref[1] !== 0)) throw new RangeError('ref must lie on the planes of symmetry');
   const mirrors = MIRRORS.filter(([sx, sy]) => (symX || sx === 1) && (symY || sy === 1));
   const nm = mirrors.length; const n = panels.n; const np = interiorPoints.length; const nr = n + np;
-  const C = panels.centroids; const N = panels.normals; const Ar = panels.areas;
+  const C = panels.centroids; const N = panels.normals; const Ar = panels.areas; const gp = panels.gauss;
   for (let i = 0; i < n; i++) if ((symX && C[3 * i] <= 0) || (symY && C[3 * i + 1] <= 0)) throw new RangeError('with symmetry the panels must lie in x > 0 / y > 0');
   // S: ∫ (1/r + 1/r') dS, D: minus the normal-dipole integral (signed solid angle), rows = field points
   const S = []; const D = []; const R = []; const dRn = [];
-  const zs = new Float64Array(nr * n);
-  const r = new Float64Array(5);
+  // per pair and mirror, for the wave part: sqrt(R), ln(d + |z + zeta|), R/(d (d + |z + zeta|)) and 1/d with
+  // d = sqrt(R² + (z + zeta)²); none of them depends on the frequency
+  const sqR = []; const lgD = []; const gD = []; const invD = [];
+  const zs = new Float64Array(nr * n); const sqA = new Float64Array(nr * n);
+  const pt = new Float64Array(3);
   for (let m = 0; m < nm; m++) {
-    const Sm = new Float64Array(nr * n); const Dm = new Float64Array(nr * n); const Rm = new Float64Array(nr * n); const dm = new Float64Array(nr * n);
+    const row = { panels, n, S: new Float64Array(nr * n), D: new Float64Array(nr * n), R: new Float64Array(nr * n), dRn: new Float64Array(nr * n),
+      sq: new Float64Array(nr * n), lg: new Float64Array(nr * n), gd: new Float64Array(nr * n), iv: new Float64Array(nr * n), zs: m === 0 ? zs : null, sqA: m === 0 ? sqA : null };
     const [sx, sy] = mirrors[m];
     for (let i = 0; i < nr; i++) {
       const src = i < n ? C : interiorPoints[i - n]; const o = i < n ? 3 * i : 0;
-      const px = sx * src[o]; const py = sy * src[o + 1]; const pz = src[o + 2];
-      if (!(pz < 0)) throw new RangeError('interior points must lie below z = 0');
-      for (let j = 0; j < n; j++) {
-        let pot = 0; let ker = 0;
-        const self = m === 0 && i === j;
-        for (let t = panels.triStart[j]; t < panels.triStart[j + 1]; t++) {
-          panelIntegral(panels.tri, panels.triGeo, t, px, py, pz, self, r); pot += r[0]; ker += r[4];
-          panelIntegral(panels.tri, panels.triGeo, t, px, py, -pz, false, r); pot += r[0]; ker += r[4];
-        }
-        Sm[i * n + j] = pot; Dm[i * n + j] = ker;
-        const dx = C[3 * j] - px; const dy = C[3 * j + 1] - py; const rr = Math.hypot(dx, dy);
-        Rm[i * n + j] = rr; dm[i * n + j] = rr > 0 ? (dx * N[3 * j] + dy * N[3 * j + 1]) / rr : 0;
-        if (m === 0) zs[i * n + j] = pz + C[3 * j + 2];
-      }
+      pt[0] = sx * src[o]; pt[1] = sy * src[o + 1]; pt[2] = src[o + 2];
+      if (!(pt[2] < 0)) throw new RangeError('interior points must lie below z = 0');
+      setupRow(row, i, m === 0 && i < n ? i : -1, pt);
     }
-    S.push(Sm); D.push(Dm); R.push(Rm); dRn.push(dm);
+    S.push(row.S); D.push(row.D); R.push(row.R); dRn.push(row.dRn); sqR.push(row.sq); lgD.push(row.lg); gD.push(row.gd); invD.push(row.iv);
   }
   let rMax = 0;
   for (const Rm of R) for (let i = 0; i < Rm.length; i++) if (Rm[i] > rMax) rMax = Rm[i];
@@ -405,10 +449,197 @@ export function radiationSetup({ panels, symmetry = {}, ref = [0, 0, 0], interio
       for (let c = 0; c < cl.modes.length; c++) cl.rhs0[c][i] -= sv * gn[cl.modes[c]][j];
     }
   }
-  return { panels, mirrors, classes, n, np, nr, R, dRn, zs, gn, ref: Array.from(ref), rMax, areas: Ar };
+  let rhoMax = 0;
+  for (let i = 0; i < panels.gauss.length; i += 4) rhoMax = Math.max(rhoMax, Math.hypot(panels.gauss[i], panels.gauss[i + 1]));
+  for (let i = 0; i < n; i++) rhoMax = Math.max(rhoMax, Math.hypot(C[3 * i], C[3 * i + 1]));
+  const zRow = new Float64Array(nr);
+  for (let i = 0; i < nr; i++) zRow[i] = i < n ? C[3 * i + 2] : interiorPoints[i - n][2];
+  return { panels, mirrors, classes, n, np, nr, R, dRn, zs, sqA, sqR, lgD, gD, invD, zRow, gn, ref: Array.from(ref), rMax, rhoMax, areas: Ar };
 }
 
+// Bessel functions J_0 … J_P at z by downward recurrence (Miller's algorithm), normalised with
+// J_0 + 2 (J_2 + J_4 + …) = 1 (Abramowitz & Stegun ch. 9, generating function and backward recurrence).
+function besselJs(z, P, out) {
+  if (z < 1e-9) { out.fill(0, 0, P + 1); out[0] = 1; return; }
+  const top = Math.max(P, Math.ceil(z));
+  const M = 2 * Math.ceil(0.5 * (top + 12 + Math.sqrt(48 * top + 60)));
+  let jp = 0; let j = 1e-280; let sum = 0;
+  for (let k = M; k > 0; k--) {
+    const jm = ((2 * k) / z) * j - jp;
+    jp = j; j = jm;
+    if (k - 1 <= P) out[k - 1] = j;
+    if (((k - 1) & 1) === 0) sum += k === 1 ? j : 2 * j;
+    if (Math.abs(j) > 1e250) { j *= 1e-250; jp *= 1e-250; sum *= 1e-250; for (let q = k - 1; q <= P; q++) out[q] *= 1e-250; }
+  }
+  const inv = 1 / sum;
+  for (let q = 0; q <= P; q++) out[q] *= inv;
+}
+
+// Separable form of the outgoing-wave (imaginary) part of the Green function: with polar coordinates (r, theta)
+// of the field point and (rho, theta') of the source point about the vertical axis through the origin,
+//   exp(K (z + zeta)) J0(K R) = sum_p eps_p h_p(x) · h_p(xi),  h = exp(K z) J_p(K r) {cos, sin}(p theta),
+// eps_0 = 1, eps_p = 2 (Graf's addition theorem, Abramowitz & Stegun ch. 9). For a hull with both planes of
+// symmetry each class of modes keeps one family: cos with p even (heave), cos with p odd (surge, pitch), sin with
+// p odd (sway, roll), sin with p even (yaw). Fills h and the normal derivative dh/dn (times `scale`) of the
+// family of class signs (ex, ey) for np points (`per` points per panel normal): out.h[i * nb + b],
+// out.d[i * nb + b]; returns the number of orders and the first one.
+function waveFamily(K, P, ex, ey, np, xyz, stride, normals, per, out) {
+  const cosine = ey === 1; const first = cosine ? (ex === 1 ? 0 : 1) : (ex === 1 ? 1 : 2);
+  const nb = first > P ? 0 : Math.floor((P - first) / 2) + 1;
+  if (!out.h || out.h.length < np * nb) { out.h = new Float64Array(np * nb); out.d = new Float64Array(np * nb); }
+  if (!out.J || out.J.length < P + 3) out.J = new Float64Array(P + 3);
+  const J = out.J; const h = out.h; const d = out.d;
+  for (let i = 0; i < np; i++) {
+    const x = xyz[stride * i]; const y = xyz[stride * i + 1]; const z = xyz[stride * i + 2];
+    const no = 3 * (per === 1 ? i : Math.floor(i / per));
+    const nx = normals[no]; const ny = normals[no + 1]; const nz = normals[no + 2];
+    const rho = Math.hypot(x, y); const ct = x / rho; const st = y / rho;
+    const nr = nx * ct + ny * st; const nt = -nx * st + ny * ct;
+    besselJs(K * rho, P + 1, J);
+    const e = Math.exp(K * z);
+    // cos(p theta), sin(p theta) by the angle-addition recurrence
+    let cp = 1; let sp = 0;
+    for (let q = 0; q < first; q++) { const c2 = cp * ct - sp * st; sp = sp * ct + cp * st; cp = c2; }
+    const c2t = ct * ct - st * st; const s2t = 2 * st * ct;
+    for (let b = 0; b < nb; b++) {
+      const pp = first + 2 * b;
+      const Jp = J[pp]; const dJ = pp === 0 ? -J[1] : 0.5 * (J[pp - 1] - J[pp + 1]);
+      const tr = cosine ? cp : sp; const dtr = cosine ? -sp : cp; // d/d(p theta)
+      h[i * nb + b] = e * Jp * tr;
+      d[i * nb + b] = e * (K * nz * Jp * tr + K * nr * dJ * tr + (nt * pp * Jp * dtr) / rho);
+      const c3 = cp * c2t - sp * s2t; sp = sp * c2t + cp * s2t; cp = c3;
+    }
+  }
+  return { nb, first };
+}
+
+// Gaussian elimination with partial pivoting on a real n × nc matrix (row-major) whose columns n … nc - 1 are
+// right-hand sides; they are overwritten by the solutions.
+function rsolveAugmented(a, n, nc) {
+  for (let c = 0; c < n; c++) {
+    let p = c; let best = Math.abs(a[c * nc + c]);
+    for (let r = c + 1; r < n; r++) { const v = Math.abs(a[r * nc + c]); if (v > best) { best = v; p = r; } }
+    if (!(best > 0)) throw new Error('radiationSolve: the influence matrix is singular (duplicate or degenerate panels?)');
+    const rc = c * nc;
+    if (p !== c) { const rp = p * nc; for (let j = c; j < nc; j++) { const t = a[rc + j]; a[rc + j] = a[rp + j]; a[rp + j] = t; } }
+    const inv = 1 / a[rc + c];
+    for (let r = c + 1; r < n; r++) {
+      const rr = r * nc; const f = a[rr + c] * inv;
+      if (f === 0) continue;
+      let j = c + 1;
+      for (; j + 3 < nc; j += 4) { a[rr + j] -= f * a[rc + j]; a[rr + j + 1] -= f * a[rc + j + 1]; a[rr + j + 2] -= f * a[rc + j + 2]; a[rr + j + 3] -= f * a[rc + j + 3]; }
+      for (; j < nc; j++) a[rr + j] -= f * a[rc + j];
+    }
+  }
+  for (let r = n - 1; r >= 0; r--) {
+    const rr = r * nc; const inv = 1 / a[rr + r];
+    for (let k = n; k < nc; k++) a[rr + k] *= inv;
+    for (let q = 0; q < r; q++) { const f = a[q * nc + r]; if (f !== 0) { const qq = q * nc; for (let k = n; k < nc; k++) a[qq + k] -= f * a[rr + k]; } }
+  }
+}
+
+const _fam = {}; const _famG = {};
+// order at which the series of waveFamily is cut: the terms fall off faster than exponentially beyond p = z
+const familyOrder = (z) => Math.ceil(z + 2 * Math.cbrt(z) + 3);
+
 const _g = { F: 0, FX: 0, FY: 0, J0: 0, J1: 0 };
+const _t4 = new Float64Array(4);
+
+// Smooth parts of the tables at grid coordinates qx = sqrt(X)/HQ and qs = sqrt(|Y|)/HS (qs below the last node):
+// reads them from _t4[0], _t4[1] and writes T, dT/dX, J0, J1 to _t4 (numbers passed as arguments between
+// functions are allocated on the heap by the engine; a typed array is not). The same interpolation as waveGreenFunction, without its logarithm and
+// exponential, which radiationSolve takes from the frequency-independent pair data of the setup.
+function tableAt(tb) {
+  const qx = _t4[0]; const qs = _t4[1];
+  let ix = Math.floor(qx) - 1;
+  if (ix < 0) ix = 0; else if (ix > NQ - 4) ix = NQ - 4;
+  let u = qx - ix - 1;
+  const x0 = (-u * (u - 1) * (u - 2)) / 6; const x1 = ((u + 1) * (u - 1) * (u - 2)) / 2; const x2 = (-(u + 1) * u * (u - 2)) / 2; const x3 = ((u + 1) * u * (u - 1)) / 6;
+  let is = Math.floor(qs) - 1;
+  if (is < 0) is = 0; else if (is > NS - 4) is = NS - 4;
+  u = qs - is - 1;
+  const s0 = (-u * (u - 1) * (u - 2)) / 6; const s1 = ((u + 1) * (u - 1) * (u - 2)) / 2; const s2 = (-(u + 1) * u * (u - 2)) / 2; const s3 = ((u + 1) * u * (u - 1)) / 6;
+  const T = tb.T; const TX = tb.TX;
+  let o = ix * NS + is;
+  let t = x0 * (s0 * T[o] + s1 * T[o + 1] + s2 * T[o + 2] + s3 * T[o + 3]); let tx = x0 * (s0 * TX[o] + s1 * TX[o + 1] + s2 * TX[o + 2] + s3 * TX[o + 3]);
+  o += NS; t += x1 * (s0 * T[o] + s1 * T[o + 1] + s2 * T[o + 2] + s3 * T[o + 3]); tx += x1 * (s0 * TX[o] + s1 * TX[o + 1] + s2 * TX[o + 2] + s3 * TX[o + 3]);
+  o += NS; t += x2 * (s0 * T[o] + s1 * T[o + 1] + s2 * T[o + 2] + s3 * T[o + 3]); tx += x2 * (s0 * TX[o] + s1 * TX[o + 1] + s2 * TX[o + 2] + s3 * TX[o + 3]);
+  o += NS; t += x3 * (s0 * T[o] + s1 * T[o + 1] + s2 * T[o + 2] + s3 * T[o + 3]); tx += x3 * (s0 * TX[o] + s1 * TX[o + 1] + s2 * TX[o + 2] + s3 * TX[o + 3]);
+  _t4[0] = t; _t4[1] = tx;
+  _t4[2] = x0 * tb.J0[ix] + x1 * tb.J0[ix + 1] + x2 * tb.J0[ix + 2] + x3 * tb.J0[ix + 3];
+  _t4[3] = x0 * tb.J1[ix] + x1 * tb.J1[ix + 1] + x2 * tb.J1[ix + 2] + x3 * tb.J1[ix + 3];
+}
+
+// Wave part of the influence matrices for mirror copy m at wave number K: wS = A_j Gw and wK = -A_j dGw/dn at
+// the source panel (real parts; imaginary parts wSi, wKi unless `realOnly`). Gw depends on the pair of points
+// only through R and z + zeta, so on the hull it is evaluated once for (i, j) and (j, i).
+function waveMatrices(setup, m, K, nr, realOnly, tb) {
+  const { n, areas, zs, sqA } = setup; const N = setup.panels.normals;
+  const twoK = 2 * K; const twoK2 = 2 * K * K;
+  const sK = Math.sqrt(K); const logK = Math.log(K); const invK = 1 / K; const qxs = sK / HQ; const qss = sK / HS;
+  const ez = setup.ez; const t4 = _t4; const qsMax = NS - 1; const splitSolve = realOnly;
+  const sq = setup.sqR[m]; const lg = setup.lgD[m]; const gd = setup.gD[m]; const iv = setup.invD[m]; const dn = setup.dRn[m]; const Rm = setup.R[m];
+  const WS = setup.wS[m]; const WK = setup.wK[m]; const WSi = splitSolve ? null : setup.wSi[m]; const WKi = splitSolve ? null : setup.wKi[m];
+  for (let i = 0; i < nr; i++) {
+    const both = i < n; const ezi = ez[i]; const ai = both ? areas[i] : 0; const nzi = both ? N[3 * i + 2] : 0;
+    for (let j = both ? i : 0; j < n; j++) {
+      const q = i * n + j;
+      const ey = ezi * ez[j]; const qs = qss * sqA[q];
+      let F; let FX; let FY;
+      if (qs < qsMax) {
+        t4[0] = qxs * sq[q]; t4[1] = qs;
+        tableAt(tb);
+        F = t4[0] - ey * (logK + lg[q]); FX = t4[1] - ey * gd[q] * invK; FY = F + iv[q] * invK;
+      } else {
+        waveGreenFunction(K * Rm[q], K * zs[q], _g);
+        F = _g.F; FX = _g.FX; FY = _g.FY; t4[2] = _g.J0; t4[3] = _g.J1;
+      }
+      const aj = areas[j]; const nzj = N[3 * j + 2];
+      WS[q] = aj * twoK * F; WK[q] = -aj * twoK2 * (FX * dn[q] + FY * nzj);
+      const two = both && j !== i; const q2 = j * n + i;
+      if (two) { WS[q2] = ai * twoK * F; WK[q2] = -ai * twoK2 * (FX * dn[q2] + FY * nzi); }
+      if (splitSolve) continue;
+      const e0 = Math.PI * ey * t4[2]; const e1 = Math.PI * ey * t4[3];
+      WSi[q] = -aj * twoK * e0; WKi[q] = -aj * twoK2 * (e1 * dn[q] - e0 * nzj);
+      if (two) { WSi[q2] = -ai * twoK * e0; WKi[q2] = -ai * twoK2 * (e1 * dn[q2] - e0 * nzi); }
+    }
+  }
+}
+
+// Signed sums of the mirror matrices of one class: system matrix (added to the Rankine part already in ac.kc)
+// and right-hand sides -S n_k.
+function combineClass(setup, ac, nr, splitSolve) {
+  const n = setup.n; const nm = setup.mirrors.length;
+  const kc = ac.kc; const sg = ac.cl.signs; const nrh = ac.rhs.length;
+  const g0 = ac.gns[0]; const g1 = nrh > 1 ? ac.gns[1] : g0; const b0 = ac.rhs[0]; const b1 = nrh > 1 ? ac.rhs[1] : null;
+  for (let part = 0; part < (splitSolve ? 1 : 2); part++) {
+    const WKs = part === 0 ? setup.wK : setup.wKi; const WSs = part === 0 ? setup.wS : setup.wSi;
+    if (nm === 4) {
+      const s1 = sg[1]; const s2 = sg[2]; const s3 = sg[3];
+      const K0 = WKs[0]; const K1 = WKs[1]; const K2 = WKs[2]; const K3 = WKs[3]; const S0 = WSs[0]; const S1 = WSs[1]; const S2 = WSs[2]; const S3 = WSs[3];
+      for (let i = 0; i < nr; i++) {
+        let a0 = 0; let a1 = 0;
+        for (let j = 0; j < n; j++) {
+          const q = i * n + j;
+          kc[2 * q + part] += K0[q] + s1 * K1[q] + s2 * K2[q] + s3 * K3[q];
+          const sv = S0[q] + s1 * S1[q] + s2 * S2[q] + s3 * S3[q];
+          a0 += sv * g0[j]; a1 += sv * g1[j];
+        }
+        b0[2 * i + part] -= a0;
+        if (b1) b1[2 * i + part] -= a1;
+      }
+    } else {
+      for (let m = 0; m < nm; m++) {
+        const w = sg[m]; const WK = WKs[m]; const WS = WSs[m];
+        for (let i = 0; i < nr; i++) {
+          const ro = i * n;
+          for (let j = 0; j < n; j++) kc[2 * (ro + j) + part] += w * WK[ro + j];
+          for (let r = 0; r < nrh; r++) { const gv = ac.gns[r]; let sum = 0; for (let j = 0; j < n; j++) sum += WS[ro + j] * gv[j]; ac.rhs[r][2 * i + part] -= w * sum; }
+        }
+      }
+    }
+  }
+}
 
 /**
  * Radiation problem at one frequency: added mass, wave damping and the radiation potentials on the panels.
@@ -424,11 +655,13 @@ const _g = { F: 0, FX: 0, FY: 0, J0: 0, J1: 0 };
  * @param {number} [o.g=9.80665] m/s²
  * @param {number[]} [o.modes] modes to solve (0 surge … 5 yaw; default all)
  * @param {boolean} [o.nullField=true] use the interior points of the setup at this frequency
+ * @param {boolean} [o.split=true] solve through the real part of the system and the separable wave part (used
+ *   with both planes of symmetry when no null-field rows are active); false forces the complex elimination
  * @returns {{omega:number, A:number[][], B:number[][], phi:(Float64Array|null)[], symmetryError:number}} A in
  *   kg, kg·m, kg·m²; B in N·s/m, N·s, N·m·s (about `ref`); phi per mode: complex potential per unit velocity on
  *   the panels (re, im interleaved), m²/s per m/s or per rad/s
  */
-export function radiationSolve({ setup, omega, rho = 1025, g = G, modes, nullField = true }) {
+export function radiationSolve({ setup, omega, rho = 1025, g = G, modes, nullField = true, split = true }) {
   if (!(omega > 0)) throw new RangeError('omega must be > 0');
   const { n, mirrors, classes, R, dRn, zs, gn, areas, panels } = setup;
   const K = (omega * omega) / g;
@@ -448,34 +681,56 @@ export function radiationSolve({ setup, omega, rho = 1025, g = G, modes, nullFie
     const rhs = idx.map((c) => { const b = new Float64Array(2 * nr); for (let i = 0; i < nr; i++) b[2 * i] = cl.rhs0[c][i]; return b; });
     act.push({ cl, kc, rhs, gns: idx.map((c) => gn[cl.modes[c]]), ms: idx.map((c) => cl.modes[c]) });
   }
-  // wave part: S += A_j Gw, K += -A_j dGw/dn at the source panel. Gw depends on the pair of points only through
-  // R and z + zeta, so on the hull it is evaluated once for (i, j) and (j, i).
-  const twoK = 2 * K; const twoK2 = 2 * K * K; const na = act.length;
-  const add = (i, j, q, m, F, FX, FY, eJ0, eJ1) => {
-    const a = areas[j]; const nz = N[3 * j + 2]; const dn = dRn[m][q];
-    const sr = a * twoK * F; const si = -a * twoK * eJ0;
-    const kr = -a * twoK2 * (FX * dn + FY * nz); const ki = -a * twoK2 * (eJ1 * dn - eJ0 * nz);
-    for (let c = 0; c < na; c++) {
-      const ac = act[c]; const sg = ac.cl.signs[m];
-      ac.kc[2 * q] += sg * kr; ac.kc[2 * q + 1] += sg * ki;
-      for (let r = 0; r < ac.rhs.length; r++) { const v = sg * ac.gns[r][j]; ac.rhs[r][2 * i] -= sr * v; ac.rhs[r][2 * i + 1] -= si * v; }
-    }
-  };
-  for (let m = 0; m < nm; m++) {
-    const Rm = R[m];
-    for (let i = 0; i < nr; i++) {
-      for (let j = i < n ? i : 0; j < n; j++) {
-        const q = i * n + j;
-        const Y = K * zs[q];
-        waveGreenFunction(K * Rm[q], Y, _g);
-        const e = Math.PI * Math.exp(Y);
-        add(i, j, q, m, _g.F, _g.FX, _g.FY, e * _g.J0, e * _g.J1);
-        if (i < n && j !== i) add(j, i, j * n + i, m, _g.F, _g.FX, _g.FY, e * _g.J0, e * _g.J1);
-      }
-    }
-  }
+  const splitSolve = split && nm === 4 && nr === n; // then only the real parts are assembled (see below)
+  // wave part: one matrix pair per mirror copy (waveMatrices), then the signed sums of every class
+  const tb = tables(Math.min(NQ - 1, Math.ceil(Math.sqrt(K * setup.rMax) / HQ) + 4));
+  if (!setup.ez) { setup.ez = new Float64Array(setup.nr); setup.wS = mirrors.map(() => new Float64Array(setup.nr * n)); setup.wK = mirrors.map(() => new Float64Array(setup.nr * n)); }
+  if (!splitSolve && !setup.wSi) { setup.wSi = mirrors.map(() => new Float64Array(setup.nr * n)); setup.wKi = mirrors.map(() => new Float64Array(setup.nr * n)); }
+  for (let i = 0; i < nr; i++) setup.ez[i] = Math.exp(K * setup.zRow[i]);
+  for (let m = 0; m < nm; m++) waveMatrices(setup, m, K, nr, splitSolve, tb);
+  for (const ac of act) combineClass(setup, ac, nr, splitSolve);
   const phi = [null, null, null, null, null, null];
-  for (const { kc, rhs, ms } of act) {
+  // Without null-field rows and with both planes of symmetry the system is K_r + i U V^T with K_r real and
+  // U V^T the separable wave part of low rank (waveFamily): one real elimination with U and the real right-hand
+  // sides as columns, then a small complex system. phi = y + i Z c, K_r y = b_r, K_r Z = U,
+  // (I + i V^T Z) c = t - V^T y, where the imaginary part of the right-hand side is U t.
+  const P = splitSolve ? familyOrder(K * setup.rhoMax) : 0;
+  for (const { kc, rhs, ms, gns, cl } of act) {
+    if (splitSolve) {
+      const { nb } = waveFamily(K, P, cl.signs[1], cl.signs[2], n, panels.centroids, 3, N, 1, _fam);
+      const h = _fam.h; const dh = _fam.d; const nmd = ms.length; const nc = n + nb + nmd;
+      if (!cl.aug || cl.aug.length < n * nc) cl.aug = new Float64Array(n * (n + nb + 8 + nmd));
+      const aug = cl.aug; const c2 = 2 * Math.PI * K;
+      for (let i = 0; i < n; i++) {
+        const ro = i * nc;
+        for (let j = 0; j < n; j++) aug[ro + j] = kc[2 * (i * n + j)];
+        for (let b = 0; b < nb; b++) aug[ro + n + b] = (cl.signs[1] === 1 && cl.signs[2] === 1 && b === 0 ? c2 : 2 * c2) * h[i * nb + b];
+        for (let c = 0; c < nmd; c++) aug[ro + n + nb + c] = rhs[c][2 * i];
+      }
+      rsolveAugmented(aug, n, nc);
+      // V^T Z and the right-hand sides t - V^T y of the small system
+      const sys = new Float64Array(2 * nb * nb); const cols = ms.map(() => new Float64Array(2 * nb));
+      for (let j = 0; j < n; j++) {
+        const ro = j * nc; const a4 = 4 * areas[j];
+        for (let b = 0; b < nb; b++) {
+          const v = a4 * dh[j * nb + b]; const hv = a4 * h[j * nb + b];
+          for (let q = 0; q < nb; q++) sys[2 * (b * nb + q) + 1] += v * aug[ro + n + q];
+          for (let c = 0; c < nmd; c++) cols[c][2 * b] += hv * gns[c][j] - v * aug[ro + n + nb + c];
+        }
+      }
+      for (let b = 0; b < nb; b++) sys[2 * (b * nb + b)] = 1;
+      if (nb > 0) csolveDense(sys, nb, cols);
+      for (let c = 0; c < nmd; c++) {
+        const f = new Float64Array(2 * n); const cc = cols[c];
+        for (let i = 0; i < n; i++) {
+          const ro = i * nc; let re = aug[ro + n + nb + c]; let im = 0;
+          for (let b = 0; b < nb; b++) { const zb = aug[ro + n + b]; re -= zb * cc[2 * b + 1]; im += zb * cc[2 * b]; }
+          f[2 * i] = re; f[2 * i + 1] = im;
+        }
+        phi[ms[c]] = f;
+      }
+      continue;
+    }
     if (nr > n) {
       // null-field equations C phi = d added to the surface equations with unit weight: (K + C^H C) phi = b + C^H d
       for (let p = n; p < nr; p++) {
@@ -531,28 +786,35 @@ export function haskindExcitation({ setup, phi, omega, headingDeg = 0, rho = 102
   const { panels, mirrors, n, ref } = setup;
   const K = (omega * omega) / g;
   const cb = Math.cos((headingDeg * Math.PI) / 180); const sb = Math.sin((headingDeg * Math.PI) / 180);
-  const N = panels.normals; const gp = panels.gauss;
+  const N = panels.normals; const gp = panels.gauss; const nm = mirrors.length;
   // I_i = ∫ (phi_0 n_i - phi_i d phi_0/dn) dS / (i g/omega)
   const Ir = [0, 0, 0, 0, 0, 0]; const Ii = [0, 0, 0, 0, 0, 0];
-  const nk = [0, 0, 0, 0, 0, 0];
+  const ks = []; const par = [];
+  for (let k = 0; k < 6; k++) if (phi[k]) { ks.push(k); par.push(mirrors.map(([sx, sy]) => (sx === -1 ? PARITY[k][0] : 1) * (sy === -1 ? PARITY[k][1] : 1))); }
+  const nk = ks.length;
   for (let p = 0; p < n; p++) {
-    for (const [sx, sy] of mirrors) {
-      const nx = sx * N[3 * p]; const ny = sy * N[3 * p + 1]; const nz = N[3 * p + 2];
-      // d phi_0/dn = phi_0 (K nz - i K (nx cb + ny sb))
-      const dr = K * nz; const di = -K * (nx * cb + ny * sb);
-      for (let q = 0; q < 4; q++) {
-        const o = 16 * p + 4 * q;
-        const x = sx * gp[o]; const y = sy * gp[o + 1]; const z = gp[o + 2]; const w = gp[o + 3];
-        const amp = w * Math.exp(K * z); const ph = -K * (x * cb + y * sb);
-        const er = amp * Math.cos(ph); const ei = amp * Math.sin(ph);
-        const rx = x - ref[0]; const ry = y - ref[1]; const rz = z - ref[2];
-        nk[0] = nx; nk[1] = ny; nk[2] = nz; nk[3] = ry * nz - rz * ny; nk[4] = rz * nx - rx * nz; nk[5] = rx * ny - ry * nx;
-        for (let k = 0; k < 6; k++) {
-          if (!phi[k]) continue;
+    const n0x = N[3 * p]; const n0y = N[3 * p + 1]; const nz = N[3 * p + 2];
+    for (let q = 0; q < 4; q++) {
+      const o = 16 * p + 4 * q;
+      const x0 = gp[o]; const y0 = gp[o + 1]; const z = gp[o + 2];
+      // exp(-i K (x cb + y sb)) of the mirror copies from one cosine and sine per coordinate
+      const amp = gp[o + 3] * Math.exp(K * z);
+      const cx = Math.cos(K * x0 * cb); const sx0 = Math.sin(K * x0 * cb); const cy = Math.cos(K * y0 * sb); const sy0 = Math.sin(K * y0 * sb);
+      const rz = z - ref[2];
+      for (let m = 0; m < nm; m++) {
+        const sx = mirrors[m][0]; const sy = mirrors[m][1];
+        const ax = -sx * sx0; const ay = -sy * sy0; // imaginary parts of the two factors
+        const er = amp * (cx * cy - ax * ay); const ei = amp * (cx * ay + ax * cy);
+        const nx = sx * n0x; const ny = sy * n0y;
+        // d phi_0/dn = phi_0 (K nz - i K (nx cb + ny sb))
+        const dr = K * nz; const di = -K * (nx * cb + ny * sb);
+        const rx = sx * x0 - ref[0]; const ry = sy * y0 - ref[1];
+        for (let c = 0; c < nk; c++) {
+          const k = ks[c];
+          const nkv = k === 0 ? nx : k === 1 ? ny : k === 2 ? nz : k === 3 ? ry * nz - rz * ny : k === 4 ? rz * nx - rx * nz : rx * ny - ry * nx;
           // phi_k on the mirror copy = parity × phi_k on the panel
-          const par = (sx === -1 ? PARITY[k][0] : 1) * (sy === -1 ? PARITY[k][1] : 1);
-          const fr = par * phi[k][2 * p]; const fi = par * phi[k][2 * p + 1];
-          const tr = nk[k] - (fr * dr - fi * di); const ti = -(fr * di + fi * dr);
+          const pr = par[c][m]; const fr = pr * phi[k][2 * p]; const fi = pr * phi[k][2 * p + 1];
+          const tr = nkv - (fr * dr - fi * di); const ti = -(fr * di + fi * dr);
           Ir[k] += er * tr - ei * ti; Ii[k] += er * ti + ei * tr;
         }
       }
@@ -569,7 +831,8 @@ export function haskindExcitation({ setup, phi, omega, headingDeg = 0, rho = 102
  * construction, which the pressure integral rho omega Im ∫ phi_j n_i dS of radiationSolve is not: for roll about
  * the waterline, a small difference of the contributions of the sides and the bottom, that integral converges
  * slowly with the mesh, while the far-field form agrees with it within 1–2 % in the other modes.
- * Midpoint rule over the headings (over one quadrant when the hull has both planes of symmetry).
+ * With both planes of symmetry the heading integral is taken in closed form (Fourier–Bessel series of the
+ * undisturbed wave); otherwise, or when `nHeadings` is given, by the midpoint rule over the headings.
  * Reference: Newman (1962) J. Ship Research 6(3), 10–17; Newman (1977) §6.19.
  * @param {object} o
  * @param {object} o.setup from radiationSetup
@@ -584,6 +847,42 @@ export function haskindExcitation({ setup, phi, omega, headingDeg = 0, rho = 102
 export function haskindDamping({ setup, phi, omega, rho = 1025, g = G, nHeadings }) {
   const K = (omega * omega) / g;
   const quarter = setup.mirrors.length === 4;
+  if (quarter && nHeadings === undefined) {
+    // both planes of symmetry: the heading integral in closed form. With exp(-i K rho cos(theta - beta)) =
+    // sum (-i)^p J_p(K rho) exp(i p (theta - beta)) the forces are Fourier series in beta, and by Parseval
+    // B_ij = rho omega³/(2 g) sum_p eps_p Re{C_ip C_jp*}, C_ip = ∫ (n_i - phi_i d/dn) h_p dS (h_p of waveFamily).
+    const { panels, classes, n, ref } = setup; const gp = panels.gauss; const N = panels.normals;
+    const B = Array.from({ length: 6 }, () => [0, 0, 0, 0, 0, 0]);
+    const P = familyOrder(K * setup.rhoMax);
+    for (const cl of classes) {
+      const ms = cl.modes.filter((k) => phi[k]);
+      if (ms.length === 0) continue;
+      const { nb, first } = waveFamily(K, P, cl.signs[1], cl.signs[2], 4 * n, gp, 4, N, 4, _famG);
+      const h = _famG.h; const dh = _famG.d;
+      const Cr = ms.map(() => new Float64Array(nb)); const Ci = ms.map(() => new Float64Array(nb));
+      for (let p = 0; p < n; p++) {
+        const nx = N[3 * p]; const ny = N[3 * p + 1]; const nz = N[3 * p + 2];
+        for (let q = 0; q < 4; q++) {
+          const o = 16 * p + 4 * q; const w = 4 * gp[o + 3];
+          const rx = gp[o] - ref[0]; const ry = gp[o + 1] - ref[1]; const rz = gp[o + 2] - ref[2];
+          const row = (4 * p + q) * nb;
+          for (let c = 0; c < ms.length; c++) {
+            const k = ms[c];
+            const nkv = k === 0 ? nx : k === 1 ? ny : k === 2 ? nz : k === 3 ? ry * nz - rz * ny : k === 4 ? rz * nx - rx * nz : rx * ny - ry * nx;
+            const fr = phi[k][2 * p]; const fi = phi[k][2 * p + 1]; const cr = Cr[c]; const ci = Ci[c];
+            for (let b = 0; b < nb; b++) { const dv = w * dh[row + b]; cr[b] += w * nkv * h[row + b] - fr * dv; ci[b] -= fi * dv; }
+          }
+        }
+      }
+      const f = (rho * omega ** 3) / (2 * g);
+      for (let a = 0; a < ms.length; a++) for (let c = 0; c < ms.length; c++) {
+        let sum = 0;
+        for (let b = 0; b < nb; b++) sum += (first === 0 && b === 0 ? 1 : 2) * (Cr[a][b] * Cr[c][b] + Ci[a][b] * Ci[c][b]);
+        B[ms[a]][ms[c]] = f * sum;
+      }
+    }
+    return B;
+  }
   const span = quarter ? 90 : 360;
   const n = nHeadings === undefined ? (quarter ? 1 : 4) * (Math.ceil(0.6 * K * setup.rMax) + 6) : nHeadings;
   if (!(n >= 2)) throw new RangeError('nHeadings must be >= 2');
@@ -624,15 +923,17 @@ export function boxQuarterPanels({ L, B, T, nx, ny, nz, grading = 1 }) {
   return Float64Array.from(q);
 }
 
-const _boxCache = new Map();
-const BOX_CACHE_MAX = 8;
+const _boxCache = new Map(); const _unitCache = new Map();
+const BOX_CACHE_MAX = 12;
 const _lw = new Float64Array(4);
 
 /**
  * Hydrodynamic model of a rectangular box L × B × T floating in deep water at zero speed: radiation problems in
  * surge, sway, heave, roll and pitch solved by radiationSolve on a grid of frequencies and kept (potentials
  * included) for interpolation, so that coefficients and exciting forces at any frequency and heading cost one
- * pass over the panels. Results are cached per geometry.
+ * pass over the panels. The box is solved in non-dimensional form (unit beam, density and gravity; Froude
+ * similarity) and kept by its ratios L/B and T/B, so hulls that differ only in scale, density or gravity share
+ * one solution; the dimensional model is cached per hull.
  * Mesh: a quarter of the hull with both planes of symmetry; ny panels over the half beam, nx over the half
  * length (at most 14; longer than wide on long hulls), nz over the draught, drawn towards
  * the edges (boxQuarterPanels). Frequencies: `nOmega` uniform steps up to the wavelength `lambdaMin` (default:
@@ -655,46 +956,57 @@ const _lw = new Float64Array(4);
  * @param {number} [o.lambdaMin] shortest wavelength solved, m (default B)
  * @param {number[]} [o.modes=[0,1,2,3,4]] modes to solve (0 surge, 1 sway, 2 heave, 3 roll, 4 pitch); the others
  *   are left at zero. A model that already holds all five is re-used.
- * @returns {object} { L, B, T, rho, g, setup, panels (number of unknowns), modes, omega (Float64Array, solved grid),
- *   A, B (per grid frequency 6×6 about the waterline centre; yaw not solved), phi, omegaMax, irregularOmega }
- *   for boxCoefficients and boxExcitation
+ * @returns {object} { L, B, T, rho, g, panels (number of unknowns), modes, omega (Float64Array, solved grid, rad/s),
+ *   omegaMax, irregularOmega, unit } for boxCoefficients and boxExcitation; `unit` is the non-dimensional
+ *   solution { lb, tb, mesh, setup, omega, A, B (per grid frequency 6×6 about the waterline centre; yaw not
+ *   solved), phi, omegaMax, irregularOmega } in units of B, rho B³ and sqrt(B/g)
  */
 export function boxHydrodynamics({ L, B, T, rho = 1025, g = G, mesh, nOmega = 14, lambdaMin, modes = [0, 1, 2, 3, 4] }) {
   if (!(L > 0 && B > 0 && T > 0)) throw new RangeError('L, B and T must be > 0');
   if (!(nOmega >= 4)) throw new RangeError('nOmega must be >= 4');
   const ms = Array.from(new Set(modes)).sort();
   if (ms.length === 0 || ms.some((k) => !(k >= 0 && k <= 4))) throw new RangeError('modes must be a non-empty subset of 0..4');
-  const base = [L, B, T, rho, g, mesh ? [mesh.nx, mesh.ny, mesh.nz, mesh.grading].join('/') : '', nOmega, lambdaMin || ''].join('|');
-  const key = `${base}|${ms.join('')}`;
-  const hit = _boxCache.get(key) || _boxCache.get(`${base}|01234`);
+  const tail = [mesh ? [mesh.nx, mesh.ny, mesh.nz, mesh.grading].join('/') : '', nOmega, lambdaMin ? (lambdaMin / B).toPrecision(12) : ''].join('|');
+  const dimKey = [L, B, T, rho, g, tail].join('|');
+  const hit = _boxCache.get(`${dimKey}|${ms.join('')}`) || _boxCache.get(`${dimKey}|01234`);
   if (hit) return hit;
-  let m = mesh;
-  if (!m) {
-    const ny = 5;
-    m = { nx: Math.min(14, Math.max(4, Math.round(1.5 * ny * Math.sqrt(L / B)))), ny, nz: Math.min(6, Math.max(2, Math.round((1.2 * ny * T) / (0.5 * B)))) };
+  // Froude similarity: the box is solved with unit beam, density and gravity, and kept by its ratios L/B and T/B
+  const lb = Number((L / B).toPrecision(12)); const tb = Number((T / B).toPrecision(12));
+  const unitKey = [lb, tb, tail].join('|');
+  let unit = _unitCache.get(`${unitKey}|${ms.join('')}`) || _unitCache.get(`${unitKey}|01234`);
+  if (!unit) {
+    let m = mesh;
+    if (!m) {
+      const ny = 5;
+      m = { nx: Math.min(14, Math.max(4, Math.round(1.5 * ny * Math.sqrt(lb)))), ny, nz: Math.min(6, Math.max(2, Math.round((1.2 * ny * tb) / 0.5))) };
+    }
+    const panels = hullPanels(boxQuarterPanels({ L: lb, B: 1, T: tb, nx: m.nx, ny: m.ny, nz: m.nz, grading: m.grading === undefined ? 1 : m.grading }));
+    const interiorPoints = [[0.29, 0.37, 0.41], [0.67, 0.71, 0.23], [0.83, 0.19, 0.61], [0.13, 0.87, 0.77]].map(([a, b, c]) => [0.5 * lb * a, 0.5 * b, -tb * c]);
+    const setup = radiationSetup({ panels, symmetry: { x: true, y: true }, interiorPoints });
+    const kappa = Math.PI * Math.hypot(1 / lb, 1);
+    const irregularOmega = Math.sqrt(kappa / Math.tanh(kappa * tb));
+    const Kmax = Math.min((2 * Math.PI * B) / (lambdaMin || B), (0.98 * X_MAX) / setup.rMax);
+    const omegaMax = Math.sqrt(Kmax);
+    const omega = new Float64Array(nOmega); const A = []; const Bd = []; const phi = [];
+    for (let i = 0; i < nOmega; i++) {
+      omega[i] = (omegaMax * (i + 1)) / nOmega;
+      const r = radiationSolve({ setup, omega: omega[i], rho: 1, g: 1, modes: ms, nullField: omega[i] >= 0.9 * irregularOmega });
+      A.push(r.A); Bd.push(haskindDamping({ setup, phi: r.phi, omega: omega[i], rho: 1, g: 1 })); phi.push(r.phi);
+    }
+    unit = { lb, tb, mesh: { nx: m.nx, ny: m.ny, nz: m.nz }, setup, panels: panels.n, modes: ms, omega, A, B: Bd, phi, omegaMax, irregularOmega };
+    if (_unitCache.size >= BOX_CACHE_MAX) _unitCache.delete(_unitCache.keys().next().value);
+    _unitCache.set(`${unitKey}|${ms.join('')}`, unit);
   }
-  const panels = hullPanels(boxQuarterPanels({ L, B, T, nx: m.nx, ny: m.ny, nz: m.nz, grading: m.grading === undefined ? 1 : m.grading }));
-  const interiorPoints = [[0.29, 0.37, 0.41], [0.67, 0.71, 0.23], [0.83, 0.19, 0.61], [0.13, 0.87, 0.77]].map(([a, b, c]) => [0.5 * L * a, 0.5 * B * b, -T * c]);
-  const setup = radiationSetup({ panels, symmetry: { x: true, y: true }, interiorPoints });
-  const kappa = Math.PI * Math.hypot(1 / L, 1 / B);
-  const irregularOmega = Math.sqrt((g * kappa) / Math.tanh(kappa * T));
-  const Kmax = Math.min((2 * Math.PI) / (lambdaMin || B), (0.98 * X_MAX) / setup.rMax);
-  const omegaMax = Math.sqrt(g * Kmax);
-  const omega = new Float64Array(nOmega); const A = []; const Bd = []; const phi = [];
-  for (let i = 0; i < nOmega; i++) {
-    omega[i] = (omegaMax * (i + 1)) / nOmega;
-    const r = radiationSolve({ setup, omega: omega[i], rho, g, modes: ms, nullField: omega[i] >= 0.9 * irregularOmega });
-    A.push(r.A); Bd.push(haskindDamping({ setup, phi: r.phi, omega: omega[i], rho, g })); phi.push(r.phi);
-  }
-  const model = { L, B, T, rho, g, setup, panels: panels.n, modes: ms, omega, A, B: Bd, phi, omegaMax, irregularOmega };
-  if (_boxCache.size >= BOX_CACHE_MAX) _boxCache.delete(_boxCache.keys().next().value);
-  _boxCache.set(key, model);
+  const ws = Math.sqrt(g / B);
+  const model = { L, B, T, rho, g, unit, panels: unit.panels, modes: unit.modes, omega: Float64Array.from(unit.omega, (w) => w * ws), omegaMax: unit.omegaMax * ws, irregularOmega: unit.irregularOmega * ws };
+  if (_boxCache.size >= 4 * BOX_CACHE_MAX) _boxCache.delete(_boxCache.keys().next().value);
+  _boxCache.set(`${dimKey}|${ms.join('')}`, model);
   return model;
 }
 
-// grid interval and cubic Lagrange weights at omega (clamped to the solved range)
-function boxWeights(model, omega) {
-  const n = model.omega.length; const h = model.omega[0];
+// grid interval and cubic Lagrange weights at the non-dimensional frequency (clamped to the solved range)
+function boxWeights(unit, omega) {
+  const n = unit.omega.length; const h = unit.omega[0];
   const u = Math.min(Math.max(omega / h - 1, 0), n - 1);
   let i0 = Math.floor(u) - 1;
   if (i0 < 0) i0 = 0; else if (i0 > n - 4) i0 = n - 4;
@@ -712,12 +1024,16 @@ function boxWeights(model, omega) {
  */
 export function boxCoefficients(model, omega) {
   if (!(omega > 0)) throw new RangeError('omega must be > 0');
-  const i0 = boxWeights(model, omega);
+  const { unit, B: beam, rho, g } = model;
+  const i0 = boxWeights(unit, omega * Math.sqrt(beam / g));
   const A = Array.from({ length: 6 }, () => [0, 0, 0, 0, 0, 0]); const B = Array.from({ length: 6 }, () => [0, 0, 0, 0, 0, 0]);
   for (let p = 0; p < 4; p++) {
-    const Ap = model.A[i0 + p]; const Bp = model.B[i0 + p]; const w = _lw[p];
+    const Ap = unit.A[i0 + p]; const Bp = unit.B[i0 + p]; const w = _lw[p];
     for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) { A[i][j] += w * Ap[i][j]; B[i][j] += w * Bp[i][j]; }
   }
+  // back to dimensions: rho B³ per mass, one more power of B per rotational index, sqrt(g/B) for the damping
+  const a0 = rho * beam ** 3; const wsc = Math.sqrt(g / beam);
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) { const sc = a0 * (i > 2 ? beam : 1) * (j > 2 ? beam : 1); A[i][j] *= sc; B[i][j] *= sc * wsc; }
   return { A, B };
 }
 
@@ -733,14 +1049,19 @@ export function boxCoefficients(model, omega) {
  */
 export function boxExcitation(model, omega, headingDeg = 0) {
   if (!(omega > 0)) throw new RangeError('omega must be > 0');
-  const i0 = boxWeights(model, omega);
-  const n2 = 2 * model.setup.n;
+  const { unit, B: beam, rho, g } = model;
+  const wu = omega * Math.sqrt(beam / g);
+  const i0 = boxWeights(unit, wu);
+  const n2 = 2 * unit.setup.n;
   const phi = [null, null, null, null, null, null];
   for (let k = 0; k < 5; k++) {
-    if (!model.phi[i0][k]) continue;
+    if (!unit.phi[i0][k]) continue;
     const f = new Float64Array(n2);
-    for (let p = 0; p < 4; p++) { const src = model.phi[i0 + p][k]; const w = _lw[p]; for (let i = 0; i < n2; i++) f[i] += w * src[i]; }
+    for (let p = 0; p < 4; p++) { const src = unit.phi[i0 + p][k]; const w = _lw[p]; for (let i = 0; i < n2; i++) f[i] += w * src[i]; }
     phi[k] = f;
   }
-  return haskindExcitation({ setup: model.setup, phi, omega, headingDeg, rho: model.rho, g: model.g });
+  const x = haskindExcitation({ setup: unit.setup, phi, omega: wu, headingDeg, rho: 1, g: 1 });
+  const f0 = rho * g * beam * beam;
+  for (let k = 0; k < 6; k++) { const sc = f0 * (k > 2 ? beam : 1); x.re[k] *= sc; x.im[k] *= sc; }
+  return x;
 }

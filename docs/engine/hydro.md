@@ -88,15 +88,40 @@ Three-dimensional radiation problem of a surface-piercing hull in deep water at 
 - `hullPanels(quads) -> panel set` — 12 numbers per panel (four vertices, counter-clockwise seen from the fluid; a triangle repeats its last vertex), m.
 - `boxQuarterPanels({ L, B, T, nx, ny, nz, grading = 1 }) -> Float64Array` — quarter of a box, cosine spacing towards the edges.
 - `radiationSetup({ panels, symmetry: { x?, y? }, ref = [0,0,0], interiorPoints? }) -> setup` — frequency-independent influence matrices.
-- `radiationSolve({ setup, omega, rho, g, modes?, nullField = true }) -> { omega, A, B, phi, symmetryError }` — 6×6 added mass and damping about `ref` (kg … N·m·s), potentials per mode on the panels.
+- `radiationSolve({ setup, omega, rho, g, modes?, nullField = true, split = true }) -> { omega, A, B, phi, symmetryError }` — 6×6 added mass and damping about `ref` (kg … N·m·s), potentials per mode on the panels.
 - `haskindExcitation({ setup, phi, omega, headingDeg, rho, g }) -> { re, im }` — N/m, N·m/m; X_i = iωρ∫(φ0 n_i − φ_i ∂φ0/∂n) dS, 2 × 2 Gauss rule per panel. Newman (1962).
-- `haskindDamping({ setup, phi, omega, rho, g, nHeadings? }) -> number[6][6]` — B_ij = ω³/(4πρg³)∫Re{X_i X_j*}dβ, symmetric and positive semi-definite; agrees with the pressure integral of `radiationSolve` within 1–2 % except for roll about the waterline, where the pressure integral converges slowly.
-- `boxHydrodynamics({ L, B, T, rho, g, mesh?, nOmega = 14, lambdaMin?, modes? }) -> model` — box solved on a frequency grid (quarter mesh of 5 panels over the half beam, up to 14 over the half length, 2–6 over the draught: 80–130 unknowns), damping from `haskindDamping`, null-field equations from 0.9 × the first irregular frequency (K = κ coth κT, κ = π√(1/L² + 1/B²)); cached per geometry.
+- `haskindDamping({ setup, phi, omega, rho, g, nHeadings? }) -> number[6][6]` — B_ij = ω³/(4πρg³)∫Re{X_i X_j*}dβ, symmetric and positive semi-definite, the heading integral in closed form (Fourier–Bessel series) when the hull has both planes of symmetry; agrees with the pressure integral of `radiationSolve` within 1–2 % except for roll about the waterline, where the pressure integral converges slowly.
+- `boxHydrodynamics({ L, B, T, rho, g, mesh?, nOmega = 14, lambdaMin?, modes? }) -> model` — box solved on a frequency grid (quarter mesh of 5 panels over the half beam, up to 14 over the half length, 2–6 over the draught: 80–130 unknowns), in non-dimensional form (unit beam, density and gravity) and kept by L/B and T/B, so a change of scale, density or gravity is not solved again; damping from `haskindDamping`, null-field equations from 0.9 × the first irregular frequency (K = κ coth κT, κ = π√(1/L² + 1/B²)); `model.unit` holds the non-dimensional solution.
 - `boxCoefficients(model, omega) -> { A, B }`, `boxExcitation(model, omega, headingDeg) -> { re, im }` — cubic interpolation between the solved frequencies (potentials interpolated, the incident wave exact); end values held outside the range.
 
 Checks (`tests/engine/hydro.radiation.test.js`): floating hemisphere, zero-frequency added mass A33/ρV = 0.826 and A11/ρV = 0.498 on 81 panels per quarter against 0.830951 and 0.5 (Hulme 1982, J. Fluid Mech. 121, as quoted by Storti & D'Elía 2001, arXiv:math/0110302, eq. 38), the faceted volume being 1.3 % below that of the hemisphere; the same hemisphere against Capytaine at Ka = 0.13 and 0.51: added mass −1.4 … −2.0 %, damping −0.7 … −3.5 %, exciting forces within 1.4 %; energy balance B33 = ω³|X3|²/(2ρg³) and B11 = ω³|X1|²/(4ρg³) within 2 %; box 20 × 8 × 2 m against Capytaine at 4–25 s: diagonal added mass within 3 % (roll 4 %), damping within 5 % of its largest value, exciting forces within 3 % (roll moment 6 %) and phases within 0.03 rad; convergence with the panel count; removal of the irregular frequency at 2.45 rad/s.
 
-Processor time: the first call for a hull solves the box model, 1–4 s of processor time on the heavily loaded machine on which the tests were run, where a loop of 10⁶ multiply–add operations took 5–7 ms (an unloaded desktop processor needs about 1 ms for that loop, which puts the model at a few tenths of a second; not measured on such a machine); further calls with the same hull, at any number of frequencies and headings, took 30–80 ms there for 40 frequencies.
+### Performance of the box model
+
+Measured with `process.cpuUsage()` on a shared machine under load (load average 15–25 on 4 cores; a loop of 10⁶ multiply–add operations took 5–7 ms of processor time there, against about 1 ms on an unloaded desktop processor, which was not available for measurement). Hull 100 × 20 × 5 m, 127 panels on the quarter, 14 frequencies, three classes of modes:
+
+| | Before (complex elimination at every frequency) | Now |
+| --- | --- | --- |
+| new hull, code warm (from about the sixth hull of a session) | 1.07–1.27 s | 0.50–0.56 s |
+| first hull of a session (partly in code the engine has not yet optimised) | 3.1–3.9 s | 2.7 s |
+| second to fifth hull | 1.2–1.9 s | 0.6–1.3 s |
+| hull 20 × 8 × 2 m (111 panels), code warm | 0.73–0.81 s | 0.41–0.43 s |
+| 200 hulls with L, B, T drawn independently within ±20 %, heave, pitch and roll at 40 frequencies each | 272 CPU-s (1.35 s per hull) | 113 CPU-s (0.55 s per hull) |
+| same proportions at another scale, density or gravity | as a new hull | not solved again (Froude similarity) |
+| same hull again, 40 frequencies, one heading | 30–80 ms | 30–60 ms |
+
+Where the time went, and what was done (shares of a warm new hull before → after):
+- complex elimination, 35 % → real elimination 15 % plus complex 7 %: the system is solved as K_r + iUVᵀ, with the outgoing-wave part e^{K(z+ζ)}J0(KR) written as a series of 5–15 products per class (Graf's addition theorem); the three or so frequencies that carry null-field rows keep the complex elimination;
+- assembly of the wave part, 25 % → about 20 %: square roots, logarithms and reciprocals of the pair distances are kept with the hull, so that a frequency costs table look-ups and arithmetic only; numbers are passed between the hot functions in typed arrays (as arguments they are allocated on the heap, which had the garbage collector at 10–15 %);
+- Rankine integrals, 15 % → 5 %: closed form within 2.5 panel diameters, 2 × 2 Gauss beyond (the coefficients change by less than 3·10⁻⁵);
+- Haskind damping, 12 % → 1 %: heading integral in closed form from the same series;
+- the table of the Green function is built once per session and lazily (about 40 ms for the range a barge needs); it was 2 % of a new hull and is not shipped as an asset.
+
+The results differ from those of the complex elimination by less than 3·10⁻⁵ of the coefficients (the split solution sums the Bessel series where the other path interpolates J0 and J1 in the table); the comparison with Capytaine above is unchanged to the 0.1 % shown. The results are deterministic: the same hull gives the same numbers in any order of calls.
+
+Not adopted: interpolating between solved neighbouring hulls in (L/B, B/T). Tried on 100 × 20 × 5 m with the four neighbours at a spacing h in ln(L/B) and ln(B/T), same mesh topology, potentials interpolated and the Haskind integral taken on the actual hull: h = 0.1 gave heave and pitch within 0.5 % for wave periods above twice the shortest solved one and 1–4 % below, roll −0.5 … −1 %; h = 0.25 gave up to 2 % in heave at the head-sea cancellation, 3–6 % in roll and 5–30 % near the wavelength equal to the beam. At the spacing that keeps the error below 1 % a 200-sample study touches about as many lattice points as half its samples, and a sensitivity study more points than samples, so the direct solution is used for every hull.
+
+A new hull therefore costs about half a second of processor time on that machine once the code is warm, and several times that for the first hulls of a session; `tests/engine/hydro.radiation.test.js` guards the warm figure against a reference loop timed alongside.
 
 
 ## hydrodb.js

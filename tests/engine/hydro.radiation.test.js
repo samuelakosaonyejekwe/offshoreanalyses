@@ -82,7 +82,8 @@ test('Floating hemisphere: zero-frequency added mass (Hulme 1982), Capytaine at 
   const low = radiationSolve({ setup, omega: Math.sqrt((g * 1e-4) / R), rho, g });
   assert.ok(rel(low.A[2][2] / (rho * V), 0.830951) < 0.015, `heave ${low.A[2][2] / (rho * V)}`);
   assert.ok(rel(low.A[0][0] / (rho * V), 0.5) < 0.015, `surge ${low.A[0][0] / (rho * V)}`);
-  assert.ok(rel(low.A[1][1], low.A[0][0]) < 1e-9, 'sway = surge');
+  // equal up to the switch between closed-form and Gauss panel integrals at mirrored distances
+  assert.ok(rel(low.A[1][1], low.A[0][0]) < 1e-5, 'sway = surge');
   // Capytaine 3.0.0 on a 2592-panel sphere mesh (tests/interop/fixtures), omega = 0.5 rad/s
   const db = fixture('hemisphere'); const w = 0.5; const ref = hydroAt(db, w, 0);
   const r = radiationSolve({ setup, omega: w, rho, g });
@@ -212,20 +213,73 @@ test('Box model: interpolation between solved frequencies, cache, and processor 
   assert.ok(ms < 15000, `box model took ${ms.toFixed(0)} ms`);
   assert.equal(boxHydrodynamics({ L, B, T, rho, g }), m, 'cached per geometry');
   assert.ok(rel((2 * Math.PI * g) / m.omegaMax ** 2, B) < 1e-12, 'solved up to the wavelength equal to the beam');
-  // halfway between two solved frequencies against a direct solution there
-  const scaleA = [0, 1, 2, 3, 4].map((k) => Math.max(...m.A.map((a) => a[k][k])));
+  // Froude similarity: a hull of the same proportions at another scale, density and gravity is the same solution
+  const big = boxHydrodynamics({ L: 2 * L, B: 2 * B, T: 2 * T, rho: 1000, g: 3 });
+  assert.equal(big.unit, m.unit, 'one non-dimensional solution per L/B and T/B');
+  { const w = 0.6; const w2 = w * Math.sqrt(3 / g) / Math.SQRT2; const a = boxCoefficients(m, w); const b = boxCoefficients(big, w2);
+    const xa = boxExcitation(m, w, 130); const xb = boxExcitation(big, w2, 130);
+    assert.ok(rel(b.A[2][2], a.A[2][2] * (1000 / rho) * 8) < 1e-12 && rel(b.A[4][4], a.A[4][4] * (1000 / rho) * 32) < 1e-12 && rel(b.A[0][4], a.A[0][4] * (1000 / rho) * 16) < 1e-12);
+    assert.ok(rel(b.B[2][2], a.B[2][2] * (1000 / rho) * 8 * Math.sqrt(3 / g) / Math.SQRT2) < 1e-12);
+    assert.ok(rel(xb.re[2], xa.re[2] * (1000 * 3) / (rho * g) * 4) < 1e-12 && rel(xb.im[4], xa.im[4] * (1000 * 3) / (rho * g) * 8) < 1e-12); }
+  // halfway between two solved frequencies against a direct solution there (in the units of the solution)
+  const u = m.unit; const sa = (k) => rho * B ** (k > 2 ? 4 : 3); const sw = Math.sqrt(g / B);
+  const scaleA = [0, 1, 2, 3, 4].map((k) => Math.max(...u.A.map((a) => a[k][k])));
   for (const i of [3, 8, 12]) {
-    const w = 0.5 * (m.omega[i] + m.omega[i + 1]);
-    const direct = radiationSolve({ setup: m.setup, omega: w, rho, g, modes: [0, 1, 2, 3, 4], nullField: w >= 0.9 * m.irregularOmega });
+    const wu = 0.5 * (u.omega[i] + u.omega[i + 1]); const w = wu * sw;
+    const direct = radiationSolve({ setup: u.setup, omega: wu, rho: 1, g: 1, modes: [0, 1, 2, 3, 4], nullField: wu >= 0.9 * u.irregularOmega });
     const { A, B: D } = boxCoefficients(m, w);
-    direct.B = haskindDamping({ setup: m.setup, phi: direct.phi, omega: w, rho, g });
-    for (const k of [0, 1, 2, 3, 4]) { assert.ok(Math.abs(A[k][k] - direct.A[k][k]) < 0.02 * scaleA[k], `A${k} at ${w}`); assert.ok(Math.abs(D[k][k] - direct.B[k][k]) < 0.03 * Math.max(...m.B.map((b) => b[k][k])), `B${k} at ${w}`); }
-    const xi = boxExcitation(m, w, 150); const xd = haskindExcitation({ setup: m.setup, phi: direct.phi, omega: w, headingDeg: 150, rho, g });
+    direct.B = haskindDamping({ setup: u.setup, phi: direct.phi, omega: wu, rho: 1, g: 1 });
+    for (const k of [0, 1, 2, 3, 4]) { const s2 = sa(k) * B ** (k > 2 ? 1 : 0); assert.ok(Math.abs(A[k][k] / s2 - direct.A[k][k]) < 0.02 * scaleA[k], `A${k} at ${w}`); assert.ok(Math.abs(D[k][k] / (s2 * sw) - direct.B[k][k]) < 0.03 * Math.max(...u.B.map((b) => b[k][k])), `B${k} at ${w}`); }
+    const xi = boxExcitation(m, w, 150); const xd = haskindExcitation({ setup: u.setup, phi: direct.phi, omega: wu, headingDeg: 150, rho: 1, g: 1 });
+    const fs = (k) => rho * g * B ** (k > 2 ? 3 : 2);
     const scale = [0, 1, 2, 3, 4].map((k) => Math.max(...[60, 150].map((h) => { const x = boxExcitation(m, m.omega[2], h); return Math.hypot(x.re[k], x.im[k]); })));
-    for (const k of [0, 1, 2, 3, 4]) assert.ok(Math.hypot(xi.re[k] - xd.re[k], xi.im[k] - xd.im[k]) < 0.03 * scale[k], `X${k} at ${w}`);
+    for (const k of [0, 1, 2, 3, 4]) assert.ok(Math.hypot(xi.re[k] - fs(k) * xd.re[k], xi.im[k] - fs(k) * xd.im[k]) < 0.03 * scale[k], `X${k} at ${w}`);
   }
   // outside the solved range the end values are held
-  assert.deepEqual(boxCoefficients(m, 0.5 * m.omega[0]).A, boxCoefficients(m, m.omega[0]).A);
-  assert.deepEqual(boxCoefficients(m, 2 * m.omegaMax).B, boxCoefficients(m, m.omegaMax).B);
+  for (const k of [0, 2, 4]) {
+    assert.ok(rel(boxCoefficients(m, 0.5 * m.omega[0]).A[k][k], boxCoefficients(m, m.omega[0]).A[k][k]) < 1e-9);
+    assert.ok(rel(boxCoefficients(m, 2 * m.omegaMax).B[k][k], boxCoefficients(m, m.omegaMax).B[k][k]) < 1e-9);
+  }
   assert.throws(() => boxHydrodynamics({ L: 0, B, T }), /must be > 0/);
+});
+
+test('Box model: processor time of a new hull once the code is warm (regression guard)', () => {
+  // Processor time, as in tests/suites.test.js, and measured against a loop of 10⁶ multiply–adds timed alongside,
+  // so that the bound means "the solver got heavier", not "the machine was busy". Recorded on a loaded machine
+  // (reference loop 6–7 ms): 75–90 loop units per new hull of 127 panels in the steady state (the version before
+  // the split solution: 160–190); an unloaded desktop runs the loop in about 1 ms. The first hulls of a process
+  // are not the measure: they run partly in code the engine has not yet optimised.
+  const cpu = () => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
+  const loop = () => { const a = new Float64Array(1e6).fill(1.1); let acc = 0; const t0 = cpu(); for (let k = 0; k < 5; k++) for (let i = 0; i < a.length; i++) acc += a[i] * 1.0001; return (cpu() - t0) / 5 + 0 * acc; };
+  for (const L of [87, 89, 91, 93]) boxHydrodynamics({ L, B: 20, T: 5, rho, g }); // warm-up
+  let best = Infinity; let ref = Infinity;
+  for (const L of [95, 97, 99, 101, 103]) {
+    ref = Math.min(ref, loop());
+    const t0 = cpu(); const m = boxHydrodynamics({ L, B: 20, T: 5, rho, g }); const t = cpu() - t0;
+    ref = Math.min(ref, loop());
+    assert.ok(m.panels >= 100 && m.panels <= 130);
+    best = Math.min(best, t);
+  }
+  assert.ok(best < 260 * ref, `new hull: ${best.toFixed(0)} ms of processor time = ${(best / ref).toFixed(0)} reference loops (${ref.toFixed(1)} ms each)`);
+  assert.ok(best < 8000, `new hull: ${best.toFixed(0)} ms of processor time`);
+  // a hull that differs only in scale is not solved again
+  const t0 = cpu(); boxHydrodynamics({ L: 202, B: 40, T: 10, rho, g }); const ts = cpu() - t0;
+  assert.ok(ts < 0.05 * best + 5, `scaled hull took ${ts.toFixed(1)} ms`);
+});
+
+test('Split solution (real system plus separable wave part) equals the complex elimination; closed-form heading integral', () => {
+  const setup = radiationSetup({ panels: hullPanels(boxQuarterPanels({ L: 20, B: 8, T: 2, nx: 8, ny: 4, nz: 2 })), symmetry: { x: true, y: true } });
+  for (const w of [0.4, 1.3, 2.2]) {
+    const a = radiationSolve({ setup, omega: w, rho, g, split: false }); const b = radiationSolve({ setup, omega: w, rho, g });
+    // the two differ only by the interpolation of J0 and J1 in the tabulated path (the split path sums the series)
+    for (const k of [0, 1, 2, 3, 4, 5]) {
+      let d = 0; let sc = 0;
+      for (let i = 0; i < a.phi[k].length; i++) { d = Math.max(d, Math.abs(a.phi[k][i] - b.phi[k][i])); sc = Math.max(sc, Math.abs(a.phi[k][i])); }
+      assert.ok(d < 2e-5 * sc, `mode ${k} at ${w}: ${d / sc}`);
+      assert.ok(rel(b.A[k][k], a.A[k][k]) < 1e-5, `A${k}${k} at ${w}`);
+    }
+    // damping: Fourier–Bessel sum against the midpoint rule over 60 headings of a quadrant
+    const B1 = haskindDamping({ setup, phi: b.phi, omega: w, rho, g }); const B2 = haskindDamping({ setup, phi: b.phi, omega: w, rho, g, nHeadings: 60 });
+    for (const [i, j] of [[0, 0], [1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [1, 3], [0, 4]]) assert.ok(Math.abs(B1[i][j] - B2[i][j]) < 1e-9 * Math.sqrt(B2[i][i] * B2[j][j]), `B${i}${j} at ${w}`);
+  }
 });
