@@ -45,7 +45,7 @@ export default {
     num('gammaInc', 'Incidental / design pressure ratio', '-', 1.1, 1, 1.2, G_C, 'criteria', '1.10 for a typical pressure control system; 1.05 where the safety system justifies it.'),
     num('alphaU', 'Material strength factor α_U', '-', 0.96, 0.9, 1, G_C, 'criteria', '0.96 normally; 1.00 with supplementary requirement U.'),
     num('alphaSpt', 'System test factor α_spt', '-', 1.05, 1, 1.3, G_C, 'criteria', `Ratio of local test pressure to local incidental pressure (1.03 low, 1.05 medium/high). ${CONFIRM}`),
-    num('F1', 'ASME hoop design factor', '-', 0.72, 0.4, 0.8, G_C, 'criteria', 'ASME B31.8 Table A842.2.2-1: 0.72 offshore pipeline, 0.50 riser. Confirm against the edition in force.'),
+    num('F1', 'ASME hoop design factor', '-', 0.72, 0.4, 0.8, G_C, 'criteria', 'ASME B31.8 Table A842.2.2-1: 0.72 offshore pipeline, 0.50 riser and platform piping (30 CFR 250.1002 allows 0.60 for risers). Confirm against the edition in force.'),
   ],
   compute(inp, ctx) {
     const p = pipeFrom(inp, ctx);

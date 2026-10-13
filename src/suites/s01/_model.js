@@ -114,7 +114,7 @@ export function criteriaInputs(o = {}) {
     { key: 'gG', label: 'Action factor — permanent and variable', unit: '-', type: 'number', default: o.gG ?? 1.1, min: 0.8, max: 2, group: g, role: 'criteria', help: `ISO 19902 extreme condition: 1.1 G + 1.35 E; operating: 1.3 G + 1.5 Q + 0.9·1.35 E. ${CONFIRM}` },
     { key: 'gE', label: 'Action factor — environmental', unit: '-', type: 'number', default: o.gE ?? 1.35, min: 0.5, max: 2.5, group: g, role: 'criteria', help: CONFIRM },
     { key: 'gRt', label: 'Resistance factor — tension γR,t', unit: '-', type: 'number', default: 1.05, min: 1, max: 1.5, group: g, role: 'criteria', help: `ISO 19902 only. ${CONFIRM}` },
-    { key: 'gRc', label: 'Resistance factor — compression γR,c', unit: '-', type: 'number', default: 1.18, min: 1, max: 1.6, group: g, role: 'criteria', help: `ISO 19902 only. ${CONFIRM}` },
+    { key: 'gRc', label: 'Resistance factor — compression γR,c', unit: '-', type: 'number', default: 1.18, min: 1, max: 1.6, group: g, role: 'criteria', help: `ISO 19902 only: 1.18 in the 2007 edition, 1.10 in the 2020 edition — the default is the more conservative of the two. ${CONFIRM}` },
     { key: 'gRb', label: 'Resistance factor — bending γR,b', unit: '-', type: 'number', default: 1.05, min: 1, max: 1.5, group: g, role: 'criteria', help: `ISO 19902 only. ${CONFIRM}` },
     { key: 'Kleg', label: 'Effective length factor — legs', unit: '-', type: 'number', default: 1.0, min: 0.5, max: 2.5, group: g, role: 'criteria' },
     { key: 'Kbr', label: 'Effective length factor — braces', unit: '-', type: 'number', default: 0.8, min: 0.5, max: 2.5, group: g, role: 'criteria', help: '0.7–0.8 for braces in ISO 19902 Table 13.5-1 (node to node). X braces are noded at their crossing.' },

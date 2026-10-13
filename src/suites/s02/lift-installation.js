@@ -17,7 +17,7 @@ export default {
   inputs: [
     ...deckInputs({}, ['legs', 'support']),
     { key: 'rigging', label: 'Rigging weight', unit: 't', type: 'number', default: 25, min: 0, max: 2000, group: 'Lift weight and factors', role: 'load', help: 'Slings, shackles and spreaders below the hook.' },
-    { key: 'cont', label: 'Weight contingency factor', unit: '-', type: 'number', default: 1.05, min: 1, max: 1.3, group: 'Lift weight and factors', role: 'criteria', help: `1.03 for a weighed structure, 1.05–1.10 for a calculated weight. ${CONFIRM}` },
+    { key: 'cont', label: 'Weight contingency factor', unit: '-', type: 'number', default: 1.05, min: 1, max: 1.3, group: 'Lift weight and factors', role: 'criteria', help: `DNV-OS-H102 (2012): at most 1.03 for a weighed structure, at least 1.10 for an estimated weight; 1.05 suits a well-controlled calculated weight late in design. ${CONFIRM}` },
     { key: 'daf', label: 'Dynamic amplification factor', unit: '-', type: 'number', default: 1.15, min: 1, max: 2, group: 'Lift weight and factors', role: 'bc', uncertain: { dist: 'normal', cov: 0.05 }, help: `DNV-ST-N001 Table 16-1 offshore: 1.30 below 100 t, 1.20 to 1000 t, 1.15 to 2500 t, 1.10 above. ${CONFIRM}` },
     { key: 'skl', label: 'Skew load factor', unit: '-', type: 'number', default: 1.25, min: 1, max: 1.75, group: 'Lift weight and factors', role: 'criteria', help: `Sling length tolerance in a statically indeterminate four-sling lift: 1.25 (DNV-ST-N001 §16.5). 1.0 with a load-equalising arrangement. ${CONFIRM}` },
     { key: 'cogF', label: 'Centre-of-gravity inaccuracy factor', unit: '-', type: 'number', default: 1.05, min: 1, max: 1.3, group: 'Lift weight and factors', role: 'criteria', help: CONFIRM },

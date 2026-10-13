@@ -23,7 +23,7 @@ export default {
     { key: 'Cm', label: 'Inertia coefficient', unit: '-', type: 'number', default: 1.6, min: 1, max: 2.5, group: 'Unpiled jacket', role: 'load' },
     { key: 'depth', label: 'Water depth', unit: 'm', type: 'number', default: 90, min: 5, max: 500, group: 'Site', role: 'environment', bind: 'site.depth' },
     ...seaInputs({ Hs: 2.5, Tp: 8, group: 'Installation sea state' }),
-    { key: 'fHmax', label: 'Design wave height / Hs', unit: '-', type: 'number', default: 1.86, min: 1, max: 2.2, group: 'Installation sea state', role: 'criteria', help: `Most probable maximum wave in about 1000 waves; the unpiled condition is usually designed for a seasonal 1-year storm. ${CONFIRM}` },
+    { key: 'fHmax', label: 'Design wave height / Hs', unit: '-', type: 'number', default: 2.0, min: 1, max: 2.2, group: 'Installation sea state', role: 'criteria', help: `DNV-OS-H101 (2011) Sec.3 takes Hmax = 2.0 Hs for marine operations (lower values may be accepted for short reference periods); 1.86 is the most probable maximum in about 1000 waves; the unpiled condition is usually designed for a seasonal 1-year storm. ${CONFIRM}` },
     { key: 'Fwind', label: 'Wind and current force on the jacket', unit: 'kN', type: 'number', default: 250, min: 0, max: 1e5, group: 'Installation sea state', role: 'bc', help: 'Additional horizontal force acting with the wave.' },
     { key: 'zWind', label: 'Lever of that force above the mudline', unit: 'm', type: 'number', default: 80, min: 0, max: 400, group: 'Installation sea state', role: 'bc' },
     { key: 'soil', label: 'Seabed soil', type: 'select', default: 'clay', group: 'Soil', role: 'soil', options: [{ value: 'clay', label: 'Clay (undrained)' }, { value: 'sand', label: 'Sand (drained)' }] },

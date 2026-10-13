@@ -33,7 +33,7 @@ export default {
     sel('sn', 'S–N curve', 'F1', ['C1', 'D', 'E', 'F', 'F1', 'F3'], G_S, 'material', 'DNV-RP-C203 class: D for ground-flush or high-quality welds, E/F cap, F1/F3 single-sided root.'),
     sel('env', 'Environment', 'seawater-cp', [['air', 'Air / dry internal'], ['seawater-cp', 'Sea water with cathodic protection'], ['free-corrosion', 'Free corrosion']], G_S, 'environment', 'Environment at the crack initiation site; sets the S–N curve and the crack growth law.'),
     num('scf', 'Stress concentration factor', '-', 1.2, 1, 4, G_S, 'material', 'Misalignment and local geometry not already in the S–N class.', { uncertain: { dist: 'lognormal', cov: 0.1 } }),
-    num('dff', 'Design fatigue factor', '-', 5, 1, 10, G_C, 'criteria', `Allowable damage = 1/DFF (DNV-ST-F101: 3 / 5 / 10 for low / medium / high safety class). ${CONFIRM}`),
+    num('dff', 'Design fatigue factor', '-', 6, 1, 10, G_C, 'criteria', `Allowable damage = 1/DFF. DNV-OS-F101 (2013) Table 5-11, carried into DNV-ST-F101: 3 / 6 / 10 for low / medium / high safety class; the default is the medium class. ${CONFIRM}`),
     num('a0', 'Flaw depth', 'mm', 2, 0.1, 60, G_F, 'ic', 'Height of the surface-breaking planar flaw, e.g. the inspection acceptance or the sized indication.', { uncertain: { dist: 'lognormal', cov: 0.2 } }),
     num('c0', 'Flaw half-length', 'mm', 15, 0.2, 500, G_F, 'ic', 'Half of the surface length of the flaw.'),
     num('Pm', 'Maximum membrane stress', 'MPa', 250, 0, 700, G_F, 'load', 'Largest longitudinal membrane stress in the extreme load case (installation or operation).', { uncertain: { dist: 'normal', cov: 0.1 } }),

@@ -1,0 +1,2861 @@
+{
+ "generated": "2026-10-13",
+ "method": "Cross-check of built-in default factors and tabulated engine constants against openly accessible documents. The criteria of the suite manifest were grouped by underlying constant and ranked (partial safety factors and utilisation limits first, then model coefficients and engine tables). For each group an open document was downloaded and its text read; an entry is marked \"matches\" or \"differs\" only where the value was read in the opened document and the quote is taken from its text. Sources are free editions of primary standards (mainly DNV documents, several of them earlier editions retrieved from the publisher's former open archive via the Internet Archive), official manuals, technical reports, and secondary sources that reproduce a clause of a standard that is not itself open; the kind is stated per entry. \"edition-dependent\" means the editions read or cited give different values, both of which are stated; \"not-found\" means no open text containing the value could be read and names where it should be confirmed. Quotes are copied from the text layer of the documents, so spacing, decimal commas and transliterated symbols follow that layer; equations and tables stored as images could not be read and are flagged in the notes. Many entries were read in an edition older than the one the module cites. This is a plausibility cross-check, not a substitute for checking each factor against the governing edition named in a project's design basis.",
+ "entries": [
+  {
+   "id": "f101-gamma-m",
+   "what": "Material resistance factor for SLS/ULS/ALS limit states of submarine pipelines",
+   "standard": "DNV-ST-F101 (2021) §5",
+   "builtIn": "1.15 [-]",
+   "appliesTo": [
+    "s08-wall-thickness.gammaM"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.5 C203, Table 5-2",
+   "quote": "Table 5-2 Material resistance factor, γm ... γ m 1.15 1.00",
+   "sourceValue": "1.15 (SLS/ULS/ALS); 1.00 (FLS)",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-gamma-sc-pressure",
+   "what": "Safety class resistance factor, pressure containment, medium class",
+   "standard": "DNV-ST-F101 (2021) §5",
+   "builtIn": "1.138 [-]",
+   "appliesTo": [
+    "s08-wall-thickness.gammaScPc"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.5 C203, Table 5-3",
+   "quote": "Pressure containment 1) 1.046 2),3) 1.138 1.308 4)",
+   "sourceValue": "1.046 / 1.138 / 1.308 (low / medium / high)",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-gamma-sc-other",
+   "what": "Safety class resistance factor, limit states other than pressure containment, medium class",
+   "standard": "DNV-ST-F101 (2021) §5",
+   "builtIn": "1.14 [-]",
+   "appliesTo": [
+    "s08-wall-thickness.gammaSc"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.5 C203, Table 5-3",
+   "quote": "Other 1.04 1.14 1.26",
+   "sourceValue": "1.04 / 1.14 / 1.26 (low / medium / high)",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-gamma-inc",
+   "what": "Incidental to design pressure ratio of a typical pipeline system",
+   "standard": "DNV-ST-F101 (2021) §3",
+   "builtIn": "1.10 [-]",
+   "appliesTo": [
+    "s08-wall-thickness.gammaInc",
+    "s09-internal-flow.gInc"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.3 B209, Table 3-1",
+   "quote": "Table 3-1 Incidental to design pressure ratios Condition or pipeline system γ inc Typical pipeline system 1.10 Minimum, except for below 1.05",
+   "sourceValue": "1.10 typical; 1.05 minimum",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-alpha-u",
+   "what": "Material strength factor α_U, normal (no supplementary requirement U)",
+   "standard": "DNV-ST-F101 (2021) §5",
+   "builtIn": "0.96 [-]",
+   "appliesTo": [
+    "s08-wall-thickness.alphaU",
+    "s08-local-buckling.alphaU"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.5 C300, Table 5-4",
+   "quote": "Factor Normally Supplementary requirement U αU 0.96 1.00",
+   "sourceValue": "0.96 normally; 1.00 with supplementary requirement U",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-gamma-f-gamma-e",
+   "what": "Load effect factors for functional and environmental loads, ULS combination b (local check)",
+   "standard": "DNV-ST-F101 (2021) §4",
+   "builtIn": "γF = 1.1, γE = 1.3 [-]",
+   "appliesTo": [
+    "s08-local-buckling.gammaF",
+    "s08-local-buckling.gammaE"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.4 G300, Table 4-4",
+   "quote": "ULS a System check2) 1.2 0.7 b Local check 1.1 1.3 1.1",
+   "sourceValue": "combination b: γF 1.1, γE 1.3 (combination a: 1.2, 0.7)",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-gamma-c",
+   "what": "Condition load effect factor γc, general case",
+   "standard": "DNV-ST-F101 (2021) §4",
+   "builtIn": "1.0 [-]",
+   "appliesTo": [
+    "s08-local-buckling.gammaC"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.4 G304, Table 4-5",
+   "quote": "Pipeline resting on uneven seabed 1.07 Reeling on and J-tube pull-in 0.82 System pressure test 0.93 Otherwise 1.00",
+   "sourceValue": "1.00 otherwise; 1.07 uneven seabed; 0.82 reeling and J-tube pull-in; 0.93 system pressure test",
+   "note": "The module help describes the 0.82 case as \"continuously stiff supported\" (wording of older editions); the 2013 text reads \"Reeling on and J-tube pull-in\". Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-gamma-eps",
+   "what": "Strain resistance factor γε for displacement-controlled local buckling",
+   "standard": "DNV-ST-F101 (2021) §5",
+   "builtIn": "2.0 / 2.5 / 3.3 table; 2.5 default [-]",
+   "appliesTo": [
+    "s08-local-buckling.gammaEps",
+    "s09-buckling-collapse.gammaEps"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.5 D608, Table 5-10",
+   "quote": "Low Medium High 2.0 2.5 3.3",
+   "sourceValue": "2.0 / 2.5 / 3.3 (low / medium / high)",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-dff",
+   "what": "Design fatigue factor of pipelines by safety class",
+   "standard": "DNV-ST-F101 (2021) §5",
+   "builtIn": "6 [-] (medium safety class; help text: 3 / 6 / 10)",
+   "appliesTo": [
+    "s08-fatigue-fracture.dff"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.5 D800, Table 5-11",
+   "quote": "Safety Class Low Medium High DFF 3 6 10",
+   "sourceValue": "3 / 6 / 10 (low / medium / high)",
+   "note": "Default corrected from 5 to 6 after this cross-check. The text layer of the PDF runs the three numbers together (\"3610\"); the table reads 3, 6, 10. The built-in 5 is below the medium-class value 6 (unconservative for safety class medium). Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-ovalisation",
+   "what": "Maximum allowable ovalisation of the installed pipe",
+   "standard": "DNV-ST-F101 (2021) §5",
+   "builtIn": "3 %",
+   "appliesTo": [
+    "s08-local-buckling.ovalLimit"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.13 (commentary on Sec.5 D1100)",
+   "quote": "Sec.5 D1100, where the maximum allowable ovalisation f0 = 3%. This applies for the pipeline as installed condition.",
+   "sourceValue": "3 %",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f101-sagbend-087",
+   "what": "Simplified laying criterion: equivalent stress in the sagbend and at the stinger tip",
+   "standard": "DNV-ST-F101 (2021) §5 / §10",
+   "builtIn": "0.87 × yield",
+   "appliesTo": [
+    "s08-installation.sagFactor",
+    "s09-installation.sagFactor"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.13 H300, Eq. (13.17)",
+   "quote": "σeq < 0.87 times fy (13.17)",
+   "sourceValue": "0.87 fy",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module; confirm against the 2021 edition."
+  },
+  {
+   "id": "f201-gamma-sc",
+   "what": "Riser safety class resistance factor, normal class",
+   "standard": "DNV-ST-F201 Table 5-3",
+   "builtIn": "1.14 [-]",
+   "appliesTo": [
+    "s09-buckling-collapse.gammaSC",
+    "s09-internal-flow.gammaSC"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F201 Dynamic Risers",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2010-10/Os-F201.pdf",
+   "edition": "October 2010",
+   "locator": "Sec.5 C102, Table 5-3",
+   "quote": "Table 5-3 Safety class resistance factor γ SC Low Normal High 1.04 1.14 1.26",
+   "sourceValue": "1.04 / 1.14 / 1.26",
+   "note": "Read in the 2010 DNV-OS-F201, the predecessor of DNV-ST-F201 cited by the module; confirm against the current edition."
+  },
+  {
+   "id": "f201-gamma-m",
+   "what": "Riser material resistance factor, ULS and ALS",
+   "standard": "DNV-ST-F201 Table 5-4",
+   "builtIn": "1.15 [-]",
+   "appliesTo": [
+    "s09-buckling-collapse.gammaM",
+    "s09-internal-flow.gammaM"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F201 Dynamic Risers",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2010-10/Os-F201.pdf",
+   "edition": "October 2010",
+   "locator": "Sec.5 C102, Table 5-4",
+   "quote": "Table 5-4 Material resistance factor γ m ULS & ALS SLS & FLS 1.15 1.0",
+   "sourceValue": "1.15 (ULS & ALS); 1.0 (SLS & FLS)",
+   "note": "Read in the 2010 DNV-OS-F201, the predecessor of DNV-ST-F201 cited by the module; confirm against the current edition."
+  },
+  {
+   "id": "f201-gamma-f-e",
+   "what": "Riser load effect factors, ULS",
+   "standard": "DNV-ST-F201 Table 5-2",
+   "builtIn": "γF = 1.1, γE = 1.3 [-]",
+   "appliesTo": [
+    "s09-buckling-collapse.gammaF",
+    "s09-buckling-collapse.gammaE"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F201 Dynamic Risers",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2010-10/Os-F201.pdf",
+   "edition": "October 2010",
+   "locator": "Sec.5 B201, Table 5-2",
+   "quote": "ULS 1.11) 1.32) NA FLS 1.0 1.0 NA",
+   "sourceValue": "γF 1.1 (note 1), γE 1.3 (note 2)",
+   "note": "The trailing digits in the quote are footnote markers: 1.1 with note 1 and 1.3 with note 2. Read in the 2010 DNV-OS-F201, the predecessor of DNV-ST-F201 cited by the module; confirm against the current edition."
+  },
+  {
+   "id": "f201-dff",
+   "what": "Riser design fatigue factor by safety class",
+   "standard": "DNV-ST-F201 Table 5-11",
+   "builtIn": "10 [-] (high safety class; help: 3 / 6 / 10)",
+   "appliesTo": [
+    "s09-wave-fatigue.dff",
+    "s09-fatigue-integrity.dff",
+    "s09-viv.dff",
+    "s09-fatigue-integrity.dffViv"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F201 Dynamic Risers",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2010-10/Os-F201.pdf",
+   "edition": "October 2010",
+   "locator": "Sec.5 E202, Table 5-9",
+   "quote": "Low Normal High 3.0 6.0 10.0",
+   "sourceValue": "3.0 / 6.0 / 10.0",
+   "note": "In the 2010 edition the table is numbered 5-9, not 5-11 as the help text says. Read in the 2010 DNV-OS-F201, the predecessor of DNV-ST-F201 cited by the module; confirm against the current edition."
+  },
+  {
+   "id": "f201-gamma-c-propagation",
+   "what": "Condition factor γc in the propagating-buckle check",
+   "standard": "DNV-ST-F201 §5",
+   "builtIn": "1.0 [-]",
+   "appliesTo": [
+    "s09-buckling-collapse.gammaC"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F201 Dynamic Risers",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2010-10/Os-F201.pdf",
+   "edition": "October 2010",
+   "locator": "Sec.5 D, Eq. (5.22) (p.39)",
+   "quote": "cγ = 1.0 if no buckle propagation (once initiated) is allowed.",
+   "sourceValue": "1.0 if no propagation is allowed; may be reduced to 0.9 where the buckle may travel a short distance (neighbouring pipe sections acting as buckle arrestors)",
+   "note": "The symbol is printed as \"cγ\" (and \"cg\") in the text layer of the 2010 edition. Read in the 2010 DNV-OS-F201, the predecessor of DNV-ST-F201 cited by the module."
+  },
+  {
+   "id": "e301-uls-cc1",
+   "what": "Mooring line ULS partial safety factors, consequence class 1, dynamic analysis",
+   "standard": "DNV-OS-E301 (2010–2018 as stated by the module)",
+   "builtIn": "γmean = 1.10, γdyn = 1.50 [-]",
+   "appliesTo": [
+    "s10-tension-offset.gammaMean",
+    "s10-tension-offset.gammaDyn",
+    "s10-line-strength.gmU",
+    "s10-line-strength.gdU"
+   ],
+   "status": "edition-dependent",
+   "sourceTitle": "DNV-OS-E301 Position Mooring",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190713194322/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-E301.pdf",
+   "edition": "October 2013",
+   "locator": "Ch.2 Sec.2 [4.2], Table 2-1 (p.45)",
+   "quote": "Table 2-1 Partial Safety Factors for ULS ... 1 Dynamic 1.10 1.50 2 Dynamic 1.40 2.10",
+   "sourceValue": "2013: class 1 1.10 / 1.50, class 2 1.40 / 2.10. 2018: pretension 1.20 with environmental tension 1.45 (class 1 permanent), 1.35 (class 1 mobile), 1.90 (class 2), time-domain analysis",
+   "note": "The module help attributes 1.10 / 1.50 to \"2010–2018\"; the July 2018 edition already uses the pretension / environmental format, so the built-in values belong to editions up to 2015 only. Read in the October 2013 edition. The July 2018 edition replaced the γmean/γdyn format by factors on pretension and environmental tension (see entry e301-uls-2018)."
+  },
+  {
+   "id": "e301-uls-2018",
+   "what": "Mooring line ULS partial safety factors in the 2018 format (pretension / environmental tension)",
+   "standard": "DNV-OS-E301",
+   "builtIn": "not implemented (γmean / γdyn format only)",
+   "appliesTo": [
+    "s10-tension-offset.gammaMean",
+    "s10-line-strength.gmU"
+   ],
+   "status": "edition-dependent",
+   "sourceTitle": "DNVGL-OS-E301 Position mooring",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNVGL/OS/2018-07/DNVGL-OS-E301.pdf",
+   "edition": "July 2018",
+   "locator": "Ch.2 Sec.2 [4.2], Table 1 (p.61)",
+   "quote": "Table 1 Partial safety factors for ULS ... 1 Permanent 1.20 1.45 1.20 1.80 1 Mobile 1.20 1.35 1.20 1.50 2 Permanent &mobile 1.20 1.90 1.20 2.30",
+   "sourceValue": "γpret 1.20; γenv 1.45 / 1.35 / 1.90 (time domain), 1.80 / 1.50 / 2.30 (frequency domain)",
+   "note": "Companion to e301-uls-cc1: values of the edition actually current in 2018–2021 for comparison."
+  },
+  {
+   "id": "e301-als-cc1",
+   "what": "Mooring line ALS partial safety factors, consequence class 1, dynamic analysis",
+   "standard": "DNV-OS-E301 (2010–2018 as stated by the module)",
+   "builtIn": "γmean = 1.00, γdyn = 1.10 [-]",
+   "appliesTo": [
+    "s10-line-strength.gmA",
+    "s10-line-strength.gdA",
+    "s10-line-break.gammaMean",
+    "s10-line-break.gammaDyn"
+   ],
+   "status": "edition-dependent",
+   "sourceTitle": "DNV-OS-E301 Position Mooring",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190713194322/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-E301.pdf",
+   "edition": "October 2013",
+   "locator": "Ch.2 Sec.2 [4.5], Table 2-2 (p.46)",
+   "quote": "Table 2-2 Partial Safety Factors for ALS ... 1 Dynamic 1.00 1.10 2 Dynamic 1.00 1.25",
+   "sourceValue": "2013: class 1 1.00 / 1.10, class 2 1.00 / 1.25. 2018: pretension 1.00 with environmental tension 1.10 (class 1 permanent), 1.05 (class 1 mobile), 1.45 (class 2)",
+   "note": "Read in the October 2013 edition. The July 2018 edition replaced the γmean/γdyn format by factors on pretension and environmental tension (see entry e301-uls-2018)."
+  },
+  {
+   "id": "e301-sc-095",
+   "what": "Characteristic strength of a mooring component from its minimum breaking strength",
+   "standard": "DNV-OS-E301",
+   "builtIn": "0.95 × MBL",
+   "appliesTo": [
+    "s10-tension-offset.strengthFactor",
+    "s10-line-strength.strengthFactor",
+    "s10-line-break.strengthFactor"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-E301 Position Mooring",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190713194322/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-E301.pdf",
+   "edition": "October 2013",
+   "locator": "Ch.2 Sec.2 [3.2] (p.44)",
+   "quote": "SC 0.95 S mbs =",
+   "sourceValue": "Sc = 0.95 Smbs",
+   "note": "Equation line as extracted; in the 2018 edition the equation is an image and could not be read as text."
+  },
+  {
+   "id": "e301-fatigue-factor",
+   "what": "Mooring fatigue safety factor for lines not regularly inspected ashore",
+   "standard": "DNV-OS-E301",
+   "builtIn": "5 [-]",
+   "appliesTo": [
+    "s10-line-fatigue.dff"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-E301 Position Mooring",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190713194322/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-E301.pdf",
+   "edition": "October 2013",
+   "locator": "Ch.2 Sec.2 [6.4.2] (p.54)",
+   "quote": "γF 5 when d F 0.8 ≤=",
+   "sourceValue": "γF = 5 when dF ≤ 0.8, increasing with dF above 0.8",
+   "note": "The expression for dF > 0.8 is partly an image; only the base value 5 was read."
+  },
+  {
+   "id": "e301-corrosion-fatigue",
+   "what": "Share of the chain corrosion allowance deducted in the fatigue analysis",
+   "standard": "DNV-OS-E301",
+   "builtIn": "0.5 [-]",
+   "appliesTo": [
+    "s10-line-fatigue.corrFrac"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-E301 Position Mooring",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190713194322/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-E301.pdf",
+   "edition": "October 2013",
+   "locator": "Ch.2 Sec.2 [6.3.2] (p.52)",
+   "quote": "In the fatigue analysis 50% of the chain’s corrosion allowance shall be taken into account.",
+   "sourceValue": "50 %",
+   "note": ""
+  },
+  {
+   "id": "e301-tn-curves",
+   "what": "T–N fatigue curve parameters of mooring chain and steel wire rope (aD, m)",
+   "standard": "DNV-OS-E301",
+   "builtIn": "stud chain 1.2e11 / 3.0; studless 6.0e10 / 3.0; stranded rope 3.4e14 / 4.0; spiral rope 1.7e17 / 4.8",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#tnCurve (chain-stud, chain-studless, rope-stranded, rope-spiral)"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-E301 Position Mooring",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190713194322/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-E301.pdf",
+   "edition": "October 2013",
+   "locator": "Ch.2 Sec.2 [6.2], Table 2-4 (p.51)",
+   "quote": "Stud chain 1.2·10 11 3.0 Studless chain (open link) 6.0·10 10 3.0 Stranded rope 3.4·10 14 4.0 Spiral rope 1.7·10 17 4.8",
+   "sourceValue": "identical",
+   "note": ""
+  },
+  {
+   "id": "c101-load-factors",
+   "what": "ULS load factors of the LRFD format, combinations a) and b) (G, Q, E, D)",
+   "standard": "DNV-OS-C101 (2021) Ch.2 Sec.1–2",
+   "builtIn": "a) 1.3 / 1.3 / 0.7; b) 1.0 / 1.0 / 1.3",
+   "appliesTo": [
+    "s02-jacket-interface.gGop",
+    "s02-crane-pedestal.gF",
+    "s02-skid-grillage.gF",
+    "s04-inplace-strength.gammaF"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-OS-C101 Design of offshore steel structures, general - LRFD method",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNV/os/2015-07/DNVGL-OS-C101.pdf",
+   "edition": "July 2015",
+   "locator": "Ch.2 Sec.1, Table 1 Load factors γf for ULS (p.21)",
+   "quote": "a) 1.3 1.3 0.7 1.0 b) 1.0 1.0 1.3 1.0",
+   "sourceValue": "a) G 1.3, Q 1.3, E 0.7, D 1.0; b) G 1.0, Q 1.0, E 1.3, D 1.0",
+   "note": "The modules listed apply 1.3 to permanent and variable loads (or to all loads) in this format; they do not all name DNV-OS-C101 as the governing code. Read in the July 2015 edition; the 2021 edition is cited."
+  },
+  {
+   "id": "c101-gamma-m",
+   "what": "Material factor for plated and tubular steel structures, ULS",
+   "standard": "DNV-OS-C101 (2021)",
+   "builtIn": "1.15 [-]",
+   "appliesTo": [
+    "s01-static-strength.gM",
+    "s02-local-fe-stress.gM",
+    "s02-deck-plate-framing.gM",
+    "s02-machinery-foundation.gM",
+    "s02-skid-grillage.gM",
+    "s04-buckling-local-stress.gammaM",
+    "s11-local-strength.gammaM",
+    "s15-rigging.gM",
+    "s15-transport-seafastening.gM",
+    "s15-temporary-stability.gM",
+    "s02-buckling-stability.gM1"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-OS-C101 Design of offshore steel structures, general - LRFD method",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNV/os/2015-07/DNVGL-OS-C101.pdf",
+   "edition": "July 2015",
+   "locator": "Ch.2 Sec.4 [2.1] (p.42) and [4.1.4] (p.43)",
+   "quote": "The material factor γM for plated structures is 1.15.",
+   "sourceValue": "1.15 (plated and tubular structures; γM0 and γM1 for members)",
+   "note": "Read in the July 2015 edition; the module cites the 2021 edition."
+  },
+  {
+   "id": "c101-dff",
+   "what": "Design fatigue factors by accessibility for inspection and repair",
+   "standard": "DNV-OS-C101 (2021)",
+   "builtIn": "1 / 2 / 3 (defaults 2 or 3 by module)",
+   "appliesTo": [
+    "s01-fatigue.dff",
+    "s02-fatigue-vibration.dff",
+    "s04-fatigue-integrity.dff",
+    "s05-fatigue-vibration.dff",
+    "s06-fatigue-impact.dff",
+    "s07-fatigue-deterioration.dff",
+    "s11-fatigue.dff",
+    "s11-integrity-life.DFF",
+    "s02-crane-pedestal.dff",
+    "s15-transport-seafastening.dff"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-OS-C101 Design of offshore steel structures, general - LRFD method",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNV/os/2015-07/DNVGL-OS-C101.pdf",
+   "edition": "July 2015",
+   "locator": "Ch.2 Sec.5 [1.2], Table 1 Design fatigue factors (p.51)",
+   "quote": "1 Internal structure, accessible and not welded directly to the submerged part ... 3 Non-accessible areas, areas not planned to be accessible for inspection and repair during operation.",
+   "sourceValue": "DFF 1, 2 or 3 by location and access",
+   "note": "The DNV-OS-C101 scale is 1–3; help texts that speak of \"1 to 10\" combine it with NORSOK N-004 / ISO 19902, which were not opened. Read in the July 2015 edition; the module cites the 2021 edition."
+  },
+  {
+   "id": "st0437-load-factors",
+   "what": "Partial safety factors for loads on wind turbine support structures, normal (N) and abnormal (A) design situations",
+   "standard": "IEC 61400-3-1 / DNV-ST-0437",
+   "builtIn": "N 1.35, A 1.1 [-]",
+   "appliesTo": [
+    "s03-extreme-loading.gammaN",
+    "s03-extreme-loading.gammaA",
+    "s03-coupled-simulation.gammaF",
+    "s03-structural-strength.gammaF",
+    "s03-monopile-capacity.gammaF",
+    "s03-pile-soil-interaction.gammaF",
+    "s03-gravity-base-stability.gammaF",
+    "s03-buckling-ultimate.gammaF",
+    "s16-foundation-soil.gammaF",
+    "s16-global-strength.gammaF"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0437 Loads and site conditions for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20200608073930/https://rules.dnvgl.com/docs/pdf/DNVGL/ST/2016-11/DNVGL-ST-0437.pdf",
+   "edition": "November 2016",
+   "locator": "Sec.4 [4.3], Table 4-2 (p.63)",
+   "quote": "Table 4-2 Partial safety factors for loads γF ... N 1,35*** A 1,1",
+   "sourceValue": "N 1.35 (1.25 for DLC 1.1, 1.2 for DLC 2.5), A 1.1",
+   "note": "IEC 61400-3-1 itself was not opened; DNVGL-ST-0437 states the table follows IEC 61400-1 Table 3."
+  },
+  {
+   "id": "st0437-permanent",
+   "what": "Partial load factors for permanent loads, ULS: favourable and unfavourable",
+   "standard": "IEC 61400-3-1 / DNV-ST-0437",
+   "builtIn": "0.9 favourable, 1.1 unfavourable [-]",
+   "appliesTo": [
+    "s03-gravity-base-stability.gammaG",
+    "s03-structural-strength.gammaG",
+    "s03-buckling-ultimate.gammaG",
+    "s16-global-strength.gammaG"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0437 Loads and site conditions for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20200608073930/https://rules.dnvgl.com/docs/pdf/DNVGL/ST/2016-11/DNVGL-ST-0437.pdf",
+   "edition": "November 2016",
+   "locator": "Sec.4 [4.3], Table 4-2 (p.63)",
+   "quote": "1,0 0,9** 1,1** 1,0 ... ** Factors for permanent loads in ULS may be taken as 1,0 if appropriate measures are taken.",
+   "sourceValue": "0.9 favourable, 1.1 unfavourable",
+   "note": ""
+  },
+  {
+   "id": "st0126-gamma-m-steel",
+   "what": "Material factor for steel tubular members and shells of wind turbine support structures",
+   "standard": "DNV-ST-0126 (2021)",
+   "builtIn": "1.10 [-]",
+   "appliesTo": [
+    "s03-coupled-simulation.gammaM",
+    "s03-pile-soil-interaction.gammaM",
+    "s03-extreme-loading.gammaM",
+    "s16-global-strength.gammaM"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0126 Support structures for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210717042412/https://rules.dnv.com/docs/pdf/DNV/ST/2018-07/DNVGL-ST-0126.pdf",
+   "edition": "July 2018",
+   "locator": "Sec.4 [4.4] (p.66)",
+   "quote": "For said checks, the value of the material factor shall be taken as γM = 1.10.",
+   "sourceValue": "1.10",
+   "note": "Read in the July 2018 edition."
+  },
+  {
+   "id": "st0126-gamma-m-soil",
+   "what": "Material factors on soil strength for foundation stability, ULS",
+   "standard": "DNV-ST-0126 (2021) §7",
+   "builtIn": "1.25 total stress (su); 1.15 effective stress (tan φ)",
+   "appliesTo": [
+    "s03-gravity-base-stability.gammaM",
+    "s16-foundation-soil.gammaM"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0126 Support structures for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210717042412/https://rules.dnv.com/docs/pdf/DNV/ST/2018-07/DNVGL-ST-0126.pdf",
+   "edition": "July 2018",
+   "locator": "Sec.7 [7.5.2.9] (p.145)",
+   "quote": "γm = 1.15 for effective stress analysis γm = 1.25 for total stress analysis.",
+   "sourceValue": "1.15 effective stress, 1.25 total stress",
+   "note": "Read in the July 2018 edition."
+  },
+  {
+   "id": "st0126-pile-axial",
+   "what": "Material factor on axial pile capacity, ULS",
+   "standard": "DNV-ST-0126 (2021) §7",
+   "builtIn": "1.25 [-]",
+   "appliesTo": [
+    "s03-monopile-capacity.gammaRax"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0126 Support structures for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210717042412/https://rules.dnv.com/docs/pdf/DNV/ST/2018-07/DNVGL-ST-0126.pdf",
+   "edition": "July 2018",
+   "locator": "Sec.7 [7.6.1.7] (p.149)",
+   "quote": "a material factor γm = 1.25 shall be applied to all characteristic values of soil resistance to determine its design capacity.",
+   "sourceValue": "1.25",
+   "note": "Read in the July 2018 edition. The clause concerns axially loaded piles of jacket-type foundations."
+  },
+  {
+   "id": "st0126-tilt",
+   "what": "Permanent tilt of the tower axis: installation tolerance and total limit",
+   "standard": "DNV-ST-0126 (2021)",
+   "builtIn": "0.25° accumulated / installation, 0.5° total",
+   "appliesTo": [
+    "s03-pile-soil-interaction.rotLimit",
+    "s03-pile-soil-interaction.accLimit",
+    "s03-gravity-base-stability.tiltLim",
+    "s16-foundation-soil.rotLimit"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0126 Support structures for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210717042412/https://rules.dnv.com/docs/pdf/DNV/ST/2018-07/DNVGL-ST-0126.pdf",
+   "edition": "July 2018",
+   "locator": "Sec.3 [3.10.2.2] guidance note (p.47)",
+   "quote": "it may be required that the foundation/substructure is installed and the tower is constructed with a total tolerance for the tower axis tilt of 0.25°.",
+   "sourceValue": "0.25° installation + 0.25° permanent = 0.50° total (guidance, project specific)",
+   "note": "Guidance note, not a requirement; the turbine supplier sets the limit."
+  },
+  {
+   "id": "st0126-dff",
+   "what": "Design fatigue factors for wind turbine support structures",
+   "standard": "DNV-ST-0126 (2021) Table 4-13 (as cited)",
+   "builtIn": "3 (not accessible), 2, 1",
+   "appliesTo": [
+    "s03-fatigue-life.dff",
+    "s16-fatigue.dffMono",
+    "s16-fatigue.dffTower",
+    "s03-reliability-life-extension.dff",
+    "s16-reliability-lifetime.dff"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0126 Support structures for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210717042412/https://rules.dnv.com/docs/pdf/DNV/ST/2018-07/DNVGL-ST-0126.pdf",
+   "edition": "July 2018",
+   "locator": "Sec.4 [4.11.5.2] Table 4-18 (p.88) and [4.11.6.4] Table 4-19 (p.89)",
+   "quote": "Table 4-19 Material factors - γm DFF γm 1 1.0 2 1.15 3 1.25",
+   "sourceValue": "DFF 3 where not accessible for inspection and repair; 1 to 2 where accessible; equivalent γm 1.0 / 1.15 / 1.25",
+   "note": "In the 2018 edition the DFF table is Table 4-18, not 4-13 as the help text says."
+  },
+  {
+   "id": "c205-cds",
+   "what": "Steady drag coefficient of a circular cylinder at high Reynolds number: smooth and rough (marine growth)",
+   "standard": "DNV-RP-C205 §6.7 (the jacket modules attribute the same pair to API RP 2A)",
+   "builtIn": "Cd = 0.65 smooth, 1.05 rough [-]",
+   "appliesTo": [
+    "s01-collision.Cd",
+    "s01-fatigue.Cd",
+    "s01-global-local.Cd",
+    "s01-inplace.Cd",
+    "s01-joints.Cd",
+    "s01-lifting.Cd",
+    "s01-nonlinear.Cd",
+    "s01-progressive-collapse.Cd",
+    "s01-pushover.Cd",
+    "s01-reassessment.Cd",
+    "s01-stability.Cd",
+    "s01-static-strength.Cd",
+    "s01-uls-sls.Cd",
+    "s01-wave-loading.Cd",
+    "s05-environmental-loading.Cd",
+    "s05-vessel-operational.Cd",
+    "s07-pier-wave-load.Cd"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-C205 Environmental Conditions and Environmental Loads",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-04/RP-C205.pdf",
+   "edition": "April 2014",
+   "locator": "[6.7.1.5] and [6.7.2] (p.84–86)",
+   "quote": "The variation of C M with K C for smooth (C DS = 0.65) and rough (C DS = 1.05) cylinder is shown in Figure 6-8",
+   "sourceValue": "CDS = 0.65 (Δ < 1e-4, smooth), 1.05 (Δ > 1e-2, rough)",
+   "note": "Confirms the pair 0.65 / 1.05 in DNV-RP-C205. The API RP 2A-WSD and ISO 19902 clauses the jacket modules cite were not opened (not openly accessible). s01-fatigue.Cd uses 0.7, a project choice between the two."
+  },
+  {
+   "id": "c205-slam-cylinder",
+   "what": "Slamming coefficient of a smooth circular cylinder",
+   "standard": "DNV-RP-C205 §8.6",
+   "builtIn": "5.15 quoted in help (Campbell–Weynberg); default 2π",
+   "appliesTo": [
+    "s07-pier-wave-load.Cs"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-C205 Environmental Conditions and Environmental Loads",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-04/RP-C205.pdf",
+   "edition": "April 2014",
+   "locator": "[8.6.1.2] (p.123)",
+   "quote": "For a smooth circular cylinder the slamming coefficient can be taken as CS = 5.15",
+   "sourceValue": "5.15 for a smooth circular cylinder; 2π is given in [8.7.2.5] as the minimum flat-bottom slamming pressure coefficient",
+   "note": "The built-in default 6.283 (2π) is the Wienke–Oumeraci / IEC 61400-3-1 value, which was not opened; DNV-RP-C205 gives 5.15 for a cylinder, so the default is the larger (conservative) of the two."
+  },
+  {
+   "id": "h103-slam-min",
+   "what": "Minimum slamming coefficient for lifting through the splash zone",
+   "standard": "DNV-RP-N103 §4.5 (successor of DNV-RP-H103)",
+   "builtIn": "5.0 [-]",
+   "appliesTo": [
+    "s04-lowering-landing.Cs"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-H103 Modelling and Analysis of Marine Operations",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-02/RP-H103.pdf",
+   "edition": "February 2014",
+   "locator": "Sec.3 (p.49) and Sec.4 simplified method",
+   "quote": "For smooth circular cylinders Cs should not be taken less than 3.0. Otherwise, Cs should not be taken less than 5.0.",
+   "sourceValue": "3.0 smooth circular cylinders; 5.0 otherwise",
+   "note": "Read in DNV-RP-H103 (2014), the predecessor of DNV-RP-N103."
+  },
+  {
+   "id": "h103-cd-min",
+   "what": "Minimum drag coefficient in oscillatory flow for subsea structures (simplified method)",
+   "standard": "DNV-RP-N103 §4.3.8",
+   "builtIn": "2.5 [-]",
+   "appliesTo": [
+    "s04-lowering-landing.CdZ"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-H103 Modelling and Analysis of Marine Operations",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-02/RP-H103.pdf",
+   "edition": "February 2014",
+   "locator": "Sec.4 (p.73)",
+   "quote": "5 . 2CD ≥ [-]",
+   "sourceValue": "CD ≥ 2.5",
+   "note": "The inequality is an equation object; the text layer gives it as \"5 . 2CD ≥\". Read in DNV-RP-H103 (2014)."
+  },
+  {
+   "id": "h103-zeta-a",
+   "what": "Characteristic wave amplitude in the simplified splash-zone method",
+   "standard": "DNV-RP-N103 §4.3.2",
+   "builtIn": "0.9 × Hs",
+   "appliesTo": [
+    "s04-lowering-landing.zetaFac"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-H103 Modelling and Analysis of Marine Operations",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-02/RP-H103.pdf",
+   "edition": "February 2014",
+   "locator": "Sec.3 / [4.3.4.3] (p.47)",
+   "quote": "ζa = 0.9 Hs for operations less than 30 minutes and ζa = Hs for operations exceeding 30 minutes",
+   "sourceValue": "0.9 Hs (< 30 min); 1.0 Hs otherwise",
+   "note": "Read in DNV-RP-H103 (2014)."
+  },
+  {
+   "id": "h205-daf-table",
+   "what": "Dynamic amplification factors for lifts in air by static hook load",
+   "standard": "DNV-ST-N001 (2021) §16",
+   "builtIn": "offshore 1.25 / 1.20 / 1.15 / 1.10; inshore 1.12 / 1.10 / 1.08 / 1.05; onshore 1.05 / 1.05 / 1.03 / 1.03 (100–300 / 300–1000 / 1000–2500 / > 2500 t); onshore 1.10 below 100 t",
+   "appliesTo": [
+    "s01-lifting.DAF",
+    "s04-lowering-landing.dafAir",
+    "s15-crane-lift.dafUser",
+    "s15-rigging.dafUser",
+    "engine-adjacent: src/suites/s15/_common.js#dafN001"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-H205 Lifting Operations (VMO Standard Part 2-5)",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210309113305/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-04/OS-H205.pdf",
+   "edition": "April 2014",
+   "locator": "[3.2.2.4], Table 3-1 (p.18)",
+   "quote": "100 - 300 t 1.05 1.12 1.25 300 - 1000 t 1.05 1.10 1.20 1000 - 2500 t 1.03 1.08 1.15 > 2500 t 1.03 1.05 1.10",
+   "sourceValue": "identical for the four weight classes; onshore 1.10 below 100 t",
+   "note": "The expressions used below 100 t for inshore and offshore lifts (1.07 + 0.05√(100/W) and 1 + 0.25√(100/W)) are images in the PDF and were not read. Read in DNV-OS-H205 (2014), a predecessor of DNV-ST-N001 Sec.16, which is not openly accessible; confirm against the governing edition."
+  },
+  {
+   "id": "h205-skl",
+   "what": "Skew load factor for a statically indeterminate four-point lift",
+   "standard": "DNV-ST-N001 (2021) §16",
+   "builtIn": "1.25 [-]",
+   "appliesTo": [
+    "s01-lifting.SKL",
+    "s02-lift-installation.skl",
+    "s15-rigging.skl"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-H205 Lifting Operations (VMO Standard Part 2-5)",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210309113305/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-04/OS-H205.pdf",
+   "edition": "April 2014",
+   "locator": "[3.3.2.5] (p.19)",
+   "quote": "For statically indeterminate 4 point lifts using cable laid slings or grommets, a SKL sl of 1.25 is normally acceptable",
+   "sourceValue": "1.25 (1.0 determinate; 1.1 with floating spreader bars)",
+   "note": "Read in DNV-OS-H205 (2014), a predecessor of DNV-ST-N001 Sec.16, which is not openly accessible; confirm against the governing edition."
+  },
+  {
+   "id": "h205-consequence",
+   "what": "Consequence factor for lift points and attachments",
+   "standard": "DNV-ST-N001 (2021) Table 16-7 (as cited)",
+   "builtIn": "1.3 [-] (1.15 main members, 1.0 other)",
+   "appliesTo": [
+    "s01-lifting.gC",
+    "s02-lift-installation.gC",
+    "s15-rigging.fCons"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-H205 Lifting Operations (VMO Standard Part 2-5)",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210309113305/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-04/OS-H205.pdf",
+   "edition": "April 2014",
+   "locator": "[5.1.2.2], Table 5-1 (p.34)",
+   "quote": "Lift points including attachments to object ... 1.3 ... Main elements supporting the lift point. 1.15 Other elements of lifted object. 1.0",
+   "sourceValue": "1.3 / 1.15 / 1.0",
+   "note": "Read in DNV-OS-H205 (2014), a predecessor of DNV-ST-N001 Sec.16, which is not openly accessible; confirm against the governing edition."
+  },
+  {
+   "id": "h205-load-factor",
+   "what": "Load factor for structural checks of lift points and lifted object",
+   "standard": "DNV-ST-N001 (2021) §16",
+   "builtIn": "1.3 [-]",
+   "appliesTo": [
+    "s15-rigging.fLoad",
+    "s01-lifting.gG"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-H205 Lifting Operations (VMO Standard Part 2-5)",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210309113305/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-04/OS-H205.pdf",
+   "edition": "April 2014",
+   "locator": "[4.1.5.3] (p.25)",
+   "quote": "γf : Load factor = 1.3",
+   "sourceValue": "1.3 (1.2 where all skew load effects are accurately calculated)",
+   "note": "Read in DNV-OS-H205 (2014), a predecessor of DNV-ST-N001 Sec.16, which is not openly accessible; confirm against the governing edition."
+  },
+  {
+   "id": "h205-sling-sf",
+   "what": "Nominal safety factor of steel wire rope slings",
+   "standard": "DNV-ST-N001 (2021) §16",
+   "builtIn": "3.0 [-]",
+   "appliesTo": [
+    "s01-lifting.slingSF",
+    "s02-lift-installation.sfReq",
+    "s04-lowering-landing.slingSF",
+    "s15-rigging.gSling"
+   ],
+   "status": "not-found",
+   "sourceTitle": "DNV-OS-H205 Lifting Operations (VMO Standard Part 2-5)",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210309113305/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-04/OS-H205.pdf",
+   "edition": "April 2014",
+   "locator": "[4.1.5.1] (p.25)",
+   "quote": "γsf = γf γc γr γw γmγtw γsf = 2.3 γr γw γtw",
+   "sourceValue": "greatest of the product of partial factors and 2.3 γr γw γtw; no single value 3.0 is given",
+   "note": "The source defines the nominal factor as a product, with 2.3 times the reduction, wear and twist factors as the floor. 3.0 is a typical outcome (e.g. 2.3 × 1.25 for a hand splice = 2.9), not a tabulated value; treat it as a placeholder. Read in DNV-OS-H205 (2014), a predecessor of DNV-ST-N001 Sec.16, which is not openly accessible; confirm against the governing edition."
+  },
+  {
+   "id": "h102-weight-contingency",
+   "what": "Weight contingency (inaccuracy) factor",
+   "standard": "DNV-ST-N001 (2021) §16 / §5",
+   "builtIn": "1.05 [-]",
+   "appliesTo": [
+    "s02-lift-installation.cont",
+    "s15-crane-lift.fWeight",
+    "s15-rigging.fWeight",
+    "s04-equipment-load-distribution.cont"
+   ],
+   "status": "edition-dependent",
+   "sourceTitle": "DNV-OS-H102 Marine Operations, Design and Fabrication",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2012-01/Os-H102.pdf",
+   "edition": "January 2012",
+   "locator": "Sec.3 C103 and C106 (p.18)",
+   "quote": "a contingency factor of maximum 1.03 ... For characteristic weights based on estimated weight a weight inaccuracy factor of minimum 1.1 should be applied.",
+   "sourceValue": "DNV-OS-H102 (2012): at most 1.03 for a weighed object (tolerance below ±3 %); at least 1.10 for an estimated weight. DNV-ST-N001 (2021): not opened",
+   "note": "The built-in 1.05 lies between the two DNV-OS-H102 values: adequate for a weighed object, below the 1.10 minimum for a weight that is only estimated. The DNV-ST-N001 weight-control classes could not be read."
+  },
+  {
+   "id": "h102-cog-factor",
+   "what": "Centre-of-gravity inaccuracy factor",
+   "standard": "DNV-ST-N001 (2021) §16",
+   "builtIn": "1.05 [-]",
+   "appliesTo": [
+    "s02-lift-installation.cogF",
+    "s15-rigging.fCog"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-H102 Marine Operations, Design and Fabrication",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2012-01/Os-H102.pdf",
+   "edition": "January 2012",
+   "locator": "Sec.3 C200 guidance note (p.18)",
+   "quote": "inaccuracy in estimated CoG may be accounted for by an inaccuracy factor. This factor should normally not be taken less than 1.05.",
+   "sourceValue": "not less than 1.05",
+   "note": "Read in DNV-OS-H102 (2012), a predecessor of DNV-ST-N001."
+  },
+  {
+   "id": "f107-angular-deviation",
+   "what": "Angular deviation of dropped objects falling through water, by object category",
+   "standard": "DNV-RP-F107 (2019) §5",
+   "builtIn": "5° default (box-shaped 2–8 t)",
+   "appliesTo": [
+    "s04-dropped-object.devDeg"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F107 Risk assessment of pipeline protection",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190712051617/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-05/DNVGL-RP-F107.pdf",
+   "edition": "May 2017",
+   "locator": "[5.2.2], Table 5-2 (p.28)",
+   "quote": "1 < 2 15 2 2 – 8 9 ... > 8 5 4 < 2 10 5 2 – 8 5",
+   "sourceValue": "15 / 9 / 5° flat or long (< 2, 2–8, > 8 t); 10 / 5 / 3° box or round; 2° for >> 8 t",
+   "note": "Read in the May 2017 edition (table numbered 5-2 there)."
+  },
+  {
+   "id": "f107-cd-ca",
+   "what": "Drag and added-mass coefficients of dropped objects by shape",
+   "standard": "DNV-RP-F107 (2019) Table 9 (as cited)",
+   "builtIn": "Cd = 1.0, Ca = 0.5 [-]",
+   "appliesTo": [
+    "s01-collision.cdObj",
+    "s01-collision.caObj"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F107 Risk assessment of pipeline protection",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190712051617/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-05/DNVGL-RP-F107.pdf",
+   "edition": "May 2017",
+   "locator": "[5.3.2], Table 5-3 (p.32)",
+   "quote": "1,2,3 Slender shape 0.7 – 1.5 0.1 – 1.0 4,5,6,7 Box shaped 1.2 – 1.3 0.6 – 1.5",
+   "sourceValue": "Cd 0.7–1.5 and Ca 0.1–1.0 slender; Cd 1.2–1.3 and Ca 0.6–1.5 box shaped",
+   "note": "The built-in values lie inside the slender-shape ranges; for box-shaped objects Cd 1.0 is below the tabulated 1.2–1.3. In the 2017 edition the table is 5-3, not Table 9."
+  },
+  {
+   "id": "f107-dent-classes",
+   "what": "Dent depth limits of the damage classes of steel pipelines",
+   "standard": "DNV-RP-F107 (2019) §4",
+   "builtIn": "allowable dent 5 % (minor-damage limit); 5–10 % classed as major with leakage anticipated",
+   "appliesTo": [
+    "s04-dropped-object.dMinor",
+    "s04-dropped-object.dMajor",
+    "s04-dropped-object.dentAllow"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F107 Risk assessment of pipeline protection",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190712051617/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-05/DNVGL-RP-F107.pdf",
+   "edition": "May 2017",
+   "locator": "[4.3.1], Table 4-1 (p.21)",
+   "quote": "< 5 Equation (3) Minor damage 1.0 0 0 1.0 0 0 5 – 10 Equation (3) Major damageLeakage anticipated 0.1 0.8 0.1",
+   "sourceValue": "< 5 % minor damage; 5–10 % major damage with leakage anticipated; 10–15 % and above major damage with leakage and rupture",
+   "note": "Default allowable dent corrected from 10 % to 5 % and the class wording corrected after this cross-check. The help text labels 5–10 % as \"moderate\" and treats 10 % as the allowable dent; the table classes dents of 5–10 % as major damage (conditional probability 0.8 of D2, 0.1 of D3). Using 10 % as the default allowable is unconservative against this table; 5 % is the minor-damage limit."
+  },
+  {
+   "id": "f105-safety-factors",
+   "what": "Free-span fatigue safety factors: stress range, onset in-line and cross-flow, stability parameter",
+   "standard": "DNV-RP-F105 (2017) Table 2-2",
+   "builtIn": "γs = 1.3, γon,IL = 1.1, γon,CF = 1.2, γk = 1.0 / 1.15 / 1.30",
+   "appliesTo": [
+    "s08-free-span.gammaS",
+    "s08-free-span.gammaOnIL",
+    "s08-free-span.gammaOnCF",
+    "engine: src/engine/pipeline/span.js#fatigueScreening / stabilityParameter defaults"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F105 Free spanning pipelines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-06/DNVGL-RP-F105.pdf",
+   "edition": "June 2017",
+   "locator": "[2.7.2], Table 2-2 (p.48)",
+   "quote": "Low Medium High γk 1.0 1.15 1.30 γs 1.3 γon,IL 1.1 γon,CF 1.2",
+   "sourceValue": "identical",
+   "note": ""
+  },
+  {
+   "id": "f105-screening",
+   "what": "Free-span screening factors on natural frequency",
+   "standard": "DNV-RP-F105 (2017) Table 2-1",
+   "builtIn": "γIL = γCF = 1.4",
+   "appliesTo": [
+    "s08-free-span.gammaScr",
+    "engine: src/engine/pipeline/span.js#screening defaults"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F105 Free spanning pipelines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-06/DNVGL-RP-F105.pdf",
+   "edition": "June 2017",
+   "locator": "[2.7.1], Table 2-1 (p.47)",
+   "quote": "Table 2-1 Safety factors for screening criteria γIL 1.4 γCF 1.4",
+   "sourceValue": "1.4 / 1.4",
+   "note": ""
+  },
+  {
+   "id": "f105-boundary-coefficients",
+   "what": "Boundary condition coefficients C1–C6 for free-span frequency, buckling load, moment and deflection",
+   "standard": "DNV-RP-F105 Table 6-1",
+   "builtIn": "pinned 1.57 / 1.0 / 0.8 / 4.93 / 1/8 / 5/384; fixed 3.56 / 4.0 / 0.2 / 14.1 / 1/12 / 1/384; single span on seabed 3.56 / 4.0 / 0.4 / 14.1(L/Leff)²",
+   "appliesTo": [
+    "engine: src/engine/pipeline/span.js#boundaryCoefficients"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F105 Free spanning pipelines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-06/DNVGL-RP-F105.pdf",
+   "edition": "June 2017",
+   "locator": "[6.8.7], Table 6-1 (p.111)",
+   "quote": "C1 1.57 3.56 3.56 C2 1.0 4.0 4.0 C3 0.8 1) 0.2 1) 0.4 1) C4 4.93 14.1 Shoulder: 14.1(L/Leff)2",
+   "sourceValue": "identical",
+   "note": "The engine comment cites the 2006 edition; the 2017 table carries the same values."
+  },
+  {
+   "id": "f105-kc-coating",
+   "what": "Empirical constant kc of the concrete stiffness enhancement factor",
+   "standard": "DNV-RP-F105 Eq. 6.5 (2006 numbering)",
+   "builtIn": "0.33 asphalt; 0.25 PP/PE",
+   "appliesTo": [
+    "engine: src/engine/pipeline/span.js#concreteStiffnessFactor"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F105 Free spanning pipelines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-06/DNVGL-RP-F105.pdf",
+   "edition": "June 2017",
+   "locator": "[6.3.7] (p.100)",
+   "quote": "value of kc may be taken as 0.33 for asphalt and 0.25 for PP/PE coating.",
+   "sourceValue": "0.33 / 0.25",
+   "note": ""
+  },
+  {
+   "id": "f109-gamma-w",
+   "what": "Safety factor on vertical stability (specific gravity check)",
+   "standard": "DNV-RP-F109 Eq. 3.1",
+   "builtIn": "1.1 [-]",
+   "appliesTo": [
+    "s08-on-bottom-stability.gammaW"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F109 On-bottom stability design of submarine pipelines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190713081446/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-05/DNVGL-RP-F109.pdf",
+   "edition": "May 2017",
+   "locator": "[3.2], Eq. (3.1) (p.12)",
+   "quote": "If a sufficiently low probability of negative buoyancy is not documented, the safety factor γW = 1.1 can be applied.",
+   "sourceValue": "1.1",
+   "note": ""
+  },
+  {
+   "id": "rpf101-usage-factor",
+   "what": "Usage factors of the allowable-stress approach for corroded pipelines (Part B)",
+   "standard": "DNV-RP-F101 Part B",
+   "builtIn": "F1 = 0.9; F2 = 0.72",
+   "appliesTo": [
+    "s08-integrity.F2"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F101 Corroded pipelines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20170918191453/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-05/DNVGL-RP-F101.pdf",
+   "edition": "May 2017",
+   "locator": "Part B [4.2] (p.54)",
+   "quote": "F1 = 0.9 (modelling factor) F2 = operational usage factor ... (and is normally taken as equal to the design factor).",
+   "sourceValue": "F1 = 0.9; F2 = the design factor of the pipeline (0.72 in the worked examples of the document)",
+   "note": "F2 is not a fixed number in the RP: it equals the design factor; 0.72 is the value used in its examples."
+  },
+  {
+   "id": "c203-air-loga",
+   "what": "S–N curves in air: m1, log a1, log a2 and fatigue limit at 1e7 cycles for curves B1 to W3",
+   "standard": "DNV-RP-C203 (2021) Table 2-1",
+   "builtIn": "B1 4.0 / 15.117 / 17.146 / 106.97 ... D 3.0 / 12.164 / 15.606 / 52.63 ... W3 3.0 / 10.970 / 13.617 / 21.05",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#AIR (B1–W3, columns m1, log a1, log a2, limit, SCF)"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-C203 Fatigue Design of Offshore Steel Structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/RP-C203.pdf",
+   "edition": "October 2011",
+   "locator": "[2.4.4], Table 2-1 (p.18)",
+   "quote": "D 3.0 12.164 15.606 52.63 0.20 1.00 E 3.0 12.010 15.350 46.78 0.20 1.13 F 3.0 11.855 15.091 41.52 0.25 1.27",
+   "sourceValue": "all fourteen rows B1–W3 identical in m1, log a1, log a2, fatigue limit and embedded SCF",
+   "note": "Compared row by row. Read in the October 2011 edition."
+  },
+  {
+   "id": "c203-thickness-exponent-c",
+   "what": "Thickness exponent k of curves C, C1 and C2",
+   "standard": "DNV-RP-C203 (2021) Table 2-1",
+   "builtIn": "C 0.05, C1 0.10, C2 0.15",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#AIR (C, C1, C2 column k)"
+   ],
+   "status": "edition-dependent",
+   "sourceTitle": "DNV-RP-C203 Fatigue Design of Offshore Steel Structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/RP-C203.pdf",
+   "edition": "October 2011",
+   "locator": "[2.4.4], Table 2-1 (p.18)",
+   "quote": "C 3.0 12.592 16.320 73.10 0.15 C1 3.0 12.449 16.081 65.50 0.15 C2 3.0 12.301 15.835 58.48 0.15",
+   "sourceValue": "2011: k = 0.15 for C, C1 and C2. 2016 and later (as coded): 0.05 / 0.10 / 0.15 — not opened",
+   "note": "The built-in exponents for C and C1 are those recalled from the 2016+ editions, which are not openly accessible; against the 2011 table they are lower (less thickness penalty, unconservative for thick plates under the 2011 edition). Confirm in the governing edition."
+  },
+  {
+   "id": "c203-t-curve",
+   "what": "S–N curve T for tubular joints: log a1, log a2, fatigue limit and reference thickness",
+   "standard": "DNV-RP-C203 (2021) Table 2-1",
+   "builtIn": "log a1 12.48, log a2 16.13, limit 67.09 MPa, tref 16 mm; cathodic protection 12.18; free corrosion 12.03",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#AIR.T, CP_LOGA1.T, FREE_LOGA.T, tRef"
+   ],
+   "status": "edition-dependent",
+   "sourceTitle": "DNV-RP-C203 Fatigue Design of Offshore Steel Structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/RP-C203.pdf",
+   "edition": "October 2011",
+   "locator": "[2.4.3] and Table 2-1 (p.17–18)",
+   "quote": "T 3.0 12.164 15.606 52.63 0.25 for SCF ≤ 10.0 ... For tubular joints the reference thickness is 32 mm.",
+   "sourceValue": "2011: T equals D (12.164 / 15.606 / 52.63) with tref 32 mm; in seawater with CP 11.764; free corrosion 11.687. 2016 and later (as coded): 12.48 / 16.13 / 67.09 with tref 16 mm — not opened",
+   "note": "The two parameter sets are equivalent at t = 32 mm by construction of the 2016 revision, but the coded values could not be read in an open copy of the 2016+ text."
+  },
+  {
+   "id": "c203-cp-loga",
+   "what": "S–N curves in seawater with cathodic protection: log a1 for B1 to W3",
+   "standard": "DNV-RP-C203 (2021) Table 2-2",
+   "builtIn": "B1 14.917, B2 14.685, C 12.192, C1 12.049, C2 11.901, D 11.764, E 11.610, F 11.455, F1 11.299, F3 11.146, G 10.998, W1 10.861, W2 10.707, W3 10.570",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#CP_LOGA1"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-C203 Fatigue Design of Offshore Steel Structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/RP-C203.pdf",
+   "edition": "October 2011",
+   "locator": "[2.4.5], Table 2-2 (p.19)",
+   "quote": "D 3.0 11.764 15.606 52.63 0.20 1.00 E 3.0 11.610 15.350 46.78 0.20 1.13",
+   "sourceValue": "identical for B1–W3",
+   "note": "Read in the October 2011 edition."
+  },
+  {
+   "id": "c203-free-corrosion",
+   "what": "S–N curves in seawater for free corrosion: log a (m = 3) for B1 to W3",
+   "standard": "DNV-RP-C203 (2021) Table 2-4 (as coded)",
+   "builtIn": "B1 12.436, B2 12.262, C 12.115, C1 11.972, C2 11.824, D 11.687, E 11.533, F 11.378, F1 11.222, F3 11.068, G 10.921, W1 10.784, W2 10.630, W3 10.493",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#FREE_LOGA"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-C203 Fatigue Design of Offshore Steel Structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/RP-C203.pdf",
+   "edition": "October 2011",
+   "locator": "[2.4.9]–[2.4.10], Table 2-3 (p.21)",
+   "quote": "B1 12.436 0 B2 12.262 0 C 12.115 0.15 C1 11.972 0.15 C2 11.824 0.15 D 11.687 0.20",
+   "sourceValue": "identical for B1–W3",
+   "note": "Table 2-3 in the 2011 edition. Read in the October 2011 edition."
+  },
+  {
+   "id": "c203-tref",
+   "what": "Reference thickness for the thickness effect, welded connections other than tubular joints",
+   "standard": "DNV-RP-C203 (2021) §2.4.3",
+   "builtIn": "25 mm",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#snCurve tRef"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-C203 Fatigue Design of Offshore Steel Structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/RP-C203.pdf",
+   "edition": "October 2011",
+   "locator": "[2.4.3] (p.17)",
+   "quote": "tref = reference thickness equal 25 mm for welded connections other than tubular joints.",
+   "sourceValue": "25 mm",
+   "note": "Read in the October 2011 edition."
+  },
+  {
+   "id": "eurotop-runup-165",
+   "what": "Wave run-up Ru2%: coefficient of the breaking-wave branch, mean value and design / assessment approach",
+   "standard": "EurOtop (2018) Eq. 5.1–5.5",
+   "builtIn": "1.65 mean; 1.75 design",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#runup2pct"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§5.2 (PDF p.124–125)",
+   "quote": "Coefficient 1.65 in Equation 5.1 can be considered as a stochastic variable with a mean value of 1.65",
+   "sourceValue": "1.65 (mean), 1.75 (design and assessment)",
+   "note": ""
+  },
+  {
+   "id": "eurotop-runup-max",
+   "what": "Wave run-up Ru2%: coefficient of the maximum (non-breaking) branch",
+   "standard": "EurOtop (2018) Eq. 5.2 / 5.5",
+   "builtIn": "1.0 mean; 1.07 design, with (4 − 1.5/√(γb ξ))",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#runup2pct"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§6.2, text after Eq. 6.1 (PDF p.186)",
+   "quote": "The coefficient 1.0 for the “maximum” in Equation 6.1 can be considered as a stochastic variable with a mean value of 1.00 and a standard deviation of σ = 0.07.",
+   "sourceValue": "1.0 mean, 1.07 design; form 4.0 − 1.5/√(γb ξ)",
+   "note": ""
+  },
+  {
+   "id": "eurotop-surging-roughness",
+   "what": "Roughness factor for surging waves on rough slopes",
+   "standard": "EurOtop (2018) §6.2",
+   "builtIn": "γf,surging = γf + (ξ − 1.8)(1 − γf)/8.2",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#roughnessSurging"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§6.2, with Eq. 6.1 (PDF p.186)",
+   "quote": "γf surging = γf + (ξm-1,0 - 1.8)*(1 - γf)/8.2",
+   "sourceValue": "identical",
+   "note": ""
+  },
+  {
+   "id": "eurotop-overtopping-mean",
+   "what": "Mean overtopping discharge on slopes, mean-value approach: coefficients of Eq. 5.10 and 5.11",
+   "standard": "EurOtop (2018) Eq. 5.10, 5.11",
+   "builtIn": "0.023 and 2.7; 0.09 and 1.5; exponent 1.3",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#overtoppingSlope"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§5.3.1 (PDF p.132)",
+   "quote": "The reliability of Equation 5.10 is given by σ(0.023) = 0.003 and σ(2.7) = 0.20, and of Equation 5.11 by σ(0.09) = 0.0135 and σ(1.5) = 0.15.",
+   "sourceValue": "0.023, 2.7; 0.09, 1.5",
+   "note": ""
+  },
+  {
+   "id": "eurotop-overtopping-design",
+   "what": "Mean overtopping discharge on slopes, design / assessment approach: coefficients of Eq. 5.12 and 5.13",
+   "standard": "EurOtop (2018) Eq. 5.12, 5.13",
+   "builtIn": "0.026 and 2.5; 0.1035 and 1.35",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#overtoppingSlope"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§5.3.1, Eq. 5.13 (PDF p.132)",
+   "quote": "q/√(g⋅Hm0³) = 0.1035 ⋅ exp[−(1.35 Rc/(Hm0 ⋅ γf ⋅ γβ ⋅ γ*))^1.3] 5.13",
+   "sourceValue": "0.026 with 2.5 (Eq. 5.12); 0.1035 with 1.35 (Eq. 5.13)",
+   "note": "Mathematical italic characters of the PDF text layer are transliterated in the quote."
+  },
+  {
+   "id": "eurotop-steep-slopes",
+   "what": "Overtopping on very steep slopes up to vertical: coefficients a and b of Eq. 5.18",
+   "standard": "EurOtop (2018) §5.3.3",
+   "builtIn": "a = 0.09 − 0.01 (2 − cot α)^2.1; b = 1.5 + 0.42 (2 − cot α)^1.5, maximum 2.35",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#overtoppingSteepSlope"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§5.3.3, Eq. 5.18–5.19 (PDF p.137)",
+   "quote": "a = 0.09 - 0.01 (2 – cot α)2.1 for cotα < 2 and a = 0.09 for cotα ≥ 2",
+   "sourceValue": "a as coded; b = 1.5 + 0.42 (2 – cot α)^1.5 with a maximum of 2.35 on the following line of the manual",
+   "note": ""
+  },
+  {
+   "id": "eurotop-obliquity",
+   "what": "Influence factor for oblique wave attack, short-crested waves",
+   "standard": "EurOtop (2018) §5.4.4",
+   "builtIn": "run-up γβ = 1 − 0.0022|β|; overtopping γβ = 1 − 0.0033|β|",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#obliquityFactor"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§5.4.4, Eq. 5.28–5.29 (PDF p.148)",
+   "quote": "γβ = 1 − 0.0022 |β| for: 0° ≤ β ≤ 80° (short-crested waves)",
+   "sourceValue": "0.0022 (run-up), 0.0033 (overtopping)",
+   "note": "The rubble-mound value 0.0063 coded alongside was not found in the extracted text (equation object); confirm in EurOtop §6.3. Mathematical italic characters of the PDF text layer are transliterated in the quote."
+  },
+  {
+   "id": "eurotop-roughness-factors",
+   "what": "Roughness factors γf for armoured slopes (1:1.5, permeable core unless noted)",
+   "standard": "EurOtop (2018) Table 6.2",
+   "builtIn": "rock 0.60 / 0.45 / 0.55 / 0.40; cubes 0.49 / 0.47; Antifer 0.50; HARO 0.47; tetrapod 0.38; dolos 0.43; Accropode I 0.46; Xbloc, Core-Loc, Accropode II 0.44",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#ROUGHNESS_FACTORS"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§6.3.1, Table 6.2 (PDF p.191)",
+   "quote": "Rocks (2 layers, permeable core) 0.40 ... Cubes (2 layers, random positioning) 0.47 ... Tetrapods 0.38 ... Dolosse 0.43 ... Xbloc®; CORE-LOC®; Accropode™ II 0.44",
+   "sourceValue": "all fourteen values identical",
+   "note": ""
+  },
+  {
+   "id": "eurotop-crest-berm",
+   "what": "Reduction of overtopping by an armoured crest berm of width Gc",
+   "standard": "EurOtop (2018) §6.3 Eq. 6.8",
+   "builtIn": "Cr = 3.06 exp(−1.5 Gc/Hm0), maximum 1",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#overtoppingRubbleMound"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§6.3.2, Eq. 6.8 (PDF p.193)",
+   "quote": "Cr = 3.06 exp(-1.5Gc/Hm0) with maximum Cr = 1 6.8",
+   "sourceValue": "identical",
+   "note": ""
+  },
+  {
+   "id": "eurotop-vertical-no-foreshore",
+   "what": "Overtopping of a plain vertical wall without influencing foreshore",
+   "standard": "EurOtop (2018) Eq. 7.1 / 7.2",
+   "builtIn": "mean 0.047 and 2.35; design 0.054 and 2.12; exponent 1.3",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#overtoppingVertical"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§7.3.2, Eq. 7.2 (PDF p.215); §5.3.3, Eq. 5.17 (PDF p.136)",
+   "quote": "q/√(g⋅Hm0³) = 0.054 ⋅ exp[−(2.12 Rc/Hm0)^1.3] 7.2",
+   "sourceValue": "0.047 / 2.35 (mean); 0.054 / 2.12 (design)",
+   "note": "Chapter 5 of the same manual quotes the design pair as \"a = 0.054 and b = 2.11\"; chapter 7 Eq. 7.2 prints 2.12, as coded. Mathematical italic characters of the PDF text layer are transliterated in the quote."
+  },
+  {
+   "id": "eurotop-vertical-non-impulsive",
+   "what": "Overtopping of a vertical wall with foreshore, non-impulsive conditions",
+   "standard": "EurOtop (2018) Eq. 7.5 / 7.6",
+   "builtIn": "mean 0.05 and 2.78; design 0.062 and 2.61",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#overtoppingVertical"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§7.3.2, Eq. 7.5 and text before Eq. 7.6 (PDF p.216)",
+   "quote": "Note that σ = 0.012 should be added to 0.05 and σ = 0.17 should be subtracted from 2.78. Thus, Equation 7.6 should be used in design and safety assessments",
+   "sourceValue": "0.05 / 2.78 mean; 0.05 + 0.012 = 0.062 and 2.78 − 0.17 = 2.61 design",
+   "note": ""
+  },
+  {
+   "id": "eurotop-vertical-impulsive",
+   "what": "Overtopping of a vertical wall with foreshore, impulsive conditions",
+   "standard": "EurOtop (2018) Eq. 7.7–7.10",
+   "builtIn": "mean 0.011 with exp(−2.2 Rc/Hm0) below Rc/Hm0 = 1.35 and 0.0014 (Rc/Hm0)^−3 above; design 0.0155 and 0.0020",
+   "appliesTo": [
+    "engine: src/engine/coastal/runup.js#overtoppingVertical"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "§7.3.2, Eq. 7.7–7.8 (PDF p.217–218)",
+   "quote": "For higher non-dimensional freeboards Rc / Hm0 ≥ 1.35, Equation 7.8 should be used for a mean value",
+   "sourceValue": "0.011, 2.2 and the 1.35 switch (Eq. 7.7); 0.0014 and power −3 (Eq. 7.8)",
+   "note": "Mean-value constants read in Eq. 7.7 and 7.8. The design constants 0.0155 and 0.0020 (Eq. 7.9, 7.10) are equation objects not present in the text layer and remain unconfirmed."
+  },
+  {
+   "id": "eurotop-tolerable",
+   "what": "Tolerable mean overtopping discharge and maximum volume used as default limits",
+   "standard": "EurOtop (2018) ch. 3",
+   "builtIn": "q = 5 l/s per m; Vmax = 2000 l per m",
+   "appliesTo": [
+    "s07-runup-overtopping.qTol",
+    "s07-runup-overtopping.VTol"
+   ],
+   "status": "matches",
+   "sourceTitle": "EurOtop: Manual on wave overtopping of sea defences and related structures, second edition",
+   "sourceType": "official manual",
+   "url": "http://www.overtopping-manual.com/assets/downloads/EurOtop_II_2018_Final_version.pdf",
+   "edition": "2018 (final version)",
+   "locator": "ch.3 (PDF p.56–58)",
+   "quote": "If for example Vmax were to be limited to 2000-3000 l per m, then Hm0 = 1 m",
+   "sourceValue": "5 l/s per m appears as one of the discussed mean discharges; Vmax 2000–3000 l per m as an example limit",
+   "note": "Chapter 3 gives ranges that depend on wave height and on what is at risk; the defaults are within them but are project choices, not single prescribed limits."
+  },
+  {
+   "id": "rock-vdm-deep",
+   "what": "Van der Meer stability formulae for rock armour, deep water: coefficients cpl and cs",
+   "standard": "Rock Manual (CIRIA C683, 2007) §5.2.2.2",
+   "builtIn": "cpl = 6.2, cs = 1.0",
+   "appliesTo": [
+    "engine: src/engine/coastal/armour.js#vanDerMeer"
+   ],
+   "status": "matches",
+   "sourceTitle": "The Rock Manual: the use of rock in hydraulic engineering (CIRIA C683), Chapter 5",
+   "sourceType": "official manual",
+   "url": "https://kennisbank-waterbouw.nl/DesignCodes/rockmanual/chapter%205.pdf",
+   "edition": "2nd edition, 2007",
+   "locator": "§5.2.2.2, Eq. 5.136–5.137 (p.568)",
+   "quote": "cpl = 6.2 (with a standard deviation of σ = 0.4; see also Table 5.25) cs = 1.0 (with a standard deviation of σ = 0.08).",
+   "sourceValue": "6.2 and 1.0",
+   "note": "Printed page = PDF page of the chapter file + 481."
+  },
+  {
+   "id": "rock-vdm-shallow",
+   "what": "Modified Van der Meer formulae for shallow water (Van Gent et al.): coefficients cpl and cs",
+   "standard": "Rock Manual (2007) §5.2.2.2",
+   "builtIn": "cpl = 8.4, cs = 1.3",
+   "appliesTo": [
+    "engine: src/engine/coastal/armour.js#vanDerMeerShallow"
+   ],
+   "status": "matches",
+   "sourceTitle": "The Rock Manual: the use of rock in hydraulic engineering (CIRIA C683), Chapter 5",
+   "sourceType": "official manual",
+   "url": "https://kennisbank-waterbouw.nl/DesignCodes/rockmanual/chapter%205.pdf",
+   "edition": "2nd edition, 2007",
+   "locator": "§5.2.2.2, Eq. 5.139–5.140 (p.576)",
+   "quote": "cpl = 8.4 (-), with a standard deviation of σ = 0.7 (see also Table 5.27) cs = 1.3 (-), with a standard deviation of σ = 0.15",
+   "sourceValue": "8.4 and 1.3",
+   "note": "Printed page = PDF page of the chapter file + 481."
+  },
+  {
+   "id": "rock-sd-start",
+   "what": "Damage level Sd at start of damage for a two-layer rock armour",
+   "standard": "Rock Manual (2007) Table 5.23",
+   "builtIn": "Sd = 2",
+   "appliesTo": [
+    "s07-armour-stability.Sd"
+   ],
+   "status": "matches",
+   "sourceTitle": "The Rock Manual: the use of rock in hydraulic engineering (CIRIA C683), Chapter 5",
+   "sourceType": "official manual",
+   "url": "https://kennisbank-waterbouw.nl/DesignCodes/rockmanual/chapter%205.pdf",
+   "edition": "2nd edition, 2007",
+   "locator": "§5.2.2.2 (p.570–571)",
+   "quote": "Four damage levels are shown: Sd = 2 (start of damage), Sd = 5 and Sd = 8",
+   "sourceValue": "Sd = 2 start of damage; \"Sd = 2 to 3 is often used for design purposes\"",
+   "note": "Table 5.23 itself is an image in the open PDF; the value is confirmed from the running text. Printed page = PDF page of the chapter file + 481."
+  },
+  {
+   "id": "rock-dn50",
+   "what": "Relation between nominal and sieve diameter of armourstone",
+   "standard": "Rock Manual (2007) §3.4.2",
+   "builtIn": "Dn50 = 0.84 D50",
+   "appliesTo": [
+    "engine: src/engine/coastal/armour.js#nominalDiameter"
+   ],
+   "status": "matches",
+   "sourceTitle": "The Rock Manual: the use of rock in hydraulic engineering (CIRIA C683), Chapter 5",
+   "sourceType": "official manual",
+   "url": "https://kennisbank-waterbouw.nl/DesignCodes/rockmanual/chapter%205.pdf",
+   "edition": "2nd edition, 2007",
+   "locator": "§5.2.2.2 (p.586)",
+   "quote": "In general, Dn50 ≅ 0.84D50 can be used for armourstone.",
+   "sourceValue": "0.84",
+   "note": "Printed page = PDF page of the chapter file + 481."
+  },
+  {
+   "id": "rock-sd-failure",
+   "what": "Damage level defining failure of a rock armour layer",
+   "standard": "Rock Manual (2007) Table 5.23",
+   "builtIn": "Sd = 8",
+   "appliesTo": [
+    "s07-reliability-service-life.Sd"
+   ],
+   "status": "not-found",
+   "sourceTitle": "The Rock Manual: the use of rock in hydraulic engineering (CIRIA C683), Chapter 5",
+   "sourceType": "official manual",
+   "url": "https://kennisbank-waterbouw.nl/DesignCodes/rockmanual/chapter%205.pdf",
+   "edition": "2nd edition, 2007",
+   "locator": "§5.2.2.2 (p.570)",
+   "quote": "Four damage levels are shown: Sd = 2 (start of damage), Sd = 5 and Sd = 8 (intermediate damage) and Sd = 12 (filter layer visible).",
+   "sourceValue": "for cot α = 3 the text gives Sd = 8 as intermediate damage and Sd = 12 as failure; the failure values by slope are in Table 5.23",
+   "note": "Table 5.23 (failure Sd by slope angle, recalled as 8 for slopes of 1:1.5 to 1:2 and up to 17 for flatter slopes) is an image in the open PDF and could not be read. The running text shows that 8 is not the failure level for a 1:3 slope, so the default should be confirmed against Table 5.23 for the slope in question. Printed page = PDF page of the chapter file + 481."
+  },
+  {
+   "id": "ufc-load-combination",
+   "what": "Gravity load combination for alternate-path analysis after notional member removal",
+   "standard": "UFC 4-023-03 (2016) alternate path method",
+   "builtIn": "live-load share 0.5",
+   "appliesTo": [
+    "s02-fire-response.psi",
+    "s05-accidental-collapse.psiA"
+   ],
+   "status": "matches",
+   "sourceTitle": "UFC 4-023-03 Design of Buildings to Resist Progressive Collapse",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://www.wbdg.org/FFC/DOD/UFC/ufc_4_023_03_2009_c4.pdf",
+   "edition": "14 July 2009 with Change 4",
+   "locator": "§3-2.11.4, Eq. (3-10) (p.67)",
+   "quote": "GLD = ΩLD [1.2 D + (0.5 L or 0.2 S)]",
+   "sourceValue": "1.2 D + 0.5 L",
+   "note": "Supports the 0.5 share of live load in accidental combinations. The port modules cite EN 1990 for the same value, which was not opened."
+  },
+  {
+   "id": "ufc-dynamic-factor",
+   "what": "Dynamic increase factor for sudden member removal",
+   "standard": "UFC 4-023-03 (2016) alternate path method",
+   "builtIn": "1.0 to 2.0 (1.0 and 1.5 as defaults)",
+   "appliesTo": [
+    "s01-progressive-collapse.daf",
+    "s05-accidental-collapse.daf"
+   ],
+   "status": "matches",
+   "sourceTitle": "UFC 4-023-03 Design of Buildings to Resist Progressive Collapse",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://www.wbdg.org/FFC/DOD/UFC/ufc_4_023_03_2009_c4.pdf",
+   "edition": "14 July 2009 with Change 4",
+   "locator": "Appendix C, C-6.8 (p.121)",
+   "quote": "the dynamic increase factor (DIF) that allows a Nonlinear Static solution to approximate a Nonlinear Dynamic solution, is typically less than 2.",
+   "sourceValue": "below 2 for nonlinear static analysis; above 2 for linear static analysis",
+   "note": "The default 1.0 of the jacket module applies to pre-existing damage only (as its help says); for sudden removal the UFC factors apply."
+  },
+  {
+   "id": "abs-mooring-fos-intact",
+   "what": "Mooring line strength factor of safety, intact, design environmental condition",
+   "standard": "API RP 2SK (3rd ed.)",
+   "builtIn": "1.67 dynamic; 2.0 quasi-static",
+   "appliesTo": [
+    "s10-tension-offset.sfIntact",
+    "s10-line-strength.sfIntact",
+    "s10-line-break.sfIntact",
+    "s10-line-dynamics.sfDyn",
+    "s10-static-equilibrium.sfStatic",
+    "s10-coupled-vessel-mooring.sfIntact",
+    "s11-coupled-mooring-riser.sfLine",
+    "s10-snap-loads.sfSnap"
+   ],
+   "status": "matches",
+   "sourceTitle": "ABS Requirements for Position Mooring Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://ww2.eagle.org/content/dam/eagle/rules-and-guides/archives/offshore/292-position-mooring-systems/292-position-mooring-reqts-july22.pdf",
+   "edition": "July 2022",
+   "locator": "Sec.3 [7.7], Table 3 (p.37)",
+   "quote": "All Intact DEC 2.00 1.67",
+   "sourceValue": "2.00 quasi-static, 1.67 dynamic analysis",
+   "note": "ABS class requirement read as the openly accessible counterpart: API RP 2SK itself is not openly accessible and was not opened, so the API clause remains unconfirmed."
+  },
+  {
+   "id": "abs-mooring-fos-damaged",
+   "what": "Mooring line strength factor of safety, one line broken",
+   "standard": "API RP 2SK (3rd ed.)",
+   "builtIn": "1.25 dynamic; 1.43 quasi-static",
+   "appliesTo": [
+    "s10-line-strength.sfDamaged",
+    "s10-line-break.sfDamaged"
+   ],
+   "status": "matches",
+   "sourceTitle": "ABS Requirements for Position Mooring Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://ww2.eagle.org/content/dam/eagle/rules-and-guides/archives/offshore/292-position-mooring-systems/292-position-mooring-reqts-july22.pdf",
+   "edition": "July 2022",
+   "locator": "Sec.3 [7.7], Table 3 (p.37)",
+   "quote": "One broken Line (at New Equilibrium Position) DEC 1.43 1.25 One broken Line (Transient) DEC 1.18 1.05",
+   "sourceValue": "1.43 quasi-static, 1.25 dynamic (transient 1.18 / 1.05)",
+   "note": "ABS class requirement read as the openly accessible counterpart: API RP 2SK itself is not openly accessible and was not opened, so the API clause remains unconfirmed."
+  },
+  {
+   "id": "abs-anchor-fos",
+   "what": "Factor of safety on anchor holding capacity, permanent mooring",
+   "standard": "API RP 2SK (3rd ed.) table",
+   "builtIn": "drag anchor 1.5 intact / 1.0 damaged; piles and suction anchors lateral 1.6, axial 2.0 intact",
+   "appliesTo": [
+    "s10-anchor-holding.sfRequired",
+    "s10-suction-anchor.sfRequired",
+    "s10-suction-anchor.sfLat",
+    "s10-anchor-pile.sfRequired",
+    "s10-anchor-pile.sfAxial"
+   ],
+   "status": "matches",
+   "sourceTitle": "ABS Requirements for Position Mooring Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://ww2.eagle.org/content/dam/eagle/rules-and-guides/archives/offshore/292-position-mooring-systems/292-position-mooring-reqts-july22.pdf",
+   "edition": "July 2022",
+   "locator": "Sec.3 [7.9.2], Table 5 (p.38)",
+   "quote": "Drag Anchors All Intact (DEC) 1.50 One Broken Line (DEC) 1.00 ... All Intact-Lateral (DEC) 1.6 All Intact-Axial (DEC) 2.0",
+   "sourceValue": "1.50 / 1.00 drag anchors; 1.6 lateral and 2.0 axial intact, 1.2 and 1.5 one line broken, for suction piles, driven piles and gravity anchors",
+   "note": "ABS class requirement read as the openly accessible counterpart: API RP 2SK itself is not openly accessible and was not opened, so the API clause remains unconfirmed."
+  },
+  {
+   "id": "en1993-1-2-ky",
+   "what": "Reduction factor for effective yield strength of carbon steel at elevated temperature",
+   "standard": "EN 1993-1-2 Table 3.1",
+   "builtIn": "1 / 1 / 1 / 1 / 1 / 0.78 / 0.47 / 0.23 / 0.11 / 0.06 / 0.04 / 0.02 / 0 at 20–1200 °C",
+   "appliesTo": [
+    "engine: src/engine/structural/thermal.js#KY"
+   ],
+   "status": "matches",
+   "sourceTitle": "JRC Scientific and Policy Report: Eurocodes: Background & Applications, Structural Fire Design, Worked examples",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://eurocodes.jrc.ec.europa.eu/doc/2012_11_WS_fire/report/2012_11_WS_fire.pdf",
+   "edition": "2014 (workshop of November 2012)",
+   "locator": "Chapter 2, table of reduction factors after EN 1993-1-2 Table 3.1 (PDF p.86)",
+   "quote": "500 °C 0,780 0,360 0,600 600 °C 0,470 0,180 0,310 700 °C 0,230 0,075 0,130",
+   "sourceValue": "all thirteen values identical",
+   "note": "The Eurocode itself is not openly accessible; the value is read as reproduced in the JRC report."
+  },
+  {
+   "id": "en1993-1-2-kp",
+   "what": "Reduction factor for the proportional limit of carbon steel at elevated temperature",
+   "standard": "EN 1993-1-2 Table 3.1",
+   "builtIn": "1 / 1 / 0.807 / 0.613 / 0.42 / 0.36 / 0.18 / 0.075 / 0.05 / 0.0375 / 0.025 / 0.0125 / 0",
+   "appliesTo": [
+    "engine: src/engine/structural/thermal.js#KP"
+   ],
+   "status": "matches",
+   "sourceTitle": "JRC Scientific and Policy Report: Eurocodes: Background & Applications, Structural Fire Design, Worked examples",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://eurocodes.jrc.ec.europa.eu/doc/2012_11_WS_fire/report/2012_11_WS_fire.pdf",
+   "edition": "2014 (workshop of November 2012)",
+   "locator": "as above (PDF p.86)",
+   "quote": "200 °C 1,000 0,807 0,900 300 °C 1,000 0,613 0,800 400 °C 1,000 0,420 0,700",
+   "sourceValue": "all thirteen values identical",
+   "note": "The Eurocode itself is not openly accessible; the value is read as reproduced in the JRC report."
+  },
+  {
+   "id": "en1993-1-2-ke",
+   "what": "Reduction factor for the elastic modulus of carbon steel at elevated temperature",
+   "standard": "EN 1993-1-2 Table 3.1",
+   "builtIn": "1 / 1 / 0.9 / 0.8 / 0.7 / 0.6 / 0.31 / 0.13 / 0.09 / 0.0675 / 0.045 / 0.0225 / 0",
+   "appliesTo": [
+    "engine: src/engine/structural/thermal.js#KE"
+   ],
+   "status": "matches",
+   "sourceTitle": "JRC Scientific and Policy Report: Eurocodes: Background & Applications, Structural Fire Design, Worked examples",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://eurocodes.jrc.ec.europa.eu/doc/2012_11_WS_fire/report/2012_11_WS_fire.pdf",
+   "edition": "2014 (workshop of November 2012)",
+   "locator": "as above (PDF p.86)",
+   "quote": "800 °C 0,110 0,050 0,090 900 °C 0,060 0,0375 0,0675 1000 °C 0,040 0,0250 0,0450 1100 °C 0,020 0,0125 0,0225",
+   "sourceValue": "all thirteen values identical",
+   "note": "The Eurocode itself is not openly accessible; the value is read as reproduced in the JRC report."
+  },
+  {
+   "id": "en1993-gamma-m",
+   "what": "Recommended partial factors for steel resistance",
+   "standard": "EN 1993-1-1:2005 §6.1",
+   "builtIn": "γM0 = 1.0, γM1 = 1.0, γM2 = 1.25",
+   "appliesTo": [
+    "s02-inplace-strength.gM0",
+    "s02-inplace-strength.gM1",
+    "s02-sea-transport.gM2",
+    "s05-quay-wall.gM"
+   ],
+   "status": "matches",
+   "sourceTitle": "JRC Science and Policy Report: Eurocodes: Background & Applications, Design of Steel Buildings, Worked examples (EUR 27346)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://eurocodes.jrc.ec.europa.eu/sites/default/files/2021-12/jrc_steel_report_2015_07_22.pdf",
+   "edition": "2015",
+   "locator": "§1.2.2 (PDF p.23)",
+   "quote": "The recommended values in EC3-1-1 for the partial safety factors γMi are the following: γM0 = 1,00; γM1 = 1,00 and γM2 = 1,25.",
+   "sourceValue": "1.00 / 1.00 / 1.25 (recommended values; national annexes may differ)",
+   "note": "The Greek letter γ is stored as a glyph code in the PDF text layer and is restored in the quote. The Eurocode itself is not openly accessible; the value is read as reproduced in the JRC report."
+  },
+  {
+   "id": "en1990-gamma-g-q",
+   "what": "Partial factors on permanent and variable actions, persistent design situation (STR)",
+   "standard": "EN 1990:2002+A1 Annex A1",
+   "builtIn": "γG = 1.35, γQ = 1.5",
+   "appliesTo": [
+    "s05-global-strength.gG",
+    "s05-global-strength.gQ",
+    "s05-deck-slab.gQ",
+    "s07-wall-structure.gF",
+    "s05-quay-wall.gF"
+   ],
+   "status": "matches",
+   "sourceTitle": "JRC Science and Policy Report: Eurocodes: Background & Applications, Design of Steel Buildings, Worked examples (EUR 27346)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://eurocodes.jrc.ec.europa.eu/sites/default/files/2021-12/jrc_steel_report_2015_07_22.pdf",
+   "edition": "2015",
+   "locator": "Worked examples, partial factors (PDF p.255)",
+   "quote": "Partial factors γM0 = 1,0, γM1 = 1,0, γG = 1,35, γQ = 1,50",
+   "sourceValue": "1.35 and 1.50",
+   "note": "The Greek letter γ is stored as a glyph code in the PDF text layer and is restored in the quote. The Eurocode itself is not openly accessible; the value is read as reproduced in the JRC report."
+  },
+  {
+   "id": "en1992-gamma-c-s",
+   "what": "Partial factors for concrete and reinforcing steel, persistent and transient situations",
+   "standard": "EN 1992-1-1:2004 §2.4.2.4",
+   "builtIn": "γc = 1.5, γs = 1.15",
+   "appliesTo": [
+    "s05-global-strength.gammaC",
+    "s05-global-strength.gammaS",
+    "s05-accidental-collapse.gammaC",
+    "s05-accidental-collapse.gammaS",
+    "s07-wall-structure.gC",
+    "s07-wall-structure.gS"
+   ],
+   "status": "matches",
+   "sourceTitle": "JRC Science and Policy Report: Eurocodes: Background & Applications, Design of Steel Buildings, Worked examples (EUR 27346)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://eurocodes.jrc.ec.europa.eu/sites/default/files/2021-12/jrc_steel_report_2015_07_22.pdf",
+   "edition": "2015",
+   "locator": "Column base example (PDF p.143)",
+   "quote": "γMc = 1,50; γMs = 1,15, γM0 = 1,00; and γM2 = 1,25.",
+   "sourceValue": "1.50 and 1.15",
+   "note": "The Greek letter γ is stored as a glyph code in the PDF text layer and is restored in the quote. Read as used in a JRC worked example for a column base; EN 1992-1-1 itself was not opened."
+  },
+  {
+   "id": "b401-anode-capacity",
+   "what": "Design electrochemical capacity and closed-circuit potential of Al-based anodes in seawater",
+   "standard": "DNV-RP-B401",
+   "builtIn": "2000 A·h/kg; −1.05 V",
+   "appliesTo": [
+    "engine: src/engine/fatigue/degradation.js#anodeDesign defaults"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-B401 Cathodic protection design",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-06/DNVGL-RP-B401.pdf",
+   "edition": "June 2017",
+   "locator": "Annex A, Table A-6 (p.53)",
+   "quote": "Anode material type Environment Electrochemical capacity (Ah/kg) Closed circuit potential (V) seawater 2,000 -1.05 Al-based",
+   "sourceValue": "2000 Ah/kg, −1.05 V (sediments 1500, −0.95)",
+   "note": ""
+  },
+  {
+   "id": "b401-utilisation",
+   "what": "Anode utilisation factor, long slender stand-off anodes",
+   "standard": "DNV-RP-B401",
+   "builtIn": "0.90",
+   "appliesTo": [
+    "engine: src/engine/fatigue/degradation.js#anodeDesign defaults"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-B401 Cathodic protection design",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-06/DNVGL-RP-B401.pdf",
+   "edition": "June 2017",
+   "locator": "Annex A, Table A-8 (p.54)",
+   "quote": "Table A-8 Recommended anode utilisation factors for CP design calculations Anode type Anode utilisation factor Long slender stand-off L ≥ 4r 0.90",
+   "sourceValue": "0.90",
+   "note": ""
+  },
+  {
+   "id": "b401-coating-breakdown",
+   "what": "Coating breakdown factor constants a and b by coating category and depth",
+   "standard": "DNV-RP-B401",
+   "builtIn": "I: a 0.10, b 0.10 / 0.05; II: a 0.05, b 0.025 / 0.015; III: a 0.02, b 0.012 / 0.008 (0–30 m / > 30 m)",
+   "appliesTo": [
+    "engine: src/engine/fatigue/degradation.js#coatingBreakdownConstants"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-B401 Cathodic protection design",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-06/DNVGL-RP-B401.pdf",
+   "edition": "June 2017",
+   "locator": "Annex A, Table A-4 (p.52–53)",
+   "quote": "0-30 b = 0.10 b = 0.025 b = 0.012 >30 b = 0.05 b = 0.015 b = 0.008",
+   "sourceValue": "identical",
+   "note": "The constants a = 0.10 / 0.05 / 0.02 for categories I / II / III are printed in the header cells of the same table."
+  },
+  {
+   "id": "e302-chain-break-load",
+   "what": "Break load of offshore mooring chain: grade constants c in BL = c d² (44 − 0.08 d) kN",
+   "standard": "IACS UR W22 / DNV-OS-E302",
+   "builtIn": "R3 0.0223, R3S 0.0249, R4 0.0274, R4S 0.0304, R5 0.0320",
+   "appliesTo": [
+    "engine: src/engine/lines/lineprops.js#CHAIN_GRADE_C"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-OS-E302 Offshore mooring chain",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20190713100223/http://rules.dnvgl.com/docs/pdf/dnvgl/os/2018-07/DNVGL-OS-E302.pdf",
+   "edition": "July 2018",
+   "locator": "Ch.2 Sec.2, Table 1 (p.30)",
+   "quote": "Breaking load (kN) 0.0223d2 (44-0.08d) 0.0249d2 (44-0.08d) 0.0274d2 (44-0.08d) 0.0304d2 (44-0.08d)",
+   "sourceValue": "R3 0.0223, R3S 0.0249, R4 0.0274, R4S 0.0304, R5 0.0320 (R6 0.0352)",
+   "note": "All five coded grades compared digit by digit; the R5 cell follows on the next extracted line of the same row."
+  },
+  {
+   "id": "c301-damage-inclination",
+   "what": "Damage stability of column-stabilised units: maximum inclination and minimum residual range",
+   "standard": "DNV-OS-C301 / IMO MODU Code",
+   "builtIn": "17°; 7°",
+   "appliesTo": [
+    "s11-damage-stability.inclMax",
+    "s11-damage-stability.rangeMin"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-OS-C301 Stability and watertight integrity",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNV/OS/2020-07/DNVGL-OS-C301.pdf",
+   "edition": "July 2020",
+   "locator": "Ch.2 Sec.1, damage stability of column-stabilised units (p.19)",
+   "quote": "The angle of inclination after the damage set out in [5.9] shall not be greater than 17°.",
+   "sourceValue": "17° inclination; residual range at least 7°",
+   "note": ""
+  },
+  {
+   "id": "c208-critical-strain",
+   "what": "Critical gross yield strain for uniaxial stress state by steel grade",
+   "standard": "DNV-RP-C208 §4–5",
+   "builtIn": "4 %",
+   "appliesTo": [
+    "s01-global-local.epsLimit",
+    "s02-blast-response.epsLim",
+    "s02-dropped-object.epsCr"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-C208 Determination of Structural Capacity by Non-linear FE analysis Methods",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210312012539/https://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-06/RP-C208.pdf",
+   "edition": "June 2013",
+   "locator": "[5.1.3.3], Table 5-1 (p.25)",
+   "quote": "S235 S355 S420 S460 Critical gross yield strain 0.05 0.04 0.03 0.03",
+   "sourceValue": "0.05 / 0.04 / 0.03 / 0.03 for S235 / S355 / S420 / S460",
+   "note": "4 % corresponds to S355. The 5 % defaults of the blast and dropped-object modules equal the S235 value and exceed the tabulated 4 % for S355 and 3 % for S420 / S460. Read in the 2013 edition; the modules cite 2019 / 2022."
+  },
+  {
+   "id": "iec61400-turbulence-classes",
+   "what": "Reference turbulence intensity Iref of the wind turbine turbulence categories",
+   "standard": "IEC 61400-1:2019",
+   "builtIn": "A+ 0.18, A 0.16, B 0.14, C 0.12",
+   "appliesTo": [
+    "engine: src/engine/aero/turbulence.js#TURBULENCE_CLASSES",
+    "s16-wake-array.tiClass"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0437 Loads and site conditions for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20200608073930/https://rules.dnvgl.com/docs/pdf/DNVGL/ST/2016-11/DNVGL-ST-0437.pdf",
+   "edition": "November 2016",
+   "locator": "[2.2.1], Table 2-1 (p.21)",
+   "quote": "A + Iref [-] 0,18 A Iref [-] 0,16 B Iref [-] 0,14 C Iref [-] 0,12",
+   "sourceValue": "0.18 / 0.16 / 0.14 / 0.12",
+   "note": "IEC 61400-1 itself is not openly accessible; read as reproduced in DNVGL-ST-0437, which adopts the IEC wind turbine classes."
+  },
+  {
+   "id": "iec61400-wind-classes",
+   "what": "Reference wind speed Vref of wind turbine classes I, II, III",
+   "standard": "IEC 61400-1:2019",
+   "builtIn": "50 / 42.5 / 37.5 m/s",
+   "appliesTo": [
+    "engine: src/engine/aero/turbulence.js#WIND_CLASSES"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0437 Loads and site conditions for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20200608073930/https://rules.dnvgl.com/docs/pdf/DNVGL/ST/2016-11/DNVGL-ST-0437.pdf",
+   "edition": "November 2016",
+   "locator": "[2.2.1], Table 2-1 (p.21)",
+   "quote": "Wind turbine class I II III S Vref [m/s] 50 42,5 37,5",
+   "sourceValue": "50 / 42.5 / 37.5 m/s",
+   "note": "IEC 61400-1 itself is not openly accessible; read as reproduced in DNVGL-ST-0437, which adopts the IEC wind turbine classes."
+  },
+  {
+   "id": "iec61400-lambda1",
+   "what": "Longitudinal turbulence scale parameter Λ1",
+   "standard": "IEC 61400-1 Eq. 5",
+   "builtIn": "0.7 z for z ≤ 60 m; 42 m above",
+   "appliesTo": [
+    "engine: src/engine/aero/turbulence.js#turbulenceScale"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-ST-0437 Loads and site conditions for wind turbines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20200608073930/https://rules.dnvgl.com/docs/pdf/DNVGL/ST/2016-11/DNVGL-ST-0437.pdf",
+   "edition": "November 2016",
+   "locator": "[2.3.2] (p.23)",
+   "quote": "Λ1 = 0,7 zhub for zhub < 60m 42m for zhub ≥ 60m",
+   "sourceValue": "0.7 zhub below 60 m; 42 m at and above",
+   "note": "IEC 61400-1 itself is not openly accessible; read as reproduced in DNVGL-ST-0437, which adopts the IEC wind turbine classes. Mathematical characters of the PDF text layer are transliterated in the quote."
+  },
+  {
+   "id": "iec61400-kaimal-scales",
+   "what": "Kaimal spectrum integral scale parameters of the three velocity components",
+   "standard": "IEC 61400-1 Annex B / C",
+   "builtIn": "8.1 Λ1, 2.7 Λ1, 0.66 Λ1",
+   "appliesTo": [
+    "engine: src/engine/aero/turbulence.js#kaimalParameters"
+   ],
+   "status": "matches",
+   "sourceTitle": "NREL/TP-500-46198 TurbSim User's Guide: Version 1.50",
+   "sourceType": "technical report",
+   "url": "https://www.osti.gov/servlets/purl/965520",
+   "edition": "Revised August 2009",
+   "locator": "Spectral models, Eq. (22) (PDF p.40)",
+   "quote": "The IEC 61400-1 standard defines the integral scale parameter to be ... 8.10 , 2.70 , 0.66 ,",
+   "sourceValue": "8.10 ΛU (u), 2.70 ΛU (v), 0.66 ΛU (w)",
+   "note": "The three constants are read from the equation fragments of the text layer; the component labels are images."
+  },
+  {
+   "id": "iec61400-coherence",
+   "what": "Exponential coherence model of the longitudinal component: constant 0.12 on the r/Lc term",
+   "standard": "IEC 61400-1 Eq. B.16",
+   "builtIn": "0.12 (with decrement a = 12)",
+   "appliesTo": [
+    "engine: src/engine/aero/turbulence.js#coherence"
+   ],
+   "status": "matches",
+   "sourceTitle": "NREL/TP-500-46198 TurbSim User's Guide: Version 1.50",
+   "sourceType": "technical report",
+   "url": "https://www.osti.gov/servlets/purl/965520",
+   "edition": "Revised August 2009",
+   "locator": "Coherence for IEC spectral models (PDF p.48)",
+   "quote": "The coherence function for the u-component of the IEC spectral models is defined as ... exp 0.12",
+   "sourceValue": "0.12 r/Lc term confirmed",
+   "note": "The decrement a = 12 (IEC 61400-1 edition 3) is set through an input default described elsewhere in the guide and was not read as a number; it remains unconfirmed."
+  },
+  {
+   "id": "iec61400-ntm-b",
+   "what": "Normal turbulence model constant b in σ1 = Iref (0.75 Vhub + b)",
+   "standard": "IEC 61400-1 Eq. 11",
+   "builtIn": "b = 5.6 m/s; slope 0.75",
+   "appliesTo": [
+    "engine: src/engine/aero/turbulence.js#ntmSigma"
+   ],
+   "status": "not-found",
+   "sourceTitle": "NREL/TP-500-46198 TurbSim User's Guide: Version 1.50",
+   "sourceType": "technical report",
+   "url": "https://www.osti.gov/servlets/purl/965520",
+   "edition": "Revised August 2009",
+   "locator": "Normal turbulence model section",
+   "quote": "",
+   "sourceValue": "",
+   "note": "The NREL guide gives the equation as an image; DNVGL-ST-0437 prints only the offshore variant. Confirm b = 5.6 m/s in IEC 61400-1:2019 §6.3.2.3."
+  },
+  {
+   "id": "h101-alpha-waves",
+   "what": "Alpha factor for waves, base case (weather forecast without monitoring)",
+   "standard": "DNV-ST-N001 (2021) §2.6",
+   "builtIn": "0.76",
+   "appliesTo": [
+    "s15-weather-window.alphaHs"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-H101 Marine Operations, General",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/os-h101.pdf",
+   "edition": "October 2011",
+   "locator": "Sec.4 C700, Table 4-1 (p.32)",
+   "quote": "TPOP ≤ 12 0.65 Linear Interpolation 0.76 Linear Interpolation 0.79 Linear Interpolation 0.80 TPOP ≤ 24 0.63 0.73 0.76 0.78",
+   "sourceValue": "0.76 for TPOP ≤ 12 h at Hs = 2 m, or TPOP ≤ 24 h at Hs = 4 m; 0.55–0.80 over the table",
+   "note": "The default is one cell of a table that depends on operation period and design wave height. Read in DNV-OS-H101 (2011), a predecessor of DNV-ST-N001, which is not openly accessible."
+  },
+  {
+   "id": "h101-alpha-wind",
+   "what": "Alpha factor for wind",
+   "standard": "DNV-ST-N001 (2021) §2.6",
+   "builtIn": "0.80",
+   "appliesTo": [
+    "s15-weather-window.alphaWind"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-H101 Marine Operations, General",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/os-h101.pdf",
+   "edition": "October 2011",
+   "locator": "Sec.4 C711, Table 4-6 (p.33)",
+   "quote": "TPOP ≤ 24 hours 0.80 0.85 TPOP ≤ 48 hours 0.75 0.80 TPOP ≤ 72 hours 0.70 0.75",
+   "sourceValue": "0.80 for TPOP ≤ 24 h with Vd below half the 10-year wind; 0.70–0.85 over the table",
+   "note": "Read in DNV-OS-H101 (2011), a predecessor of DNV-ST-N001, which is not openly accessible."
+  },
+  {
+   "id": "h101-contingency-time",
+   "what": "Estimated contingency time TC of a weather-restricted operation",
+   "standard": "DNV-ST-N001 (2021) §2.6",
+   "builtIn": "9 h (help: at least 50 % of TPOP, not less than 6 h)",
+   "appliesTo": [
+    "s15-weather-window.tc",
+    "s16-installation-maintenance.contingency"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-H101 Marine Operations, General",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/os-h101.pdf",
+   "edition": "October 2011",
+   "locator": "Sec.4 B402–B403 (p.29)",
+   "quote": "A contingency time TC of 50% of TPOP may normally be accepted ... An applied contingency time (TC) less than 6 hours is normally not acceptable.",
+   "sourceValue": "50 % of TPOP in defined cases; not less than 6 h",
+   "note": "The rule (50 %, minimum 6 h) is confirmed; 9 h is a project input. Elsewhere the clause asks for TR of at least twice TPOP when not assessed in detail. Read in DNV-OS-H101 (2011), a predecessor of DNV-ST-N001, which is not openly accessible."
+  },
+  {
+   "id": "h101-hmax",
+   "what": "Maximum wave height from the significant wave height for design of marine operations",
+   "standard": "DNV-ST-N001 (2021) (suite 15)",
+   "builtIn": "Hmax = 2.0 Hs",
+   "appliesTo": [
+    "s15-temporary-stability.fHmax"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-H101 Marine Operations, General",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/os-h101.pdf",
+   "edition": "October 2011",
+   "locator": "Sec.3 C300 (p.21)",
+   "quote": "Hmax = STF × Hs ... STF = 2.0 for all reference periods.",
+   "sourceValue": "STF = 2.0 (lower values may be accepted for short reference periods)",
+   "note": "Default corrected from 1.86 to 2.0 after this cross-check. 1.86 is the most probable maximum in about 1000 waves; DNV-OS-H101 asks for 2.0 unless a shorter reference period is justified, so the built-in value is about 7 % low (unconservative) against this source. The module itself cites API RP 2A-WSD, which was not opened. Read in DNV-OS-H101 (2011), a predecessor of DNV-ST-N001, which is not openly accessible."
+  },
+  {
+   "id": "c301-area-ratio",
+   "what": "Intact stability: required excess of righting-moment area over wind-heeling area",
+   "standard": "DNV-OS-C301 / IMO MODU Code",
+   "builtIn": "1.3 column-stabilised; 1.4 ship-shaped and barges",
+   "appliesTo": [
+    "s16-floater-stability.areaRatio",
+    "s15-barge-stability.ratioReq"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-OS-C301 Stability and watertight integrity",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNV/OS/2020-07/DNVGL-OS-C301.pdf",
+   "edition": "July 2020",
+   "locator": "Ch.2 Sec.1 [4.2.2] and [4.3.1] (p.15–16)",
+   "quote": "shall be not less than 40% in excess of the area under the wind heeling moment curve ... shall be not less than 30% in excess",
+   "sourceValue": "40 % (ratio 1.4) for ship-shaped and self-elevating units; 30 % (ratio 1.3) for column-stabilised units",
+   "note": ""
+  },
+  {
+   "id": "icnirp-b-public",
+   "what": "Reference level for general public exposure to 50 Hz magnetic flux density",
+   "standard": "ICNIRP (2010)",
+   "builtIn": "200 µT",
+   "appliesTo": [
+    "s13-emf-induced-currents.Blim"
+   ],
+   "status": "matches",
+   "sourceTitle": "ICNIRP Guidelines for limiting exposure to time-varying electric and magnetic fields (1 Hz to 100 kHz), Health Physics 99(6):818-836",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://www.icnirp.org/cms/upload/publications/ICNIRPLFgdl.pdf",
+   "edition": "2010",
+   "locator": "Table 4 (p.827 of the journal, PDF p.11)",
+   "quote": "50 Hz−400 Hz 2.5 × 10²/f 1.6 × 10² 2 × 10⁻⁴",
+   "sourceValue": "2 × 10⁻⁴ T = 200 µT (25–400 Hz general public); occupational 1 mT",
+   "note": "Multiplication and minus signs are stored as glyph codes in the PDF text layer and are restored in the quote."
+  },
+  {
+   "id": "f101-overbend-strain",
+   "what": "Simplified overbend strain criteria by steel grade (criterion I static, II static plus dynamic)",
+   "standard": "DNV-ST-F101 (2021) §10",
+   "builtIn": "X70 0.270 / 0.325 %, X65 0.250 / 0.305 %, X60 0.230 / 0.290 %, X52 0.205 / 0.260 %",
+   "appliesTo": [
+    "s08-installation.epsLimit"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.13 H300, Table 13-5 (p.215)",
+   "quote": "Criterion X70 X65 X60 X52 I 0.270% 0.250% 0.230% 0.205% II 0.325% 0.305% 0.290% 0.260%",
+   "sourceValue": "identical",
+   "note": "Read in the 2013 DNV-OS-F101, the predecessor of DNV-ST-F101 cited by the module."
+  },
+  {
+   "id": "f101-crossing-separation",
+   "what": "Minimum vertical separation at pipeline and cable crossings",
+   "standard": "DNV-ST-F101 (2021) §5",
+   "builtIn": "0.3 m",
+   "appliesTo": [
+    "s08-crossing.minSep",
+    "s09-interference.clearMin"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-F101 Submarine Pipeline Systems",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20210116104135/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2013-10/OS-F101.pdf",
+   "edition": "October 2013",
+   "locator": "Sec.5 B103 (p.65)",
+   "quote": "Crossing between pipelines and pipelines or cables should be kept separated by a minimum vertical distance of 0.3 m.",
+   "sourceValue": "0.3 m",
+   "note": "Read in the 2013 DNV-OS-F101."
+  },
+  {
+   "id": "f105-freq-safety-cable",
+   "what": "Safety factor on natural frequency used for cable free spans",
+   "standard": "DNV-RP-F105 (2017)",
+   "builtIn": "1.4",
+   "appliesTo": [
+    "s13-free-span-viv.gammaF"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-F105 Free spanning pipelines",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2017-06/DNVGL-RP-F105.pdf",
+   "edition": "June 2017",
+   "locator": "[2.7.1], Table 2-1 (p.47)",
+   "quote": "Table 2-1 Safety factors for screening criteria γIL 1.4 γCF 1.4",
+   "sourceValue": "1.4 (screening factors)",
+   "note": "Table 2-3 of the same RP gives γf for the fatigue criterion by span classification and safety class; those cells are not text in the open PDF."
+  },
+  {
+   "id": "iso19902-gamma-rc",
+   "what": "Partial resistance factor for axial compressive strength of tubular members",
+   "standard": "ISO 19902:2020 §13",
+   "builtIn": "1.18 [-]",
+   "appliesTo": [
+    "s01-collision.gRc",
+    "s01-global-local.gRc",
+    "s01-inplace.gRc",
+    "s01-joints.gRc",
+    "s01-lifting.gRc",
+    "s01-loadout-transport.gRc",
+    "s01-nonlinear.gRc",
+    "s01-progressive-collapse.gRc",
+    "s01-pushover.gRc",
+    "s01-reassessment.gRc",
+    "s01-seismic.gRc",
+    "s01-stability.gRc",
+    "s01-static-strength.gRc",
+    "s01-uls-sls.gRc"
+   ],
+   "status": "edition-dependent",
+   "sourceTitle": "SDC Verifier: Differences between ISO 19902:2007 and ISO 19902:2020, Chapter 13 Strength of tubular members",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://sdcverifier.com/articles/differences-between-iso-199022007-and-iso-199022020-chapter-13-strength-of-tubular-members/",
+   "edition": "web article, read October 2026",
+   "locator": "Article section on 13.2.3.1 and comparison table",
+   "quote": "partial resistance factor for axial compressive strength ( ƔR,c ) decreased from 1,18 to 1,10",
+   "sourceValue": "ISO 19902:2007: 1.18; ISO 19902:2020: 1.10",
+   "note": "The modules cite the 2020 edition but carry the 2007 value. 1.18 is the more conservative of the two. ISO 19902 itself is not openly accessible and was not opened; the comparison is read from a vendor article."
+  },
+  {
+   "id": "iso19902-gamma-rt-rb",
+   "what": "Partial resistance factors for axial tension and bending of tubular members; hoop buckling",
+   "standard": "ISO 19902:2020 §13",
+   "builtIn": "γR,t = 1.05, γR,b = 1.05, γR,h = 1.25",
+   "appliesTo": [
+    "s01-collision.gRt",
+    "s01-global-local.gRt",
+    "s01-inplace.gRt",
+    "s01-joints.gRt",
+    "s01-lifting.gRt",
+    "s01-loadout-transport.gRt",
+    "s01-nonlinear.gRt",
+    "s01-progressive-collapse.gRt",
+    "s01-pushover.gRt",
+    "s01-reassessment.gRt",
+    "s01-seismic.gRt",
+    "s01-stability.gRt",
+    "s01-static-strength.gRt",
+    "s01-uls-sls.gRt",
+    "s01-collision.gRb",
+    "s01-global-local.gRb",
+    "s01-inplace.gRb",
+    "s01-joints.gRb",
+    "s01-lifting.gRb",
+    "s01-loadout-transport.gRb",
+    "s01-nonlinear.gRb",
+    "s01-progressive-collapse.gRb",
+    "s01-pushover.gRb",
+    "s01-reassessment.gRb",
+    "s01-seismic.gRb",
+    "s01-stability.gRb",
+    "s01-static-strength.gRb",
+    "s01-uls-sls.gRb",
+    "s01-stability.gRh",
+    "s05-pile-capacity.gRh"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible text of ISO 19902 was found. Since the 2020 edition changed the compression factor (see iso19902-gamma-rc), confirm these three in ISO 19902:2020 §13.2.2, §13.2.4 and §13.2.6 as well."
+  },
+  {
+   "id": "iso19902-action-factors",
+   "what": "Partial action factors: permanent and variable 1.1 with environmental 1.35 (extreme); 1.3 / 1.5 with 0.9 × 1.35 (operating)",
+   "standard": "ISO 19902:2020 §9.10",
+   "builtIn": "1.1 / 1.35; 1.3 / 1.5 / 1.215",
+   "appliesTo": [
+    "s01-inplace.gG",
+    "s01-inplace.gE",
+    "s01-inplace.gGop",
+    "s01-inplace.gEop",
+    "s02-inplace-strength.gG",
+    "s02-inplace-strength.gE",
+    "s02-jacket-interface.gGst",
+    "s02-jacket-interface.gE",
+    "s02-wind-load.gG",
+    "s02-wind-load.gE"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "ISO 19902 / ISO 19901-3 are not openly accessible. Confirm in ISO 19902:2020 Table 9.10-1."
+  },
+  {
+   "id": "api2a-cm-kinematics-blockage",
+   "what": "Inertia coefficient 1.6 smooth / 1.2 rough, wave kinematics factor 0.85–0.95, current blockage factor 0.80 / 0.85",
+   "standard": "API RP 2A-WSD 22nd ed. §5.3",
+   "builtIn": "Cm = 1.2 (1.6); kinematics 0.9; blockage 0.8",
+   "appliesTo": [
+    "s01-collision.Cm",
+    "s01-collision.block",
+    "s01-collision.kinFac",
+    "s01-global-local.Cm",
+    "s01-global-local.block",
+    "s01-global-local.kinFac",
+    "s01-inplace.Cm",
+    "s01-inplace.block",
+    "s01-inplace.kinFac",
+    "s01-joints.Cm",
+    "s01-joints.block",
+    "s01-joints.kinFac",
+    "s01-lifting.Cm",
+    "s01-lifting.block",
+    "s01-lifting.kinFac",
+    "s01-nonlinear.Cm",
+    "s01-nonlinear.block",
+    "s01-nonlinear.kinFac",
+    "s01-progressive-collapse.Cm",
+    "s01-progressive-collapse.block",
+    "s01-progressive-collapse.kinFac",
+    "s01-pushover.Cm",
+    "s01-pushover.block",
+    "s01-pushover.kinFac",
+    "s01-reassessment.Cm",
+    "s01-reassessment.block",
+    "s01-reassessment.kinFac",
+    "s01-stability.Cm",
+    "s01-stability.block",
+    "s01-stability.kinFac",
+    "s01-static-strength.Cm",
+    "s01-static-strength.block",
+    "s01-static-strength.kinFac",
+    "s01-uls-sls.Cm",
+    "s01-uls-sls.block",
+    "s01-uls-sls.kinFac",
+    "s01-wave-loading.Cm",
+    "s01-wave-loading.block",
+    "s01-wave-loading.kinFac",
+    "s05-environmental-loading.Cm",
+    "s05-vessel-operational.Cm"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "API RP 2A-WSD is not openly accessible and no open official reproduction of these three values was found. DNV-RP-C205 [6.9.1] refers to API RP 2A-LRFD for the mass coefficient curve but prints the asymptotic values only as an equation image. Confirm in API RP 2A-WSD 22nd ed. §5.3.1 and §5.3.4."
+  },
+  {
+   "id": "c205-cm-low-kc",
+   "what": "Inertia (mass) coefficient of a circular cylinder at low Keulegan–Carpenter number",
+   "standard": "DNV-RP-C205 §6.9",
+   "builtIn": "Cm = 2.0",
+   "appliesTo": [
+    "s01-fatigue.Cm",
+    "s07-pier-wave-load.Cm"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-C205 Environmental Conditions and Environmental Loads",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-04/RP-C205.pdf",
+   "edition": "April 2014",
+   "locator": "[6.9.1.1] (p.87)",
+   "quote": "For KC < 3, CM can be assumed to be independent of KC number and equal to the theoretical value CM = 2 for both smooth and rough cylinders.",
+   "sourceValue": "2.0 for KC < 3",
+   "note": ""
+  },
+  {
+   "id": "c205-strouhal",
+   "what": "Strouhal number of a circular cross-section",
+   "standard": "DNV-RP-C205 §9",
+   "builtIn": "0.2",
+   "appliesTo": [
+    "s05-fatigue-vibration.St",
+    "s09-viv.St"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-RP-C205 Environmental Conditions and Environmental Loads",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/http://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-04/RP-C205.pdf",
+   "edition": "April 2014",
+   "locator": "[9.5.4.6] region (p.142)",
+   "quote": "The St may be taken as 0.2 for circular cross sections and as 0.12 for rectangular cross-sections.",
+   "sourceValue": "0.2 circular; 0.12 rectangular",
+   "note": ""
+  },
+  {
+   "id": "pianc-abnormal-factor-general",
+   "what": "Abnormal berthing factor, general cargo and mid-range vessels",
+   "standard": "PIANC WG33 (2002) Table 4.2.5",
+   "builtIn": "1.5",
+   "appliesTo": [
+    "s05-berthing-energy.Fab"
+   ],
+   "status": "matches",
+   "sourceTitle": "ShibataFenderTeam Design Manual (reproducing PIANC 2002 Table 4.2.5 and related guidance)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://www.shibata-fender.team/files/content/Downloads/Protected%20PDF/SFT%20Design%20Manual%20A4%20English%202026%20Protected.pdf",
+   "edition": "A4 English, 2026",
+   "locator": "Abnormal energy table, \"suggested values are from PIANC 2002 (Table 4.2.5)\" (PDF p.22)",
+   "quote": "Container ships 1.50A 2.00B A: Post-Panamax and above B: Panamax and smaller General cargo, freighters 1.75",
+   "sourceValue": "tankers and bulk 1.25 largest / 1.75 smallest; container 1.50 / 2.00; general cargo 1.75; RoRo, ferries, tugs 2.00",
+   "note": "1.5 equals the factor for the largest container ships; for general cargo the table gives 1.75, so the default is low for that class. PIANC WG33 itself is not openly accessible; PIANC WG211 (2024) replaces the factor by partial factors."
+  },
+  {
+   "id": "pianc-abnormal-factor-tanker",
+   "what": "Abnormal berthing factor, largest tankers and bulk carriers",
+   "standard": "PIANC WG33 (2002) Table 4.2.5",
+   "builtIn": "1.25",
+   "appliesTo": [
+    "s06-berthing-energy.Fab"
+   ],
+   "status": "matches",
+   "sourceTitle": "ShibataFenderTeam Design Manual (reproducing PIANC 2002 Table 4.2.5 and related guidance)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://www.shibata-fender.team/files/content/Downloads/Protected%20PDF/SFT%20Design%20Manual%20A4%20English%202026%20Protected.pdf",
+   "edition": "A4 English, 2026",
+   "locator": "Abnormal energy table (PDF p.22)",
+   "quote": "Tankers 1.25A 1.75B A: Suezmax and above B: Handymax and smaller",
+   "sourceValue": "1.25 largest, 1.75 smallest",
+   "note": "Valid for Suezmax and larger only; smaller tankers need up to 1.75."
+  },
+  {
+   "id": "pianc-softness",
+   "what": "Softness coefficient Cs",
+   "standard": "PIANC WG33 (2002)",
+   "builtIn": "1.0 (0.9 for hard fenders)",
+   "appliesTo": [
+    "s05-berthing-energy.Cs",
+    "s06-berthing-energy.Cs"
+   ],
+   "status": "matches",
+   "sourceTitle": "ShibataFenderTeam Design Manual (reproducing PIANC 2002 Table 4.2.5 and related guidance)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://www.shibata-fender.team/files/content/Downloads/Protected%20PDF/SFT%20Design%20Manual%20A4%20English%202026%20Protected.pdf",
+   "edition": "A4 English, 2026",
+   "locator": "Berth configuration and softness coefficients (PDF p.20)",
+   "quote": "Δf ≤ 0.15 m CS ≤ 0.9 Δf ≥ 0.15 m CS ≤ 1.0",
+   "sourceValue": "0.9 for fender deflection up to 0.15 m; 1.0 above",
+   "note": ""
+  },
+  {
+   "id": "pianc-berth-configuration",
+   "what": "Berth configuration coefficient Cc",
+   "standard": "PIANC WG33 (2002)",
+   "builtIn": "1.0 (0.8–0.9 closed quay, small angle)",
+   "appliesTo": [
+    "s05-berthing-energy.Cc",
+    "s06-berthing-energy.Cc"
+   ],
+   "status": "matches",
+   "sourceTitle": "ShibataFenderTeam Design Manual (reproducing PIANC 2002 Table 4.2.5 and related guidance)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://www.shibata-fender.team/files/content/Downloads/Protected%20PDF/SFT%20Design%20Manual%20A4%20English%202026%20Protected.pdf",
+   "edition": "A4 English, 2026",
+   "locator": "Berth configuration coefficient (PDF p.20)",
+   "quote": "≤ 0.5 CC = 0.8 (α ≤ 5°) ... > 0.5 CC = 0.9 (α ≤ 5°) ... when α > 5° CC = 1.0",
+   "sourceValue": "1.0 open structures and angles above 5°; 0.8–0.9 closed structures by under-keel clearance ratio",
+   "note": ""
+  },
+  {
+   "id": "fender-tolerance",
+   "what": "Manufacturing tolerance of fender performance",
+   "standard": "PIANC WG33 (2002) / PIANC WG211 (2024)",
+   "builtIn": "±10 %",
+   "appliesTo": [
+    "s06-fender-performance.tol",
+    "s05-berthing-energy.fR"
+   ],
+   "status": "matches",
+   "sourceTitle": "ShibataFenderTeam Design Manual (reproducing PIANC 2002 Table 4.2.5 and related guidance)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://www.shibata-fender.team/files/content/Downloads/Protected%20PDF/SFT%20Design%20Manual%20A4%20English%202026%20Protected.pdf",
+   "edition": "A4 English, 2026",
+   "locator": "Fender tolerances (PDF p.26)",
+   "quote": "For historical reasons the tolerance of Pneumatic Fenders is 0 % for energy ... and ± 10 % for reaction.",
+   "sourceValue": "±10 % on reaction (moulded rubber fenders ±10 %, foam ±15 % per the same passage)",
+   "note": "Manufacturer statement of customary tolerances, not a PIANC clause."
+  },
+  {
+   "id": "hull-pressure",
+   "what": "Permissible hull pressure, large tankers and bulk carriers",
+   "standard": "PIANC WG33 (2002) Table 4.4.1",
+   "builtIn": "200 kPa",
+   "appliesTo": [
+    "s05-berthing-energy.pHull",
+    "s06-fender-performance.pHull"
+   ],
+   "status": "matches",
+   "sourceTitle": "ShibataFenderTeam Design Manual (reproducing PIANC 2002 Table 4.2.5 and related guidance)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://www.shibata-fender.team/files/content/Downloads/Protected%20PDF/SFT%20Design%20Manual%20A4%20English%202026%20Protected.pdf",
+   "edition": "A4 English, 2026",
+   "locator": "Hull pressure table (PDF p.33)",
+   "quote": "VLCC ≤ 300 ≤ 300 ≤ 350 150 – 200 Bulk carriers All sizes ≤ 200",
+   "sourceValue": "VLCC 150–200 kPa; bulk carriers ≤ 200 kPa; smaller tankers ≤ 300–350 kPa",
+   "note": "Values as tabulated by the manufacturer after PIANC."
+  },
+  {
+   "id": "api-sand-flim-nq",
+   "what": "Limiting unit skin friction and end-bearing factor Nq for driven piles in cohesionless siliceous soil",
+   "standard": "API RP 2GEO (2011) Table 1",
+   "builtIn": "fLim 67 / 81 / 96 / 115 kPa; Nq 12 / 20 / 40 / 50",
+   "appliesTo": [
+    "engine: src/engine/geotech/axialcapacity.js#API_SAND (fLim, Nq)"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-J101 Design of Offshore Wind Turbine Structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20170918162137/https://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-05/Os-J101.pdf",
+   "edition": "May 2014",
+   "locator": "App.F, Table F-1 (p.209)",
+   "quote": "20 67 12 2.9 ... 25 81 20 4.8 ... 30 96 40 9.6 ... 35 115 50 12.0",
+   "sourceValue": "67 / 81 / 96 / 115 kPa and 12 / 20 / 40 / 50",
+   "note": "API RP 2GEO is not openly accessible; DNV-OS-J101 reproduces the table of the earlier API RP 2A editions, keyed by friction angle δ (20 / 25 / 30 / 35°) instead of the shaft friction factor β used in API RP 2GEO."
+  },
+  {
+   "id": "api-sand-qlim-beta",
+   "what": "Limiting unit end bearing and shaft friction factor β for driven piles in sand",
+   "standard": "API RP 2GEO (2011) Table 1",
+   "builtIn": "qLim 3 / 5 / 10 / 12 MPa; β 0.29 / 0.37 / 0.46 / 0.56",
+   "appliesTo": [
+    "engine: src/engine/geotech/axialcapacity.js#API_SAND (qLim, beta)"
+   ],
+   "status": "edition-dependent",
+   "sourceTitle": "DNV-OS-J101 Design of Offshore Wind Turbine Structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20170918162137/https://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-05/Os-J101.pdf",
+   "edition": "May 2014",
+   "locator": "App.F, Table F-1 (p.209)",
+   "quote": "20 67 12 2.9 ... 25 81 20 4.8 ... 30 96 40 9.6 ... 35 115 50 12.0",
+   "sourceValue": "Earlier API RP 2A table as reproduced by DNV-OS-J101: 2.9 / 4.8 / 9.6 / 12.0 MPa with δ = 20–35° (K tan δ method). API RP 2GEO (2011): 3 / 5 / 10 / 12 MPa with β — not opened",
+   "note": "The built-in limits are the rounded API RP 2GEO values; they exceed the older table by up to 4 % (slightly unconservative against it). β could not be confirmed in an open source. The same applies to the API t–z and Q–z curve ordinates in src/engine/geotech/tz.js, which were not found in any open document."
+  },
+  {
+   "id": "j101-rotation",
+   "what": "Tolerance on total and accumulated permanent rotation of a monopile at seabed",
+   "standard": "DNV-ST-0126 (2021)",
+   "builtIn": "0.5° total; 0.25° accumulated",
+   "appliesTo": [
+    "s03-pile-soil-interaction.rotLimit",
+    "s03-pile-soil-interaction.accLimit",
+    "s16-foundation-soil.rotLimit"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNV-OS-J101 Design of Offshore Wind Turbine Structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20170918162137/https://rules.dnvgl.com/docs/pdf/DNV/codes/docs/2014-05/Os-J101.pdf",
+   "edition": "May 2014",
+   "locator": "Sec.10 [10.3.2.6] guidance note (p.173)",
+   "quote": "the tolerance for the total rotation at seabed is 0.5° and the installation tolerance at seabed is 0.25°, then the limit for the permanent accumulated rotation becomes 0.25° at seabed.",
+   "sourceValue": "0.5° / 0.25° / 0.25° as an example",
+   "note": "Example in a guidance note; DNV-OS-J101 is the predecessor of DNV-ST-0126."
+  },
+  {
+   "id": "c101-deflection",
+   "what": "Limiting vertical deflection of deck beams, SLS",
+   "standard": "DNV-OS-C101 (2021) Ch.2 Sec.1–2 (SLS)",
+   "builtIn": "span / 250 (span / 200 in one module)",
+   "appliesTo": [
+    "s02-deck-plate-framing.defRatio",
+    "s02-deflection-serviceability.defRatio",
+    "s01-uls-sls.deflRatio",
+    "s04-inplace-strength.defLimit",
+    "s05-deflection-settlement.spanLim"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-OS-C101 Design of offshore steel structures, general - LRFD method",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNV/os/2015-07/DNVGL-OS-C101.pdf",
+   "edition": "July 2015",
+   "locator": "Ch.2 Sec.7 [1.2], Table 1 (p.54)",
+   "quote": "Limit for δmax Limit for δ2 Deck beams ... 200--------- L300--------- ... 250--------- L350---------",
+   "sourceValue": "δmax: L/200 deck beams, L/250 with brittle finish; δ2: L/300 and L/350",
+   "note": "The fractions L/200, L/300, L/250 and L/350 are typeset as stacked fractions, which the text layer breaks across lines. The default 250 is the stricter of the two δmax limits. Read in the July 2015 edition."
+  },
+  {
+   "id": "rp0360-crossing-angle",
+   "what": "Minimum crossing angle between a cable and existing infrastructure",
+   "standard": "DNV-ST-0359 (2021) / DNV-RP-0360 (2016)",
+   "builtIn": "60° minimum (stricter than the 45° floor of the source; 90° preferred)",
+   "appliesTo": [
+    "s13-crossing-interference.angleMin"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-0360 Subsea power cables in shallow water",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20170517155651/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2016-03/DNVGL-RP-0360.pdf",
+   "edition": "March 2016",
+   "locator": "[4.5.4] Crossing of existing infrastructure (p.69)",
+   "quote": "crossing at approximately right angle (90°) and never less than 45°",
+   "sourceValue": "90° preferred, never less than 45°",
+   "note": "The built-in minimum is on the safe side of the source; the help text now quotes the source. The built-in minimum 60° is stricter than the 45° floor of DNVGL-RP-0360 (conservative). ICPC Recommendations 2 and 3, also cited by the module, were not opened."
+  },
+  {
+   "id": "rp0360-parallel-spacing",
+   "what": "Minimum parallel spacing between cables regardless of water depth",
+   "standard": "DNV-RP-0360 (2016)",
+   "builtIn": "50 m",
+   "appliesTo": [
+    "s13-crossing-interference.spacingMin"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-0360 Subsea power cables in shallow water",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://web.archive.org/web/20170517155651/http://rules.dnvgl.com/docs/pdf/dnvgl/RP/2016-03/DNVGL-RP-0360.pdf",
+   "edition": "March 2016",
+   "locator": "[4.5.2] guidance note 2 (p.67)",
+   "quote": "parallel distances which have been realised in the past were, for instance, 50 m (Red Penguin, 2012) and 100 m.",
+   "sourceValue": "50 m and 100 m as realised examples",
+   "note": "Examples of practice, not a requirement; the companion rule of two times the water depth was not found in this RP."
+  },
+  {
+   "id": "asme-b318-hoop",
+   "what": "Design factor on hoop stress for offshore pipelines",
+   "standard": "ASME B31.8 Table A842.2.2-1",
+   "builtIn": "0.72 (help: 0.50 riser)",
+   "appliesTo": [
+    "s08-wall-thickness.F1",
+    "s08-stress.F1",
+    "s08-integrity.F2"
+   ],
+   "status": "matches",
+   "sourceTitle": "30 CFR 250.1002 Design requirements for DOI pipelines (Code of Federal Regulations)",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://www.govinfo.gov/content/pkg/CFR-2023-title30-vol2/pdf/CFR-2023-title30-vol2-sec250-1002.pdf",
+   "edition": "2023 annual edition",
+   "locator": "§250.1002(a)",
+   "quote": "F = Construction design factor of 0.72 for the submerged component and 0.60 for the riser component.",
+   "sourceValue": "0.72 submerged pipeline; 0.60 riser (regulation); ASME B31.8 not opened",
+   "note": "The US regulation carries the same 0.72 for the submerged pipeline. For risers the regulation gives 0.60 where the help text recalls 0.50 from ASME B31.8 (platform piping and risers); ASME B31.8 is not openly accessible, so the longitudinal 0.80 and combined 0.90 factors remain unconfirmed."
+  },
+  {
+   "id": "en1992-gamma-c-s-ec2",
+   "what": "Partial factors for concrete and reinforcing steel, persistent and transient situations (second source)",
+   "standard": "EN 1992-1-1:2004 §2.4.2.4",
+   "builtIn": "γc = 1.5, γs = 1.15",
+   "appliesTo": [
+    "s05-global-strength.gammaC",
+    "s05-global-strength.gammaS",
+    "s07-wall-structure.gC",
+    "s07-wall-structure.gS"
+   ],
+   "status": "matches",
+   "sourceTitle": "JRC Scientific and Policy Report: Eurocode 2: Background & Applications, Design of Concrete Buildings, Worked examples",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://eurocodes.jrc.ec.europa.eu/doc/1110_WS_EC2/report/1110_WS_EC2.pdf",
+   "edition": "2014",
+   "locator": "Chapter 3 (PDF p.65)",
+   "quote": "γc = 1,5 γs = 1,15",
+   "sourceValue": "1.5 and 1.15",
+   "note": "Confirms entry en1992-gamma-c-s from the Eurocode 2 worked-examples report."
+  },
+  {
+   "id": "en1992-crack-width",
+   "what": "Crack width limit for reinforced concrete",
+   "standard": "EN 1992-1-1:2004 §7.3.1",
+   "builtIn": "0.3 mm",
+   "appliesTo": [
+    "s05-deck-slab.wLim"
+   ],
+   "status": "matches",
+   "sourceTitle": "JRC Scientific and Policy Report: Eurocode 2: Background & Applications, Design of Concrete Buildings, Worked examples",
+   "sourceType": "secondary source quoting the standard",
+   "url": "https://eurocodes.jrc.ec.europa.eu/doc/1110_WS_EC2/report/1110_WS_EC2.pdf",
+   "edition": "2014",
+   "locator": "Chapter 2, crack control (PDF p.29)",
+   "quote": "For crack widths up to a maximum of 0,30 mm – the upper limit for all environmental classes",
+   "sourceValue": "0.30 mm (recommended upper limit; national annexes and maritime exposure may require less)",
+   "note": "BS 6349 and national annexes may set tighter limits in the splash zone; not opened."
+  },
+  {
+   "id": "en1992-alpha-cc",
+   "what": "Coefficient αcc for long-term effects on concrete compressive strength",
+   "standard": "EN 1992-1-1:2004 §3.1.6",
+   "builtIn": "0.85",
+   "appliesTo": [
+    "s05-global-strength.alphaCC",
+    "s05-deterioration-life.alphaCC",
+    "s07-wall-structure.acc"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in EN 1992-1-1 §3.1.6(1) and the national annex (recommended value 1.0; 0.85 in several national annexes)."
+  },
+  {
+   "id": "api2rd-ca-cf",
+   "what": "Allowable stress factor Ca = 2/3 and design case factors Cf (1.0 / 1.2 / 1.5)",
+   "standard": "API RP 2RD (1998, R2013) §5",
+   "builtIn": "Ca = 0.667; Cf = 1.0 / 1.2",
+   "appliesTo": [
+    "s09-static-configuration.CaAllow",
+    "s09-static-configuration.Cf",
+    "s09-coupled-dynamic.Cf",
+    "s09-internal-flow.CaAllow",
+    "s09-internal-flow.Cf"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in API RP 2RD §5.2.3 and Table 2."
+  },
+  {
+   "id": "api17j-utilisation",
+   "what": "Flexible pipe layer utilisation factors (tensile armour 0.67 / 0.85 / 0.91; pressure armour 0.55 / 0.85 / 0.91)",
+   "standard": "API Spec 17J (4th ed.) Table 6 / API RP 17B",
+   "builtIn": "0.67 / 0.85 / 0.91; 0.55 / 0.85 / 0.91",
+   "appliesTo": [
+    "s14-cross-section.fTaN",
+    "s14-cross-section.fTaA",
+    "s14-cross-section.fTaH",
+    "s14-cross-section.fPaN",
+    "s14-cross-section.fPaA",
+    "s14-cross-section.fPaH",
+    "s14-tension-bending.fTa",
+    "s12-tension-bending.etaNormal",
+    "s12-tension-bending.etaAbnormal"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in API Spec 17J Table 6 (design criteria) and ISO 13628-5 for umbilicals."
+  },
+  {
+   "id": "iec60287-thermal-resistivity",
+   "what": "Thermal resistivities of cable materials (PE coverings 3.5 K·m/W, bedding 6.0 K·m/W), maximum XLPE conductor temperature 90 °C, ks = kp = 1",
+   "standard": "IEC 60287-1-1 / IEC 60287-2-1",
+   "builtIn": "3.5; 6.0; 90 °C; 1",
+   "appliesTo": [
+    "s13-thermal-rating.rhoTCover",
+    "s13-thermal-rating.rhoTBed",
+    "s13-thermal-rating.thetaMax",
+    "s13-thermal-rating.ks",
+    "s13-thermal-rating.kp",
+    "engine: src/engine/electrical/ampacity.js"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in IEC 60287-2-1 Table 1 and IEC 60287-1-1 Table 2."
+  },
+  {
+   "id": "iec60949-adiabatic",
+   "what": "Adiabatic short-circuit constants K and β of conductor metals",
+   "standard": "IEC 60949:1988+A1",
+   "builtIn": "engine table (copper 226 A·s½/mm², 234.5 K; aluminium 148, 228)",
+   "appliesTo": [
+    "s13-electrical-losses.Kcond",
+    "s13-electrical-losses.betaCond",
+    "engine: src/engine/electrical/shortcircuit.js"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in IEC 60949 Table I."
+  },
+  {
+   "id": "ocimf-line-limits",
+   "what": "Mooring line working load limits as a fraction of MBL (steel wire 0.55, synthetic 0.50, polyamide 0.45)",
+   "standard": "OCIMF Mooring Equipment Guidelines, 4th ed. (2018)",
+   "builtIn": "0.55 / 0.50 / 0.45",
+   "appliesTo": [
+    "s05-mooring-bollard.limSteel",
+    "s05-mooring-bollard.limSyn",
+    "s05-mooring-bollard.limPa"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in OCIMF MEG4 §5 (working load limit as a share of ship design MBL) — note MEG4 redefined the limits relative to MEG3."
+  },
+  {
+   "id": "norsok-n004-gamma-m",
+   "what": "Material factor 1.15 and joint / member checks; design fatigue factors up to 10",
+   "standard": "NORSOK N-004 (2022) §6",
+   "builtIn": "γM = 1.15; DFF 1–10",
+   "appliesTo": [
+    "s02-local-fe-stress.gM",
+    "s02-deck-plate-framing.gM",
+    "s01-fatigue.dff"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in NORSOK N-004 §6.1 and Table 8-1 / N-001 §7.2."
+  },
+  {
+   "id": "hobbs-constants",
+   "what": "Constants k1–k5 of the Hobbs lateral buckling modes (80.76, 6.391e-5, 0.5, 2.407e-3, 0.06938 for mode 1; etc.)",
+   "standard": "Hobbs (1984) J. Transp. Eng. 110(2)",
+   "builtIn": "as coded",
+   "appliesTo": [
+    "engine: src/engine/pipeline/buckling.js#HOBBS_MODES"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in Hobbs (1984) Table 1."
+  },
+  {
+   "id": "iso19902-rsr",
+   "what": "Reserve strength ratio 1.85 for manned (L1) jackets; annual collapse probability target 3e-5",
+   "standard": "ISO 19902:2020 §A.9.9",
+   "builtIn": "RSR 1.85; pf 3e-5",
+   "appliesTo": [
+    "s01-pushover.rsrReq",
+    "s01-pushover.pfTarget"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in ISO 19902:2020 §A.9.9.3."
+  },
+  {
+   "id": "api2a-pile-fs",
+   "what": "Safety factor on axial pile capacity (1.5 extreme, 2.0 operating); allowable stress basis",
+   "standard": "API RP 2A-WSD 22nd ed. §9",
+   "builtIn": "1.5",
+   "appliesTo": [
+    "s01-pile-foundation.FSc",
+    "s06-global-strength.fsAxial",
+    "s06-pile-capacity.fsC",
+    "s06-pile-capacity.fsT"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in API RP 2A-WSD §9.3.4 (pile penetration safety factors)."
+  },
+  {
+   "id": "bs6349-partial-factors",
+   "what": "Partial factors and combination factors for maritime structures (berthing and mooring 1.5; ψ0 0.7; pile resistance factors)",
+   "standard": "BS 6349-2:2019 / BS 6349-1-2",
+   "builtIn": "1.5; 0.7; 1.4–1.75",
+   "appliesTo": [
+    "s05-global-strength.gB",
+    "s05-global-strength.psi",
+    "s05-pile-capacity.gRc",
+    "s05-pile-capacity.gRt",
+    "s05-pile-capacity.gRh",
+    "s05-pile-capacity.gRv"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in BS 6349-1-2:2016 Tables 1–4 and BS 6349-2:2019 §5; EN 1997-1 Annex A for the pile resistance factors."
+  },
+  {
+   "id": "api14e-erosional",
+   "what": "Erosional velocity constant C",
+   "standard": "API RP 14E",
+   "builtIn": "100",
+   "appliesTo": [
+    "s08-multiphase-flow.erosC",
+    "s08-corrosion-erosion.erosC"
+   ],
+   "status": "not-found",
+   "sourceTitle": "",
+   "sourceType": "",
+   "url": "",
+   "edition": "",
+   "locator": "",
+   "quote": "",
+   "sourceValue": "",
+   "note": "No openly accessible official text was found; the value is unconfirmed. Confirm in API RP 14E §2.5 (C = 100 continuous, 125 intermittent service, in US customary units)."
+  }
+ ]
+}

@@ -230,9 +230,9 @@ export function criteriaInputs({ damaged = false, offset = true, offsetDefault =
     { key: 'sfIntact', label: 'API RP 2SK safety factor, intact', unit: '-', type: 'number', default: 1.67, min: 1, max: 4, group: g, role: 'criteria',
       help: `Required MBL / maximum tension, dynamic analysis (2.0 for quasi-static). ${CONFIRM}` },
     { key: 'gammaMean', label: 'DNV partial factor on mean tension', unit: '-', type: 'number', default: damaged ? 1.0 : 1.1, min: 0.8, max: 3, group: g, role: 'criteria',
-      help: `DNV-OS-E301 (2010–2018) consequence class 1: ULS 1.10, ALS 1.00; class 2: ULS 1.40, ALS 1.00. ${CONFIRM}` },
+      help: `DNV-OS-E301 editions up to 2013, consequence class 1: ULS 1.10, ALS 1.00; class 2: ULS 1.40, ALS 1.00. From the 2018 edition the format changed to a pretension factor (1.20) with an environmental-tension factor — if that edition governs, enter its factors here and in the dynamic factor. ${CONFIRM}` },
     { key: 'gammaDyn', label: 'DNV partial factor on dynamic tension', unit: '-', type: 'number', default: damaged ? 1.1 : 1.5, min: 0.8, max: 3.5, group: g, role: 'criteria',
-      help: `DNV-OS-E301 (2010–2018) consequence class 1: ULS 1.50, ALS 1.10; class 2: ULS 2.10, ALS 1.25. ${CONFIRM}` },
+      help: `DNV-OS-E301 editions up to 2013, consequence class 1: ULS 1.50, ALS 1.10; class 2: ULS 2.10, ALS 1.25. The 2018 edition applies 1.45 (class 1) or 1.90 (class 2) to the environmental tension in time-domain analysis. ${CONFIRM}` },
     { key: 'strengthFactor', label: 'Characteristic strength / MBL', unit: '-', type: 'number', default: 0.95, min: 0.7, max: 1, group: g, role: 'criteria',
       help: 'DNV-OS-E301: Sc = 0.95·MBS when strength statistics of the component are not available.' },
   ];
