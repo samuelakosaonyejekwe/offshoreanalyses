@@ -87,7 +87,8 @@ export default {
     let surgeVol = 0, run0 = 0; const dtH = h.t[1] - h.t[0];
     for (let i = 0; i < nH; i++) { const ex = (h.outletLiquidRate[i] - inp.mL) / inp.rhoL * dtH; run0 = ex > 0 ? run0 + ex : 0; surgeVol = Math.max(surgeVol, run0); }
     const inv0 = h.liquidInventory[0], invE = h.liquidInventory[nH - 1];
-    const residual = Math.max(Math.abs(c.residualL), Math.abs(c.residualG));
+    // below 1e-9 of the mass in the pipe the imbalance is arithmetic round-off: reported as zero, otherwise to three figures
+    const resRaw = Math.max(Math.abs(c.residualL), Math.abs(c.residualG)), residual = resRaw < 1e-9 ? 0 : Number(resRaw.toPrecision(3));
     const checks = [
       chk('Peak pressure during the transient', pMax, inp.pDesign * BAR, 'Pa', 'Design pressure (DNV-ST-F101 §3.4 pressure control)',
         'Guards against the transient pushing the pressure anywhere in the line above the design pressure, for example when gas compresses behind a liquid blockage.'),
@@ -114,7 +115,7 @@ export default {
         kpi('slugging', 'Slugging detected (1 = yes)', slugging ? 1 : 0, '-', 'One when the run shows sustained riser-base pressure cycling; zero for stable flow.'),
         kpi('inv0', 'Liquid inventory at the start', inv0, 'm³', 'Liquid volume in the line in the initial state.'),
         kpi('invEnd', 'Liquid inventory at the end', invE, 'm³', 'Liquid volume in the line at the end of the run; a ramp-up sweeps the difference out as a surge.'),
-        kpi('massResidual', 'Mass conservation residual', residual, '-', 'Relative imbalance between the change of mass in the pipe and the net boundary flow. Round-off level for a correct run.', 1e-6, 'max'),
+        kpi('massResidual', 'Mass conservation residual', residual, '-', 'Relative imbalance between the change of mass in the pipe and the net boundary flow. It should vanish for a correct run; an imbalance below 1e-9 of the mass is arithmetic round-off and is reported as 0.', 1e-6, 'max'),
         kpi('steps', 'Time steps taken', r.steps, '-', 'Number of explicit time steps; the step is limited by the acoustic Courant condition.'),
         kpi('dtMin', 'Smallest time step', r.dtMin * 1e3, 'ms', 'Smallest explicit time step used in the run; it shrinks where gas-free liquid makes the mixture sound speed high.'),
       ],
@@ -135,7 +136,7 @@ export default {
       tables: [tbl('Run summary', [col('q', 'Quantity'), col('v', 'Value'), col('u', 'Unit')], [
         { q: 'Scenario', v: inp.scenario, u: '' }, { q: 'Inlet boundary', v: 'liquid and gas mass rates prescribed', u: '' }, { q: 'Outlet boundary', v: inp.scenario === 'severe' && inp.choke > 0 ? 'choke to separator pressure' : 'pressure prescribed', u: '' },
         { q: 'Initial condition', v: inp.scenario === 'rampup' ? `steady state at ${fmt(inp.frac0 * 100)} % rate` : 'steady state at full rate', u: '' },
-        { q: 'Cell size', v: round(r.grid.ds), u: 'm' }, { q: 'Liquid mass in / out balance residual', v: round(c.residualL, 3), u: '-' }, { q: 'Gas mass balance residual', v: round(c.residualG, 3), u: '-' },
+        { q: 'Cell size', v: round(r.grid.ds), u: 'm' }, { q: 'Liquid mass in / out balance residual', v: Math.abs(c.residualL) < 1e-9 ? 0 : round(c.residualL, 3), u: '-' }, { q: 'Gas mass balance residual', v: Math.abs(c.residualG) < 1e-9 ? 0 : round(c.residualG, 3), u: '-' },
         { q: 'Mass removed by the positivity limiter (liquid / gas)', v: `${fmt(c.clippedL)} / ${fmt(c.clippedG)}`, u: 'kg' },
         ...(extra.settled != null ? [{ q: 'Liquid inventory just before restart', v: round(extra.settled), u: 'm³' }] : []),
         ...(extra.swept != null ? [{ q: 'Liquid swept out by the ramp-up', v: round(extra.swept), u: 'm³' }] : []),

@@ -90,7 +90,7 @@ export default {
       kpis: [
         { key: 'heaveMpm', label: 'Most probable maximum heave (design Tp)', value: round(d.h.mpm, 4), unit: 'm', explain: 'Heave amplitude most likely to be the largest in the storm duration at the design peak period.' },
         { key: 'heaveExt', label: 'Design extreme heave (worst Tp)', value: round(frac(wHeave.h), 4), unit: 'm', limit: inp.heaveMax, sense: 'max', explain: `Heave amplitude at the chosen fractile of the 3-hour maximum, at the worst peak period of the contour (${fmt(wHeave.Tp)} s).` },
-        { key: 'rollExt', label: 'Design extreme roll', value: round(frac(wRot.ro) * dofScale(3), 4), unit: 'deg', explain: 'Roll amplitude at the chosen fractile, worst peak period.' },
+        { key: 'rollExt', label: 'Design extreme roll', value: Math.abs(frac(wRot.ro) * dofScale(3)) < 1e-6 ? 0 : round(frac(wRot.ro) * dofScale(3), 4), unit: 'deg', explain: 'Roll amplitude at the chosen fractile, worst peak period. In head or following seas it vanishes by symmetry: a value below 1e-6 deg is arithmetic round-off and is reported as 0.' },
         { key: 'pitchExt', label: 'Design extreme pitch', value: round(frac(wRot.pi) * dofScale(4), 4), unit: 'deg', explain: 'Pitch amplitude at the chosen fractile, worst peak period.' },
         { key: 'heelWind', label: 'Static wind heel', value: round(heelWind, 4), unit: 'deg', explain: 'Steady inclination from the storm wind on the windage area, resisted by the hydrostatic (or tendon) stiffness.' },
         { key: 'inclination', label: 'Maximum inclination', value: round(incl, 4), unit: 'deg', limit: inp.inclMax, sense: 'max', explain: 'Static wind heel plus extreme dynamic roll or pitch: the angle topsides equipment must survive.' },

@@ -21,13 +21,14 @@ export default {
     { key: 'kLin', label: 'Winkler modulus (force per length per deflection)', unit: 'kPa', type: 'number', default: 20000, min: 100, max: 2e6, group: 'Pile model', role: 'soil', showIf: { key: 'soilModel', in: ['linear'] }, help: 'Use to match a measured stiffness with the calibration tool.' },
     { key: 'rowSpacing', label: 'Row spacing in the load direction (0 = use the p-multiplier entered)', unit: 'm', type: 'number', default: 0, min: 0, max: 20, group: 'Pile model', role: 'geometry', help: 'When given, the p-multiplier is taken from the AASHTO table for the row below.' },
     { key: 'rowNo', label: 'Row position (1 = leading)', unit: '-', type: 'int', default: 1, min: 1, max: 6, group: 'Pile model', role: 'geometry', showIf: { key: 'soilModel', in: ['py'] } },
-    { key: 'H', label: 'Shear at the pile head', unit: 'kN', type: 'number', default: 400, min: 1, max: 20000, group: 'Pile-head loads', role: 'bc', bind: 'wharf.pileShearMax', uncertain: { dist: 'lognormal', cov: 0.15 } },
+    { key: 'H', label: 'Shear at the pile head', unit: 'kN', type: 'number', default: 350, min: 1, max: 20000, group: 'Pile-head loads', role: 'bc', bind: 'wharf.pileShearMax', uncertain: { dist: 'lognormal', cov: 0.15 } },
     { key: 'M', label: 'Moment at the pile head (free head only)', unit: 'kN·m', type: 'number', default: 0, min: -1e5, max: 1e5, group: 'Pile-head loads', role: 'bc', showIf: { key: 'headFix', in: ['free'] } },
     { key: 'N', label: 'Axial compression', unit: 'kN', type: 'number', default: 3000, min: 0, max: 60000, group: 'Pile-head loads', role: 'bc', bind: 'wharf.pileAxialMax' },
     { key: 'timo', label: 'Include shear deformation of the pile', type: 'bool', default: true, group: 'Numerics', role: 'control' },
     { key: 'yLimit', label: 'Allowable deflection at the seabed', unit: 'mm', type: 'number', default: 40, min: 2, max: 500, group: 'Acceptance', role: 'criteria', help: `Project serviceability limit; 25–50 mm is common for wharf piles under berthing. ${CONFIRM}` },
   ],
-  mesh: { key: 'nElem', label: 'Pile elements (embedded length)', levels: [20, 40, 80, 160], qoi: 'yHead' },
+  // Levels put nodes on the layer interfaces (6 m, 14 m) and the scour depth (1 m) of the default 28 m penetration.
+  mesh: { key: 'nElem', label: 'Pile elements (embedded length)', levels: [14, 28, 56, 112], qoi: 'yHead' },
   compute(inp, ctx) {
     const P = pileProps(inp, ctx), profile = profileFrom(inp, P.D), fixed = inp.headFix === 'fixed', py = inp.soilModel !== 'linear';
     let pm = inp.pMult;

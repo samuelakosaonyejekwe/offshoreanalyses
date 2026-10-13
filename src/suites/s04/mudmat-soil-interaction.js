@@ -15,7 +15,9 @@ export default {
   inputs: [
     ...matInputs(),
     { key: 'skirted', label: 'Skirted base (can sustain transient tension)', type: 'bool', default: false, group: 'Mudmat geometry', role: 'bc', help: 'Skirted mats in clay can carry short-term suction under the heel; unskirted mats lift off.' },
-    ...loadInputs({ torsion: true, T: 200 }),
+    // Default moment gives e = M/V = 2 m > B/6: about 10 % of an unskirted base lifts off, the case in which the contact
+    // integration (and its convergence study) matters. In full contact the pressure is linear and exact at any cell count.
+    ...loadInputs({ torsion: true, T: 200, M: 2000 }),
     { key: 'ML', label: 'Moment giving eccentricity along L', unit: 'kN·m', type: 'number', default: 300, min: 0, max: 1e6, group: 'Design loads at mudline', role: 'bc' },
     { key: 'su0', label: 'Undrained shear strength at mudline', unit: 'kPa', type: 'number', default: 5, min: 0.2, max: 500, group: 'Soil', role: 'soil', bind: 'site.su0', uncertain: { dist: 'lognormal', cov: 0.25 } },
     { key: 'suGrad', label: 'Strength gradient', unit: 'kPa/m', type: 'number', default: 1.5, min: 0, max: 50, group: 'Soil', role: 'soil', uncertain: { dist: 'normal', cov: 0.2 } },
@@ -36,7 +38,7 @@ export default {
     { key: 'gammaM', label: 'Material factor on strength', unit: '-', type: 'number', default: 1.5, min: 1, max: 3, group: 'Failure envelope', role: 'criteria' },
     { key: 'nCell', label: 'Contact integration cells per side', type: 'int', default: 80, min: 8, max: 640, group: 'Solver', role: 'control' },
   ],
-  mesh: { key: 'nCell', label: 'Contact cells per side', levels: [20, 40, 80, 160], qoi: 'pMax' },
+  mesh: { key: 'nCell', label: 'Contact cells per side', levels: [10, 20, 40, 80, 160], qoi: 'pMax' },
   compute(inp) {
     // SI: kN → N, kN·m → N·m, kPa → Pa, kPa/m → Pa/m.
     const { B, L } = inp, A = B * L;

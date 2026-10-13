@@ -3,7 +3,7 @@
 // monthly and daily generation, capacity factor and resource utilisation.
 import { aepWeibull, aepBins, airDensity, airDensityCorrection, weibull, weibullScaleFromMean, lossCascade, aepUncertainty, curvePower } from '../../engine/aero/aep.js';
 import { curveInputs, getCurve } from './_curve.js';
-import { site, adv, check, fmt, round, run, need, linspace, HOURS_YEAR, LIMIT_POLAR, LIMIT_CODE, PXX, CONFIRM, energyCo2Text, CO2_GRID } from './_common.js';
+import { costInput, money, site, adv, check, fmt, round, run, need, linspace, HOURS_YEAR, LIMIT_POLAR, LIMIT_CODE, PXX, CONFIRM, energyCo2Text, CO2_GRID } from './_common.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -44,6 +44,7 @@ export default {
     unc('Inter-annual variability of energy (one year)', 'uIav', 6.0, 'Standard deviation of annual energy from year to year.'),
     { key: 'years', label: 'Averaging period for the exceedance values', unit: 'yr', type: 'int', default: 10, min: 1, max: 40, group: 'Uncertainty', role: 'criteria', help: 'Lenders usually ask for 1-year and 10-year P90; inter-annual variability shrinks with √n.' },
     { key: 'cfTarget', label: 'Required net capacity factor', unit: '%', type: 'number', default: 40, min: 5, max: 70, group: 'Acceptance', role: 'criteria', help: `Project threshold for the P50 net capacity factor. ${CONFIRM}` },
+    costInput('energyPrice', 'Value of delivered energy', 'USD/MWh', 80, 1000, 'Used only to express energy as revenue in the economic advice.'),
   ],
   compute(inp) {
     const c0 = getCurve(inp);
@@ -143,7 +144,7 @@ export default {
           cf * 100 >= inp.cfTarget ? `Confirm the wake loss (${inp.wake} %) with the array module and replace the ${c0.label} by the warranted supplier curve; the method of bins and the integration differ by ${fmt((bins.aepWh / one.aepWh - 1) * 100, 2)} %.` : `The capacity factor is below the ${inp.cfTarget} % requirement: a larger rotor per megawatt (lower specific power), wider spacing or higher availability are the levers — one point of availability is worth ${fmt(grossWh * 0.01 * (cas.netWh / grossWh) / (inp.avail / 100) / 1e6)} MWh/yr.`,
           'IEC 61400-15-1 (energy-yield assessment and loss categories) and IEC 61400-12-1:2017 (power curve and air-density normalisation), latest editions known.',
           `The net yield displaces about ${fmt(cas.netWh / 1e6 * CO2_GRID / 1e3, 4)} kt CO₂ a year from gas-fired generation (screening factor ${CO2_GRID} t CO₂/MWh — use the grid factor of the project).`),
-        adv('economic', 'info', `One percent of net energy is ${fmt(onePct, 4)} MWh a year; the financing haircut from P50 to P90 is ${fmt((cas.netWh - un.p90Wh) / 1e9, 3)} GWh/yr (${fmt((1 - un.p90Wh / cas.netWh) * 100)} %).`,
+        adv('economic', 'info', `One percent of net energy is ${fmt(onePct, 4)} MWh a year; the financing haircut from P50 to P90 is ${fmt((cas.netWh - un.p90Wh) / 1e9, 3)} GWh/yr (${fmt((1 - un.p90Wh / cas.netWh) * 100)} %). At the indicative ${fmt(inp.energyPrice)} USD/MWh that is ${money(onePct * inp.energyPrice)} a year per percent of energy and ${money((cas.netWh - un.p90Wh) / 1e6 * inp.energyPrice)} a year between P50 and P90 revenue.`,
           `Reduce the largest uncertainty first (${un.components.reduce((a, b) => (b.sigma > a.sigma ? b : a)).name}, ${fmt(un.components.reduce((a, b) => (b.sigma > a.sigma ? b : a)).sigma * 100)} % of energy): a second year of on-site lidar or a warranted power curve typically pays back through a higher P90 debt capacity.`,
           'Project-finance practice sizes debt on P90 (or P99 one-year) energy with a debt-service cover ratio; LCOE per IEA / IRENA convention uses the P50 net energy as denominator; value-of-information reasoning for extra measurement.',
           energyCo2Text(onePct)),

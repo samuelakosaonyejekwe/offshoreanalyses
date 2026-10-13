@@ -72,7 +72,8 @@ export default {
     const extent = res ? Math.min(inp.L, Math.max(0, res.envelope.inundationLimit)) : 0;
     const stored = res ? res.volume.final - res.volume.initial : 0;
     const delivered = res ? res.volume.boundaryNet : 0;
-    const volErr = res ? Math.abs(res.volume.error) : 0;
+    // below 1e-9 m³/m (a cubic millimetre per metre of frontage) the balance error is round-off and is reported as zero
+    const volErr = res && Math.abs(res.volume.error) >= 1e-9 ? Math.abs(res.volume.error) : 0;
     const depthMaxAll = res ? Math.max(...res.envelope.hMax) : inp.h0;
     finite(depthR, 'Flood depth');
     // crest that stops overflow at the surge peak (overtopping remains)
@@ -113,7 +114,7 @@ export default {
         { key: 'head', label: 'Peak overflow head above the crest', value: r(Math.max(0, inp.swl + inp.slr + inp.surge - inp.crest), 3), unit: 'm', explain: 'How far the peak still-water level stands above the crest. Zero means no overflow, only wave overtopping.' },
         { key: 'depthMax', label: 'Maximum depth anywhere on the path', value: r(depthMaxAll), unit: 'm', explain: 'Deepest water along the strip, usually at the low point or against the landward boundary.' },
         { key: 'volRouted', label: 'Volume delivered by the solver', value: r(delivered), unit: 'm³/m', explain: 'Net volume that crossed the boundaries in the simulation. With a closed landward boundary it should equal the prescribed inflow.' },
-        { key: 'volErr', label: 'Water-volume balance error', value: r(volErr, 3), unit: 'm³/m', explain: 'Stored volume minus net boundary inflow. Machine-zero confirms that the routing neither creates nor loses water.' },
+        { key: 'volErr', label: 'Water-volume balance error', value: r(volErr, 3), unit: 'm³/m', explain: 'Stored volume minus net boundary inflow. Zero confirms that the routing neither creates nor loses water; an error below 1e-9 m³/m is arithmetic round-off and is reported as 0.' },
         { key: 'crestReq', label: 'Crest level that stops overflow', value: r(crestNoOverflow), unit: 'm', explain: 'Peak still-water level including surge and the sea-level-rise allowance. A crest at this level leaves only wave overtopping.' },
       ],
       checks: [

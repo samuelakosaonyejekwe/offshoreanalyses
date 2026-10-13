@@ -12,7 +12,7 @@ https://raw.githack.com/samuelakosaonyejekwe/offshoreanalyses/main/index.html
 
 ## What it does
 
-* **17 connected suites, 292 analysis modules.** Every analysis in the 17-suite specification (261 of 261) is
+* **17 connected suites, 296 analysis modules.** Every analysis in the 17-suite specification (261 of 261) is
   covered by a working module. What one analysis computes (loads, motions, reactions, stiffnesses, quantities,
   energy) becomes the default input of the analyses that depend on it.
 * **Any site on Earth.** Waves, wind, currents, tide, water depth, seismicity, solar resource and — where an open

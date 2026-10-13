@@ -444,13 +444,14 @@ export function pileSoilModelInputs({ group = 'Pile model', Lfree = 16 } = {}) {
     { key: 'headFix', label: 'Pile-head connection', type: 'select', default: 'fixed', group, role: 'bc', options: [{ value: 'fixed', label: 'Moment connection into the deck (no head rotation)' }, { value: 'free', label: 'Pinned head (free to rotate)' }] },
     { key: 'loading', label: 'p–y loading type', type: 'select', default: 'cyclic', group, role: 'bc', options: [{ value: 'cyclic', label: 'Cyclic (berthing, waves)' }, { value: 'static', label: 'Static (sustained)' }] },
     { key: 'pMult', label: 'p-multiplier (group shadowing)', unit: '-', type: 'number', default: 1, min: 0.2, max: 1, group, role: 'soil', help: 'Reduction of lateral soil resistance for trailing rows at spacings below about 5 D (for example 0.8 / 0.4 / 0.3 at 3 D, 1.0 / 0.85 / 0.7 at 5 D for leading, second and third rows). 1 for rows more than 5 D apart.' },
-    { key: 'nElem', label: 'Pile elements over the embedded length', unit: '-', type: 'int', default: 40, min: 10, max: 320, group: 'Numerics', role: 'control' },
+    { key: 'nElem', label: 'Pile elements over the embedded length', unit: '-', type: 'int', default: 56, min: 10, max: 320, group: 'Numerics', role: 'control',
+      help: 'Soil springs are lumped at the nodes. Choose a count that puts nodes on the layer interfaces and the scour depth (penetration / count dividing those depths): otherwise the result scatters by a few tenths of a percent between counts instead of converging steadily.' },
   ];
 }
 
 /** Options of the engine's lateral pile solver from the module inputs (SI). */
 export function latOpts(inp, P, profile, extra = {}) {
-  return { L: inp.Lemb, stickUp: inp.Lfree ?? 0, nElem: Math.round(inp.nElem ?? 40), D: P.D, t: P.t, E: P.E, profile, loading: inp.loading ?? 'cyclic', pMult: inp.pMult ?? 1, ...extra };
+  return { L: inp.Lemb, stickUp: inp.Lfree ?? 0, nElem: Math.round(inp.nElem ?? 56), D: P.D, t: P.t, E: P.E, profile, loading: inp.loading ?? 'cyclic', pMult: inp.pMult ?? 1, ...extra };
 }
 
 /**

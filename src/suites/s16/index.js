@@ -18,11 +18,17 @@ import arrayCable from './array-cable.js';
 import installationMaintenance from './installation-maintenance.js';
 import scour from './scour.js';
 import reliabilityLifetime from './reliability-lifetime.js';
+import designLoadCases from './design-load-cases.js';
+import oscillatingWaterColumn from './oscillating-water-column.js';
+import storageHybrid from './storage-hybrid.js';
+import collectionSystem from './collection-system.js';
 
 // Ordered as the analyses are listed in the suite specification; the generator and converter chain follows the
-// power-take-off dynamics, and floating solar follows the energy-yield module it shares its analysis with.
+// power-take-off dynamics, and floating solar follows the energy-yield module it shares its analysis with. The design
+// load-case table follows the coupled simulator it drives, the oscillating water column the point absorber, storage
+// and hybrid dispatch the energy yield, and the collection-system load flow the array-cable module.
 export default {
   n: 16,
-  modules: [coupledDynamics, wecHydrodynamics, tidalTurbine, rotorAerodynamics, globalStrength, fatigue, floaterStability, mooring, foundationSoil, extremeLoads, naturalFrequency, ptoDynamics,
-    generatorConverter, energyProduction, floatingSolar, wakeArray, arrayCable, installationMaintenance, scour, reliabilityLifetime],
+  modules: [coupledDynamics, designLoadCases, wecHydrodynamics, oscillatingWaterColumn, tidalTurbine, rotorAerodynamics, globalStrength, fatigue, floaterStability, mooring, foundationSoil, extremeLoads, naturalFrequency, ptoDynamics,
+    generatorConverter, energyProduction, storageHybrid, floatingSolar, wakeArray, arrayCable, collectionSystem, installationMaintenance, scour, reliabilityLifetime],
 };

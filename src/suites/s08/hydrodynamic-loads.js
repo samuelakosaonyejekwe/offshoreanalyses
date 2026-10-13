@@ -113,7 +113,8 @@ export default {
         kpi('slide', 'Net lateral displacement after the wave train', slide, 'm', 'Distance the pipe has moved from its starting position after the simulated waves. Zero means the pipe is absolutely stable in this wave.'),
         kpi('slideMax', 'Largest lateral excursion', xMax, 'm', 'Maximum distance from the starting position reached at any time; compare with the allowable displacement of the corridor (often 10 pipe diameters).', 10 * D, 'max'),
         kpi('wsReq', 'Submerged weight for no sliding', Math.max(wsReq, 0), 'N/m', 'Weight at which peak drag plus inertia is resisted with peak lift acting, taking the two peaks as simultaneous (conservative).'),
-        kpi('shields', 'Shields parameter of the seabed', mob.theta, '-', 'Dimensionless bed shear stress under the design wave and current. Above the critical value the seabed is mobile, so scour, self-burial or loss of support can develop.', mob.thetaCr, 'max'),
+        kpi('shields', 'Shields parameter of the seabed', mob.theta, '-', 'Dimensionless bed shear stress under the design wave and current. Above the critical value (see the mobility ratio) the seabed is mobile, so scour, self-burial or loss of support can develop.'),
+        kpi('mobility', 'Seabed mobility ratio θ / θcr', mob.theta / mob.thetaCr, '-', 'Shields parameter over its critical value (Soulsby 1997 Eq. 77). Above 1 the bed sediment moves in the design condition. That is usual for sand in a design storm and is a screening result for scour and embedment, not a pass/fail criterion.'),
         kpi('wavelength', 'Wavelength', wp.L, 'm', 'Length of the design wave at this depth from the linear dispersion relation.'),
         kpi('ursell', 'Ursell number', wp.ursell, '-', 'H·L²/d³. Above about 26 linear theory loses accuracy and a higher-order or stream-function theory is appropriate.'),
       ],
@@ -122,8 +123,6 @@ export default {
           'Guards against the horizontal wave-and-current load exceeding friction plus passive resistance at any instant of the wave; if exceeded the pipe starts to slide.'),
         chk('Lift against submerged weight', FZmax, ws, 'N/m', 'DNV-RP-F109 (2021) Eq. 3.39 (unfactored)',
           'Guards against the lift force unloading the seabed contact completely, after which the pipe has no lateral resistance.'),
-        chk('Seabed mobility (Shields)', mob.theta, mob.thetaCr, '-', 'Soulsby (1997) Eq. 77; Shields (1936)',
-          'Guards against the seabed sediment being set in motion by the design flow, which changes embedment and can undermine or bury the pipe.'),
       ],
       plots: [
         plot('line', 'Load history on the pipe', 'Time', 's', 'Load per unit length', 'N/m', [
@@ -152,6 +151,9 @@ export default {
           sf < 1 ? `The pipe slides: the resistance falls to ${fmt(sf)} × the load and the pipe moves ${fmt(slide)} m in ${fmt(inp.nWaves)} waves (largest excursion ${fmt(xMax)} m).` : `The pipe is stable in the design wave: resistance is at least ${fmt(sf)} × the horizontal load.`,
           sf < 1 ? `Raise the submerged weight to about ${fmt(wsReq)} N/m, trench the section, or accept the displacement after a generalised-method assessment of the full storm.` : 'Confirm with the code-format check in the on-bottom stability module using the project γ_SC and with the irregular sea state.',
           'DNV-RP-F109 (2021) §3.5–3.6; DNV-RP-C205 (2019) §6 Morison loads'),
+        ...(mob.mobile ? [adv('engineering', 'warn', `The seabed is mobile in the design condition: the Shields parameter is ${fmt(mob.theta / mob.thetaCr)} times its critical value.`,
+          'Do not rely on the as-laid embedment: assess scour, free-span development and self-burial along the route, and use the embedment expected after sediment transport in the stability check.',
+          'DNV-RP-F109 (2021) §3.4.4 (soil resistance and embedment); Soulsby (1997) Eq. 77; DNV-RP-F105 (2021) for the resulting free spans')] : []),
         adv('economic', 'info', dWs > 0 ? `Absolute stability needs ${fmt(dWs)} N/m more submerged weight, about ${fmt(dConc * 1e3)} m³ of extra weight coating per kilometre.` : `The pipe carries ${fmt(ws - Math.max(wsReq, 0))} N/m more submerged weight than this wave requires.`,
           dWs > 0 ? 'Compare the extra coating with one trenching pass; allowing a limited displacement usually removes most of the extra weight.' : 'A lighter coating may be possible for this section; check the installation and empty cases before reducing it.',
           ECON_BASIS,

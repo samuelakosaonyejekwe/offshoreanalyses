@@ -39,9 +39,9 @@ export default {
     { key: 'ratedTension', label: 'Connector rated tension', unit: 'kN', type: 'number', default: 3000, min: 10, max: 50000, group: 'Connector rating', role: 'criteria', help: 'Mechanical load rating of the flange or hub with zero moment.' },
     { key: 'ratedMoment', label: 'Connector rated bending moment', unit: 'kN·m', type: 'number', default: 600, min: 1, max: 50000, group: 'Connector rating', role: 'criteria' },
     { key: 'ratedPressure', label: 'End-fitting pressure rating', unit: 'bar', type: 'number', default: 345, min: 1, max: 2000, group: 'Connector rating', role: 'criteria' },
-    { key: 'nSteps', label: 'Integration steps along the stiffener', type: 'int', default: 200, min: 20, max: 3200, group: 'Numerics', role: 'control' },
+    { key: 'nSteps', label: 'Integration steps along the stiffener', type: 'int', default: 200, min: 10, max: 3200, group: 'Numerics', role: 'control', help: 'Fourth-order integration of the beam equation along the stiffener: ten steps already give four significant figures, the default is converged to seven.' },
   ],
-  mesh: { key: 'nSteps', label: 'Integration steps', levels: [50, 100, 200, 400], qoi: 'maxCurvature' },
+  mesh: { key: 'nSteps', label: 'Integration steps', levels: [10, 20, 40, 80], qoi: 'maxCurvature' },
   compute(inp, ctx) {
     const S = stackFrom(inp, ctx);
     need(S.idx.ta.length > 0, 'The stack has no tensile armour layer to anchor.');
@@ -97,7 +97,7 @@ export default {
         kpi('rootAxial', 'Axial reaction at the end fitting', bs.rootAxial / 1e3, 'kN', 'Component of the effective tension along the end-fitting axis.'),
         kpi('rootShear', 'Shear reaction at the end fitting', bs.rootShear / 1e3, 'kN', 'Component of the tension across the end-fitting axis; it is carried through the stiffener interface structure.'),
         kpi('rootMoment', 'Bending moment at the end fitting', M / 1e3, 'kN·m', 'Total moment reacted at the stiffener root; almost all of it goes through the stiffener cone into the support, not through the pipe.'),
-        kpi('torque', 'Torque at the end fitting', r.torque / 1e3, 'kN·m', 'Torque transferred through the armour anchorage.'),
+        kpi('torque', 'Torque at the end fitting', Math.abs(r.torque) < 1e-3 ? 0 : r.torque / 1e3, 'kN·m', 'Torque transferred through the armour anchorage. A torque below 1 mN·m is round-off of a torque-balanced section and is reported as 0.'),
         kpi('maxCurvature', 'Largest pipe curvature at the termination', bs.maxCurvature, '1/m', `Peak curvature of the pipe along the stiffener, at ${fmt(bs.maxCurvatureAt)} m from the root. It drives armour fatigue at the hang-off.`),
         kpi('curvPerAngle', 'Curvature per degree of angle', bs.curvaturePerAngle * DEG, '1/m per deg', 'Transfer function from end angle to peak curvature, for converting angle ranges from global analysis into curvature ranges for fatigue.'),
         kpi('puStrain', 'Peak polyurethane strain', bs.maxPuStrain * 100, '%', 'Outer-fibre strain of the stiffener cone.', inp.puStrainLimit, 'max'),

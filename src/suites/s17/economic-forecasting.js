@@ -87,8 +87,8 @@ export default {
     { key: 'seed', label: 'Random seed', unit: '-', type: 'int', default: 17, min: 1, max: 1e6, group: 'Stochastic price cone', role: 'control', help: 'Fixed seed: identical inputs reproduce identical results.' },
 
     { key: 'volume', label: 'Annual volume sold', unit: 'GWh/yr', type: 'number', default: 2150, min: 0.001, max: 2e5, group: 'Revenue boundary', role: 'operation', bind: 'energy.aep', help: 'Net annual production from the energy-yield suite when available.' },
-    { key: 'contractShare', label: 'Share of volume under a fixed-price contract', unit: '%', type: 'number', default: 60, min: 0, max: 100, group: 'Revenue boundary', role: 'bc', design: true, help: 'Revenue boundary: the contracted share earns the contract price, the remainder the forecast market price.' },
-    cost({ key: 'contractPrice', label: 'Contract price', unit: `${CUR}/MWh`, default: 84, min: 0, max: 1e5, group: 'Revenue boundary' }),
+    { key: 'contractShare', label: 'Share of volume under a fixed-price contract', unit: '%', type: 'number', default: 70, min: 0, max: 100, group: 'Revenue boundary', role: 'bc', design: true, help: 'Revenue boundary: the contracted share earns the contract price, the remainder the forecast market price.' },
+    cost({ key: 'contractPrice', label: 'Contract price', unit: `${CUR}/MWh`, default: 102, min: 0, max: 1e5, group: 'Revenue boundary' }),
     cost({ key: 'breakEven', label: 'Break-even price of the project', unit: `${CUR}/MWh`, default: 82, min: 0, max: 1e5, group: 'Revenue boundary', bind: 'econ.breakEvenTariff', help: 'Benchmark the downside price is checked against; from the levelised-cost module when available.' }),
 
     { key: 'projects', label: 'Completed projects', type: 'table', group: 'Data-driven cost model', role: 'cost', help: `Final cost of comparable projects in the price year of the estimate, with the three drivers. ${PLACEHOLDER}`,

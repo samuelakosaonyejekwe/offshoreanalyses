@@ -19,7 +19,7 @@ export default {
   covers: [7], fidelity: 'analytical',
   standards: ['EN 1992-1-1:2004 §6.1, §6.2, §6.4, §7.3', 'EN 1991-2:2003 (traffic loads)', 'BS 6349-1-2:2016 §8 (cargo and equipment actions)', 'ISO 1496-1 (container corner fitting loads)', 'FEM 1.001 / EN 13001 (crane wheel loads from the supplier)'],
   models: ['Kirchhoff–Love plate theory (Navier double series)', 'Reinforced-concrete sectional analysis (parabola–rectangle)', 'Cracked-section analysis and crack width', 'Punching shear on a control perimeter', 'Influence lines of a continuous beam (matrix stiffness method)', 'Timoshenko beam elements'],
-  limits: `The slab panel is analysed as a simply supported thin elastic plate with factors for continuity over the beams; thick-plate (Mindlin–Reissner) shear deformation, membrane action and yield-line reserve are not included. The rail beam is a continuous beam on unyielding supports. ${RC_NOTE} ${NOT_HIFI}`,
+  limits: `The slab panel is analysed as a simply supported thin elastic plate with factors for continuity over the beams; thick-plate (Mindlin–Reissner) shear deformation, membrane action and yield-line reserve are not included. The rail beam is a continuous beam on unyielding supports. The plate series is truncated at the stated number of harmonics; its partial sums oscillate about the limit instead of converging monotonically, so no grid-convergence study applies and the truncation scatter is reported as a KPI. ${RC_NOTE} ${NOT_HIFI}`,
   publishes: ['wharf.cargoPermissible', 'wharf.craneWheelPermissible', 'wharf.wheelPermissible'],
   searchTerms: 'wharf deck slab wheel load container corner load crane rail beam punching',
   inputs: [
@@ -55,9 +55,11 @@ export default {
     { key: 'gQ', label: 'γQ cargo, wheel and crane actions', unit: '-', type: 'number', default: 1.5, min: 1, max: 2, group: 'Partial factors', role: 'criteria', help: CONFIRM },
     { key: 'psi2', label: 'ψ2 quasi-permanent share of the cargo load', unit: '-', type: 'number', default: 0.8, min: 0, max: 1, group: 'Partial factors', role: 'criteria', help: `Storage areas (EN 1990 category E): 0.8. Wheel loads are taken as not quasi-permanent. ${CONFIRM}` },
     { key: 'wLim', label: 'Crack width limit', unit: 'mm', type: 'number', default: 0.3, min: 0.05, max: 0.5, group: 'Partial factors', role: 'criteria', help: `EN 1992-1-1 Table 7.1N for XS exposure under the quasi-permanent combination; some owners ask 0.2 mm. ${CONFIRM}` },
-    { key: 'nTerms', label: 'Harmonics of the plate series', unit: '-', type: 'int', default: 48, min: 8, max: 400, group: 'Numerics', role: 'control' },
+    { key: 'nTerms', label: 'Harmonics of the plate series', unit: '-', type: 'int', default: 48, min: 8, max: 400, group: 'Numerics', role: 'control', help: 'Highest harmonic in each direction. Moments under small patches need the most: about 48 for ±0.5 %, 120 for ±0.1 %. See the truncation indicator in the results.' },
   ],
-  mesh: { key: 'nTerms', label: 'Series harmonics per direction', levels: [12, 24, 48, 96], qoi: 'mEd' },
+  // No `mesh` ladder: truncating a Fourier series is not a mesh refinement. The partial sums of the moment under a
+  // patch load oscillate about the limit (decaying roughly as 1/N), so observed order, Richardson extrapolation and
+  // GCI do not apply. The truncation is reported instead as the KPI `seriesErr`.
   compute(inp, ctx) {
     const a = inp.a, b = inp.b, t = inp.slabT, nT = Math.round(inp.nTerms);
     // slab strip of 1 m width with the bar spacing converted to bars per metre
@@ -84,6 +86,15 @@ export default {
     const uls = cases.map((c) => ({ ...c, ...worstOf(inp.gG, c.fq, c.fp) }));
     const gov = uls.reduce((m, c) => (c.m > m.m ? c : m), uls[0]);
     const mSS = gov.m, mEd = inp.kSpan * mSS, mSup = inp.kSup * mSS;
+    // Truncation indicator: the governing moment at the governing point re-summed with three quarters of the harmonics.
+    const seriesErr = (() => {
+      const n2 = Math.max(4, Math.round(0.75 * nT)), j = gov.j, at = pts[j];
+      const pl = (load) => run(() => navierPlate({ a, b, t, E: Ecm, nu: inp.nu, load, x: at.x, y: at.y, nTerms: n2 }), 'Plate analysis');
+      const u2 = pl({ type: 'uniform', q: 1 });
+      let mx = (inp.gG * gk + gov.fq * qk) * u2.mx, my = (inp.gG * gk + gov.fq * qk) * u2.my;
+      if (gov.fp > 0) for (const p of patches) { const s = pl({ type: 'patch', P: 1, x0: p.x, y0: p.y, u: p.u, v: p.v }); mx += gov.fp * p.P * p.dyn * s.mx; my += gov.fp * p.P * p.dyn * s.my; }
+      return Math.abs(Math.max(mx, my) - mSS) / Math.max(Math.abs(mSS), 1e-9);
+    })();
     const MRd = momentCapacity({ section: rc.sag, material: rc.material }).MRd, MRdH = momentCapacity({ section: rc.hog, material: rc.material }).MRd;
     const fyd = rc.fyk / rc.material.gammaS, AsReq = mEd / (0.9 * rc.d * fyd), AsReqTop = mSup / (0.9 * rc.dHog * fyd);
     const sigma = 6 * (inp.kSpan * worstOf(1, both ? 1 : 0, 1).m) / (t * t); // uncracked extreme-fibre stress, characteristic wheel case
@@ -153,6 +164,7 @@ export default {
     return {
       kpis: [
         { key: 'mEd', label: 'Slab design span moment', value: r(mEd / 1e3, 6), unit: 'kN·m/m', limit: r(MRd / 1e3), sense: 'max', explain: `Largest factored sagging moment per metre width (${gov.name}, at ${pts[gov.j].name}), with the continuity factor, against the resistance of the bottom bars.` },
+        { key: 'seriesErr', label: 'Series truncation indicator of the design moment', value: r(seriesErr * 100, 3), unit: '%', explain: `Change of the governing moment when the series is cut at three quarters of the ${nT} harmonics. The partial sums oscillate about the limit, so read it as the size of the truncation scatter: raise the harmonics if it exceeds about 1 %.` },
         { key: 'mField', label: 'Simply supported panel moment (before continuity)', value: r(mSS / 1e3), unit: 'kN·m/m', explain: 'Factored plate moment from the Navier solution with all edges simply supported: the reference from which span and support moments are taken.' },
         { key: 'mSup', label: 'Slab design support moment', value: r(mSup / 1e3), unit: 'kN·m/m', limit: r(MRdH / 1e3), sense: 'max', explain: 'Hogging moment over the beams taken as a fraction of the simple span moment, against the resistance of the top bars.' },
         { key: 'AsReq', label: 'Bottom reinforcement demand', value: r(AsReq * 1e6), unit: 'mm²/m', limit: r(rc.AsB * 1e6), sense: 'max', explain: 'Steel area needed for the span moment with a lever arm of 0.9 d, against the area provided. The margin is what a heavier cargo rating could use.' },

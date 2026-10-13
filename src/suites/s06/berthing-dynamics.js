@@ -74,8 +74,11 @@ export default {
     }
     const yE = [x1, v1, x2, v2], Tc = t;
     const Eend = 0.5 * m1 * yE[1] * yE[1] + (flex ? 0.5 * m2 * yE[3] * yE[3] + 0.5 * k2 * yE[2] * yE[2] : 0) + Wf + Dc;
-    const eErr = Math.abs(E0 - Eend) / E0;
-    const pErr = Math.abs(m1 * (v0 - yE[1]) - imp) / (m1 * v0);
+    // Balance errors are reported to three figures, and below 1e-9 of the initial energy or momentum (arithmetic
+    // round-off, not a property of the simulation) as exactly zero, so that the figures do not depend on the platform.
+    const audit = (e) => (e < 1e-9 ? 0 : Number(e.toPrecision(3)));
+    const eErr = audit(Math.abs(E0 - Eend) / E0);
+    const pErr = audit(Math.abs(m1 * (v0 - yE[1]) - imp) / (m1 * v0));
     const vReb = separated ? Math.max(-v1, 0) : 0;
     // peak compression energy from the loading curve, for the efficiency split
     const share = flex ? eDolPeak / E0 : 0;
@@ -105,8 +108,8 @@ export default {
         { key: 'E0', label: 'Kinetic energy at contact', unit: 'kJ', value: E0 / 1e3, explain: 'Effective kinetic energy ½·(M·Cm·Ce)·v² arriving at the fender: the normal berthing energy.' },
         { key: 'Ediss', label: 'Energy dissipated in the fender', unit: 'kJ', value: Wf / 1e3, explain: 'Net work done on the fender over the event: the area of the hysteresis loop.' },
         { key: 'shareDol', label: 'Peak energy share of the dolphin', unit: '%', value: share * 100, explain: 'Strain energy stored in the dolphin at its peak displacement as a fraction of the arriving energy. The more flexible the dolphin, the less the fender must absorb.' },
-        { key: 'eErr', label: 'Energy balance error', unit: '%', value: eErr * 100, limit: 1, sense: 'max', explain: 'Relative difference between the initial kinetic energy and the audited energies at the end. A numerical-quality indicator: it should be far below 1 %.' },
-        { key: 'pErr', label: 'Momentum balance error', unit: '%', value: pErr * 100, limit: 1, sense: 'max', explain: 'Relative difference between the vessel momentum change and the impulse of the contact force.' },
+        { key: 'eErr', label: 'Energy balance error', unit: '%', value: eErr * 100, limit: 1, sense: 'max', explain: 'Relative difference between the initial kinetic energy and the audited energies at the end. A numerical-quality indicator: it should be far below 1 %. An error below 1e-9 of the initial energy is round-off and is reported as 0.' },
+        { key: 'pErr', label: 'Momentum balance error', unit: '%', value: pErr * 100, limit: 1, sense: 'max', explain: 'Relative difference between the vessel momentum change and the impulse of the contact force. It should be far below 1 %; an error below 1e-9 of the initial momentum is round-off and is reported as 0.' },
         { key: 'impulse', label: 'Impulse of the contact force', unit: 'kN·s', value: imp / 1e3, explain: 'Time integral of the reaction, equal to the change of vessel momentum (arrest plus rebound).' },
       ],
       checks,

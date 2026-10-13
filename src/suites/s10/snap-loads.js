@@ -16,7 +16,7 @@ export default {
   limits: `${LIMIT_LM} Segments carry no compression, so slack is represented, but the re-tensioning peak is sensitive to segmentation, axial damping and time step: treat the peak as an estimate and confirm it with the refinement study. ${LIMIT_PROPS}`,
   searchTerms: 'mooring line snap load slack re-tension dynamic',
   inputs: [
-    ...dynInputs({ X: 880, ax: 4, az: 6, period: 7, nCycles: 4 }),
+    ...dynInputs({ X: 880, ax: 3, az: 5, period: 10, nCycles: 4 }),
     { key: 'slackFraction', label: 'Slack threshold (fraction of static tension)', unit: '-', type: 'number', default: 0.1, min: 0, max: 0.5, group: 'Acceptance criteria', role: 'criteria',
       help: 'The line is called slack when its fairlead tension falls below this share of the static tension (10 % is customary).' },
     { key: 'sfSnap', label: 'Required safety factor on the snap peak', unit: '-', type: 'number', default: 1.67, min: 1, max: 4, group: 'Acceptance criteria', role: 'criteria',

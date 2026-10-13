@@ -42,7 +42,7 @@ export function projectInputs(d = {}, skip = []) {
     { key: 'priceType', label: 'Price contract', type: 'select', default: v('priceType', 'indexed'), group: 'Revenue', role: 'bc',
       options: [{ value: 'indexed', label: 'Inflation-indexed contract price' }, { value: 'fixed', label: 'Fixed nominal contract price' }],
       help: 'Revenue boundary: an indexed price keeps its real value; a fixed nominal price loses real value with inflation.' },
-    cost({ key: 'price', label: 'Unit price (base-year money)', unit: `${CUR}/MWh`, default: v('price', 108), min: 0.01, max: 1e5, group: 'Revenue',
+    cost({ key: 'price', label: 'Unit price (base-year money)', unit: `${CUR}/MWh`, default: v('price', 116), min: 0.01, max: 1e5, group: 'Revenue',
       uncertain: { dist: 'normal', cov: 0.15 }, help: 'Tariff, strike or expected market price.' }),
     { key: 'taxRate', label: 'Corporate tax rate', unit: '%', type: 'number', default: v('taxRate', 25), min: 0, max: 90, group: 'Fiscal regime', role: 'bc' },
     { key: 'royalty', label: 'Royalty or levy on revenue', unit: '%', type: 'number', default: v('royalty', 0), min: 0, max: 90, group: 'Fiscal regime', role: 'bc' },

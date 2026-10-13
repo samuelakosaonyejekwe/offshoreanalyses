@@ -6,7 +6,7 @@ import { cableGeometry, rateCable, temperaturesAtCurrent } from '../../engine/el
 import { solveCatenary } from '../../engine/lines/catenary.js';
 import { weibull } from '../../engine/aero/aep.js';
 import { curveInputs, getCurve } from './_curve.js';
-import { site, adv, check, worst, sev, fmt, round, run, need, linspace, interp, G, HOURS_YEAR, LIMIT_CODE, CONFIRM, CO2_COPPER, CO2_ALUMINIUM, CO2_STEEL, CO2_POLYMER, energyCo2Text, vesselCo2Text } from './_common.js';
+import { costInput, money, site, adv, check, worst, sev, fmt, round, run, need, linspace, interp, G, HOURS_YEAR, LIMIT_CODE, CONFIRM, CO2_COPPER, CO2_ALUMINIUM, CO2_STEEL, CO2_POLYMER, energyCo2Text, vesselCo2Text } from './_common.js';
 
 const cat = { key: 'config', in: ['catenary'] };
 const RHO = { Cu: 8890, Al: 2703 };
@@ -47,6 +47,9 @@ export default {
     { key: 'odOver', label: 'Cable outer diameter (0 = from the construction)', unit: 'mm', type: 'number', default: 0, min: 0, max: 300, group: 'Hanging section', role: 'geometry' },
     { key: 'Tallow', label: 'Allowable tension of the cable', unit: 'kN', type: 'number', default: 120, min: 5, max: 2000, group: 'Acceptance', role: 'criteria', help: 'Maximum permissible tension from the data sheet (installation and operation), typically 100–250 kN for armoured array cables.' },
     { key: 'mbrFactor', label: 'Minimum bending radius / outer diameter', unit: '-', type: 'number', default: 15, min: 8, max: 30, group: 'Acceptance', role: 'criteria', help: 'About 15 × OD under tension for three-core armoured cables (data-sheet value governs).' },
+    costInput('energyPrice', 'Value of delivered energy', 'USD/MWh', 80, 1000, 'Used to capitalise the cable losses.'),
+    costInput('metalPrice', 'Conductor metal price', 'USD/t', 9500, 1e5, 'Per tonne of conductor metal as cabled: order of 9 500 for copper, 2 600 for aluminium.'),
+    costInput('layDayRate', 'Cable-lay vessel spread day rate', 'USD/day', 120000, 2e6),
   ],
   compute(inp) {
     const c = getCurve(inp), U = Number(inp.U) * 1e3, area = Number(inp.area) * 1e-6;
@@ -166,8 +169,8 @@ export default {
           checks[0].uc > 1 || checks[1].uc > 1 ? `Use the next conductor size (${nextA} mm²) for the sections next to the substation, reduce the string to ${Math.max(1, Math.floor(rate.I / I1))} turbines, or check the hot spots (J-tube, landfall) with a dynamic rating.` : gov.uc > 1 ? (inp.config === 'catenary' ? 'Change the hanging configuration: a longer cable or a lazy wave with buoyancy modules lowers tension and opens the touchdown radius; add a bend stiffener at the hang-off.' : 'Reduce the hanging weight (support in the J-tube) or select a cable with a higher allowable tension.') : `The cable is thermally and mechanically adequate with ${fmt((1 - checks[0].uc) * 100)} % current margin: taper the conductor along the string (the first ${Math.max(1, inp.nString - 2)} sections need less) and verify the J-tube and hang-off hot spots.`,
           'IEC 60287 (2023) rating with DNV-ST-0359 (2021) mechanical criteria; CIGRE TB 880 on armour-loss conservatism; dynamic cables per CIGRE TB 862.',
           `Array cable for the farm: ${fmt(condT)} t of conductor metal, ${fmt(steelT)} t of armour steel and ${fmt(polyT)} t of polymers ≈ ${fmt(co2)} t CO₂e (screening factors: copper ${CO2_COPPER}, aluminium ${CO2_ALUMINIUM}, steel ${CO2_STEEL}, polymer ${CO2_POLYMER} t CO₂e/t). Aluminium conductors cut conductor mass by about half at equal rating.`),
-        adv('economic', 'info', `The string loses ${fmt(lossAnnualWh / 1e6, 4)} MWh a year (${fmt(lossFracAnnual * 100)} % of its energy); the farm needs ${fmt(km, 4)} km of cable, about ${fmt(layDays)} cable-lay days at 4 km/day.`,
-          `Economic conductor sizing: stepping to ${nextA} mm² would save about ${fmt(lossSave)} MWh a year on this string for ${fmt(extraCu)} t more conductor metal — worth it when the capitalised value of the losses over the design life exceeds the metal cost.`,
+        adv('economic', 'info', `The string loses ${fmt(lossAnnualWh / 1e6, 4)} MWh a year (${fmt(lossFracAnnual * 100)} % of its energy); the farm needs ${fmt(km, 4)} km of cable, about ${fmt(layDays)} cable-lay days at 4 km/day. At the indicative rates entered the string losses are worth ${money(lossAnnualWh / 1e6 * inp.energyPrice)} a year and the lay campaign ${money(layDays * inp.layDayRate)}.`,
+          `Economic conductor sizing: stepping to ${nextA} mm² would save about ${fmt(lossSave)} MWh a year on this string for ${fmt(extraCu)} t more conductor metal — worth it when the capitalised value of the losses over the design life exceeds the metal cost. At the indicative rates that is ${money(lossSave * inp.energyPrice)} a year saved for ${money(extraCu * inp.metalPrice)} of metal${lossSave * inp.energyPrice > 0 ? `: a simple payback of ${fmt(extraCu * inp.metalPrice / (lossSave * inp.energyPrice))} years` : ''}.`,
           'IEC 60287-3-2 (economic optimisation of cable size) and whole-life costing per ISO 15686-5: capitalised loss value against conductor cost.',
           `${energyCo2Text(lossAnnualWh / 1e6)} ${vesselCo2Text(layDays, 25)}`),
       ],

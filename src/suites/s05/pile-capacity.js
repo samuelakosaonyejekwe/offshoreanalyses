@@ -43,7 +43,8 @@ export default {
     { key: 'footH', label: 'Design horizontal load on the footing', unit: 'kN/m', type: 'number', default: 40, min: 0, max: 5000, group: 'Shallow footing', role: 'bc' },
     { key: 'gRv', label: 'Resistance factor, bearing', unit: '-', type: 'number', default: 1.4, min: 1, max: 4, group: 'Shallow footing', role: 'criteria', help: `EN 1997-1 set R2 uses 1.4 with factored loads; 2.5–3 with working loads. ${CONFIRM}` },
   ],
-  mesh: { key: 'nElem', label: 'Pile elements (embedded length)', levels: [20, 40, 80], qoi: 'Hult' },
+  // Levels put nodes on the layer interfaces (6 m, 14 m) and the scour depth (1 m) of the default 28 m penetration.
+  mesh: { key: 'nElem', label: 'Pile elements (embedded length)', levels: [14, 28, 56, 112], qoi: 'Hult' },
   compute(inp, ctx) {
     const P = pileProps(inp, ctx), profile = profileFrom(inp, P.D);
     const axO = { profile, D: P.D, t: P.t, plugMode: inp.plugMode, tensionFactor: inp.tensionFactor, setupFactor: inp.cyclicFactor };

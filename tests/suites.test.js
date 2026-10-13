@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { defaults, summarise, verify, validate, convergence } from '../src/core/studies.js';
+import { defaults, summarise, kpiOk, verify, validate, convergence } from '../src/core/studies.js';
 import { material } from '../src/library/materials.js';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -83,7 +83,10 @@ for (let n = 1; n <= 17; n++) {
       for (const [k, v] of Object.entries(res.publish || {})) { assert.ok(Number.isFinite(v), `publish ${k}`); assert.ok((mod.publishes || []).includes(k), `publishes[] lacks ${k}`); }
       for (const m of [mod.mesh, mod.meshTime].filter(Boolean)) assert.ok(kk.has(m.qoi), `mesh qoi '${m.qoi}' is not a kpi`);
       assert.doesNotThrow(() => structuredClone(res), 'result must be structured-cloneable (no functions)');
-      summarise(res);
+      // The built-in example is the first thing a user sees: it must satisfy its own acceptance criteria.
+      const sum = summarise(res);
+      const bad = [...res.kpis.filter((k) => kpiOk(k) === false).map((k) => `kpi ${k.key} = ${k.value} (limit ${k.limit}, ${k.sense})`), ...(res.checks || []).filter((c) => c.uc > 1).map((c) => `check '${c.name}' uc = ${c.uc.toFixed(2)}`)];
+      assert.equal(sum.status, 'ok', `the default case fails its own criteria (${bad.join('; ')}): supply a default design that passes, or report a screening result as a KPI without limit plus advice of severity 'warn'`);
       // same inputs → same outputs
       const again = await mod.compute(structuredClone(values), ctx);
       for (const k of res.kpis) assert.equal(again.kpis.find((q) => q.key === k.key).value, k.value, `kpi ${k.key} not reproducible`);

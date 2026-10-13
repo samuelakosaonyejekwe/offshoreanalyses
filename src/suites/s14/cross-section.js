@@ -66,7 +66,7 @@ export default {
       kpi('wallForce', 'True wall force', r.wallForce / 1e3, 'kN', 'Sum of the axial forces in all layers: effective tension plus the pressure end-cap forces on the sealing layers. This is what the armour actually carries.'),
       kpi('axialStrain', 'Axial strain', r.axialStrain * 100, '%', 'Elongation per unit length under the applied loads. Flexible pipes typically stay below about 0.5 % in service.'),
       kpi('twist', 'Twist', r.twist / (Math.PI / 180), 'deg/m', 'Rotation per metre. A torque-balanced cross-wound armour pair keeps this close to zero under tension and pressure.'),
-      kpi('reactionTorque', 'Torque carried', r.torque / 1e3, 'kN·m', 'Torque in the section: the applied value, or the reaction torque when the ends are restrained against twist.'),
+      kpi('reactionTorque', 'Torque carried', Math.abs(r.torque) < 1e-3 ? 0 : r.torque / 1e3, 'kN·m', 'Torque in the section: the applied value, or the reaction torque when the ends are restrained against twist. A torque below 1 mN·m is round-off of a torque-balanced section and is reported as 0.'),
       kpi('maxContact', 'Largest interface contact pressure', maxContact / 1e6, 'MPa', 'Highest pressure between adjacent layers. It sets interlayer friction, wear of the anti-wear tapes and creep of the sheath into armour gaps.'),
       kpi('openInterfaces', 'Open interfaces', open, '-', 'Number of layer interfaces that have lost contact. A gap next to a tensile armour layer means the wires are no longer radially supported.'),
       kpi('EA', 'Axial stiffness (torque-free ends)', beam.EA / 1e6, 'MN', 'Tangent axial stiffness about this load state; use it as EA in global riser analysis.'),

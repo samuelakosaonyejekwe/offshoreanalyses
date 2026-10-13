@@ -77,7 +77,7 @@ export default {
       kpis: [
         { key: 'heavePeak', label: 'Peak heave RAO', value: round(pk[2].value, 4), unit: 'm/m', explain: 'Largest heave amplitude per metre of wave amplitude. Values above 1 mean resonance amplifies the wave; the height of the peak is set by the damping.' },
         { key: 'heavePeakT', label: 'Period of the heave peak', value: round(pk[2].period, 4), unit: 's', explain: 'Wave period at which heave is largest: normally the heave natural period. Compare it with the storm peak periods at the site.' },
-        { key: 'rollPeak', label: 'Peak roll RAO', value: round(pk[3].value * dofScale(3), 4), unit: 'deg/m', explain: 'Largest roll angle per metre of wave amplitude for this heading (zero in head or following seas).' },
+        { key: 'rollPeak', label: 'Peak roll RAO', value: Math.abs(pk[3].value * dofScale(3)) < 1e-6 ? 0 : round(pk[3].value * dofScale(3), 4), unit: 'deg/m', explain: 'Largest roll angle per metre of wave amplitude for this heading (zero in head or following seas). A response below 1e-6 deg/m is round-off of a symmetric case and is reported as 0.' },
         { key: 'pitchPeak', label: 'Peak pitch RAO', value: round(pk[4].value * dofScale(4), 4), unit: 'deg/m', explain: 'Largest pitch angle per metre of wave amplitude for this heading.' },
         { key: 'pitchPeakT', label: 'Period of the pitch peak', value: round(pk[4].period, 4), unit: 's', explain: 'Wave period at which pitch is largest.' },
         { key: 'surgeAtTp', label: 'Surge RAO at Tp', value: round(at(w, r.amp[0], wp), 4), unit: 'm/m', explain: 'Surge amplitude per metre of wave amplitude at the sea-state peak period; in long waves it tends to the horizontal particle motion.' },

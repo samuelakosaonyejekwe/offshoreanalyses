@@ -6,7 +6,7 @@ import { simulateWindOM } from '../../engine/ram/maintenance.js';
 import { weibullScaleFromMean } from '../../engine/aero/aep.js';
 import { makeRng } from '../../engine/math/rng.js';
 import { curveInputs, getCurve } from './_curve.js';
-import { site, adv, check, worst, sev, fmt, round, run, need, interp, thin, LIMIT_CODE, CONFIRM, vesselCo2Text, energyCo2Text, CO2_MGO } from './_common.js';
+import { costInput, money, site, adv, check, worst, sev, fmt, round, run, need, interp, thin, LIMIT_CODE, CONFIRM, vesselCo2Text, energyCo2Text, CO2_MGO } from './_common.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 // Indicative installation cycle per position and failure data per turbine-year (order of magnitude of published
@@ -70,6 +70,10 @@ export default {
     { key: 'omYears', label: 'Simulated O&M period', unit: 'yr', type: 'int', default: 3, min: 1, max: 25, group: 'Solver', role: 'control' },
     { key: 'omSims', label: 'O&M Monte Carlo histories', type: 'int', default: 2, min: 1, max: 50, group: 'Solver', role: 'control' },
     { key: 'nTrials', label: 'Installation Monte Carlo trials', type: 'int', default: 200, min: 20, max: 5000, group: 'Solver', role: 'control' },
+    costInput('energyPrice', 'Value of delivered energy', 'USD/MWh', 80, 1000, 'Used to express downtime as lost revenue.'),
+    costInput('instDayRate', 'Installation vessel spread day rate', 'USD/day', 250000, 2e6, 'Jack-up or heavy-lift vessel with crew and equipment.'),
+    costInput('ctvDayRate', 'Crew-transfer vessel day rate', 'USD/day', 6000, 1e5),
+    costInput('juDayRate', 'Maintenance jack-up day rate', 'USD/day', 150000, 2e6, 'For major-component exchange.'),
   ],
   compute(inp) {
     const c = getCurve(inp);
@@ -177,8 +181,8 @@ export default {
           gov === checks[0] && gov.uc > 1 ? `Raise availability: an access limit of ${fmt(Math.min(3, inp.ctvHs + 1))} m (service operation vessel) lifts accessibility from ${fmt(acc.startableFraction * 100)} % to ${fmt(interp(lims, accL, Math.min(3, inp.ctvHs + 1)) * 100)} %; a standing heavy-lift arrangement cuts the ${fmt(inp.juMob)}-day mobilisation that dominates major replacements.` : gov === checks[1] && gov.uc > 1 ? `The campaign overruns the season by ${fmt(camp90 / inp.nVessels - inp.seasonDays)} days at P90: start earlier, add a second vessel or relax the governing limit ('${mc.operations.reduce((a, o) => (o.meanWaitHours > a.meanWaitHours ? o : a)).name}').` : gov.uc > 1 ? 'Waiting on weather exceeds the planning threshold: choose a vessel with higher limits or split long operations into shorter weather-restricted steps.' : `Operability is adequate. Replace the ${wx.imported ? 'record' : 'synthetic weather year'} by a multi-year hindcast, and confirm limits with the vessel and lifting analyses (alpha factors per DNV-ST-N001).`,
           'DNV-ST-N001 (2021) §2 for weather-restricted operations; IEC TS 61400-26-1:2019 for availability; O&M simulation practice after Dinwoodie et al. (2015).',
           `Installation campaign fuel: ${fmt(camp50)} days ≈ ${fmt(mgoInst)} t marine gas oil ≈ ${fmt(mgoInst * CO2_MGO)} t CO₂ (screening: 35 t/day, ${CO2_MGO} t CO₂/t). Downtime costs ${fmt(lostMwh / 1e3)} GWh a year of clean energy.`),
-        adv('economic', 'info', `Downtime loses ${fmt(lostMwh / 1e3, 4)} GWh a year (${fmt((1 - availE) * 100)} % of potential production); the installation campaign needs ${fmt(camp50)} vessel days, of which ${fmt(wow * 100)} % of the weather-restricted time is waiting.`,
-          `One percentage point of availability is worth ${fmt(lostMwh / Math.max((1 - availE) * 100, 1e-6) / 1e3, 3)} GWh a year: compare with the charter of a more capable access vessel (${fmt(vdYear)} corrective vessel days a year now). For installation, each day saved per position saves ${inp.nUnits} vessel days.`,
+        adv('economic', 'info', `Downtime loses ${fmt(lostMwh / 1e3, 4)} GWh a year (${fmt((1 - availE) * 100)} % of potential production); the installation campaign needs ${fmt(camp50)} vessel days, of which ${fmt(wow * 100)} % of the weather-restricted time is waiting. At the indicative rates entered: lost production ${money(lostMwh * inp.energyPrice)} a year, maintenance vessels ${money(ctvDays * inp.ctvDayRate + juDays * inp.juDayRate)} a year, installation campaign ${money(camp50 * inp.instDayRate)} at P50 and ${money(camp90 * inp.instDayRate)} at P90.`,
+          `One percentage point of availability is worth ${fmt(lostMwh / Math.max((1 - availE) * 100, 1e-6) / 1e3, 3)} GWh a year (${money(lostMwh / Math.max((1 - availE) * 100, 1e-6) * inp.energyPrice)} at the indicative energy value): compare with the charter of a more capable access vessel (${fmt(vdYear)} corrective vessel days a year now). Waiting on weather in the installation campaign costs about ${money(Math.max(camp90 - camp50, 0) * inp.instDayRate)} between P50 and P90: carry it as contingency. For installation, each day saved per position saves ${inp.nUnits} vessel days.`,
           'LCOE convention (energy availability in the denominator) and marine-operations cost planning on P50 with P90 contingency (AACE RP 18R-97 Class 3–4); value of availability per IEC TS 61400-26.',
           `${vesselCo2Text(vdYear, 8)} ${energyCo2Text(lostMwh)}`),
       ],

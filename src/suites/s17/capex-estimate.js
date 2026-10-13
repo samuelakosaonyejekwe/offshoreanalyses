@@ -41,9 +41,9 @@ export default {
     { key: 'ratedMW', label: 'Design capacity', unit: 'MW', type: 'number', default: 510, min: 0, max: 20000, group: 'Project information', role: 'operation', bind: 'energy.ratedPower', help: 'For the cost-per-MW benchmark. Enter 0 for assets without a power rating.' },
     { key: 'baseYear', label: 'Price base year of the rates', unit: 'yr', type: 'int', default: 2026, min: 1990, max: 2100, group: 'Opening financial state', role: 'ic', help: 'All rates and quotations below are in money of this year.' },
     { key: 'spendYear', label: 'Mid-point of expenditure', unit: 'yr', type: 'int', default: 2028, min: 1990, max: 2110, group: 'Opening financial state', role: 'ic', help: 'The estimate is escalated from the base year to this year.' },
-    { key: 'aaceClass', label: 'Estimate class (AACE 18R-97)', type: 'select', default: '4', group: 'Opening financial state', role: 'ic',
+    { key: 'aaceClass', label: 'Estimate class (AACE 18R-97)', type: 'select', default: '3', group: 'Opening financial state', role: 'ic',
       options: [5, 4, 3, 2, 1].map((c) => ({ value: String(c), label: `Class ${c} — ${AACE_CLASSES[c].usage}` })), help: 'Maturity of project definition; sets the expected accuracy range around the point estimate.' },
-    { key: 'budgetCap', label: 'Available capital budget', unit: CUR, type: 'number', default: 2.0e9, min: 1, max: 1e12, group: 'Financial constraints', role: 'bc', help: 'Affordability limit the escalated estimate is checked against.' },
+    { key: 'budgetCap', label: 'Available capital budget', unit: CUR, type: 'number', default: 2.75e9, min: 1, max: 1e12, group: 'Financial constraints', role: 'bc', help: 'Funding available including headroom (committed facilities plus contingent equity). The escalated estimate and the high end of its accuracy range are both checked against it.' },
 
     { key: 'steel', label: 'Structural steel', unit: 'tonnes', type: 'number', default: 62000, min: 0, max: 5e6, group: 'Material quantities', role: 'geometry', bind: 'quantities.steel_t', design: true, uncertain: { dist: 'normal', cov: 0.07 }, help: 'Primary and secondary steel from the structural suites.' },
     { key: 'concrete', label: 'Concrete', unit: 'm³', type: 'number', default: 4500, min: 0, max: 5e6, group: 'Material quantities', role: 'geometry', bind: 'quantities.concrete_m3' },

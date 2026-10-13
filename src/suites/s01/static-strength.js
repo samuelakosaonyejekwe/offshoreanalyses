@@ -58,7 +58,7 @@ export default {
         { key: 'maxRot', label: 'Largest nodal rotation', unit: 'mrad', value: dp.rotMax * 1e3, explain: 'Largest rotation of any node; it indicates member end rotations that joints and attachments have to follow.' },
         { key: 'sumV', label: 'Total vertical reaction', unit: 'MN', value: pf.sumV / 1e6, explain: 'Sum of the vertical support reactions; equals the factored gravity load less buoyancy plus the vertical wave load.' },
         { key: 'sumH', label: 'Total horizontal reaction', unit: 'MN', value: pf.sumH / 1e6, explain: 'Resultant horizontal support reaction: the factored base shear of this load set.' },
-        { key: 'eqResidual', label: 'Equilibrium residual (relative)', unit: '-', value: res.equilibrium.relative, explain: 'Out-of-balance force of the solution relative to the applied load. Values above about 1e-6 indicate an ill-conditioned or nearly unstable model.' },
+        { key: 'eqResidual', label: 'Equilibrium residual (relative)', unit: '-', value: res.equilibrium.relative < 1e-9 ? 0 : Number(res.equilibrium.relative.toPrecision(3)), explain: 'Out-of-balance force of the solution relative to the applied load. Values above about 1e-6 indicate an ill-conditioned or nearly unstable model. A residual below 1e-9 of the applied load is arithmetic round-off and is reported as 0.' },
         { key: 'energy', label: 'Strain energy', unit: 'kJ', value: res.strainEnergy / 1e3, explain: 'Elastic energy stored in the members. With the energy of the foundation springs it equals half the work of the applied loads (Clapeyron), which is an independent check of the solution.' },
       ],
       checks,

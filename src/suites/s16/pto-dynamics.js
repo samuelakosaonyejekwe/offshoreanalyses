@@ -3,7 +3,7 @@
 // latching and declutching control; PTO force, pressure and converted power histories.
 import { dispersion, waveSpectrum, cylinderHeave, radiationKernel, infiniteAddedMass, simulateCummins } from '../../engine/aero/wec.js';
 import { makeRng } from '../../engine/math/rng.js';
-import { adv, check, worst, sev, fmt, round, run, need, linspace, thin, G, LIMIT_WEC, LIMIT_CODE, CONFIRM, energyCo2Text } from './_common.js';
+import { adv, check, worst, sev, fmt, round, run, need, linspace, thin, G, LIMIT_WEC, LIMIT_CODE, LIMIT_CONTROL, CONFIRM, energyCo2Text } from './_common.js';
 
 const hyd = { key: 'ptoType', in: ['hydraulic'] };
 const LPM_BAR = 1e-3 / 60 / 1e5;   // 1 L/min/bar in m³/s/Pa
@@ -14,7 +14,7 @@ export default {
   covers: [12], fidelity: 'numerical',
   standards: ['IEC TS 62600-2:2019 (design requirements for marine energy systems)', 'IEC TS 62600-100:2012 (power performance)', 'IEC TS 62600-103:2018 (early-stage scale testing — basis for calibration)', 'Cummins (1962) / Ogilvie (1964) impulse-response formulation', 'Falnes (2002) Ocean Waves and Oscillating Systems'],
   models: ['Cummins impulse-response equation with radiation convolution', 'Hydrodynamic added mass and radiation damping (Ogilvie relations)', 'Power-take-off force models: linear damper/spring, Coulomb, hydraulic', 'Hydraulic PTO dynamics: rectified piston, polytropic gas accumulator, variable-pressure motor', 'Latching control (Budal & Falnes)', 'Declutching control', 'End-stop spring and quadratic viscous drag', 'Random-phase synthesis of irregular wave excitation', 'Fourth-order Runge–Kutta integration'],
-  limits: `${LIMIT_WEC} Single degree of freedom (heave); the excitation force is linear (no nonlinear Froude–Krylov correction for the varying waterplane); hydraulic valve losses, oil compressibility and the low-pressure circuit are neglected; the generator is represented by a motor efficiency (see the generator and converter module for the electrical machine). ${LIMIT_CODE}`,
+  limits: `${LIMIT_WEC} Single degree of freedom (heave); the excitation force is linear (no nonlinear Froude–Krylov correction for the varying waterplane); hydraulic valve losses, oil compressibility and the low-pressure circuit are neglected; the generator is represented by a motor efficiency (see the generator and converter module for the electrical machine). ${LIMIT_CONTROL} ${LIMIT_CODE}`,
   publishes: ['wec.ptoForceMax', 'wec.meanElectricalPower', 'wec.peakToAverage'],
   searchTerms: 'wave energy hydraulic power take-off Cummins equation latching control time domain',
   inputs: [

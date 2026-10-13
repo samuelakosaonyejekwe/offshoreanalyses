@@ -167,9 +167,10 @@ export default {
         explain: 'Ratio of local to incident wave height behind the breakwater. Values below about 0.3 are well sheltered; lobes above 1 near the shadow line are where berths and small craft see amplified waves.' });
     }
 
-    const checks = [
-      check('Toe wave against the Goda breaking limit', HmaxToe, hbGoda, 'm', 'Goda (2000) §3.5; Goda (1975) breaker index', 'Compares the highest wave reaching the toe with the largest wave the local depth can carry. At 1.0 the design wave is breaking on the structure, which brings impulsive loads and makes the design wave a function of water level.'),
-    ];
+    // Whether the highest wave reaches the breaking limit at the toe is a regime indicator (breaking or non-breaking
+    // design wave), not an acceptance criterion: both regimes are designed for. It is a KPI and a recommendation.
+    const breakRatio = HmaxToe / hbGoda;
+    const checks = [];
     if (inp.layout === 'gap') checks.push(check('Entrance gap at least one wavelength wide', L, inp.gapB, 'm', 'Penney & Price (1952) §6', 'The gap solution superposes two independent breakwater tips. If the gap is narrower than about one wavelength the tips interact and the coefficient is unreliable; a numerical harbour model is then needed.'));
     if (wc.blocked) checks.push(check('Wave blocking by the opposing current', Math.abs(inp.Uc), Math.abs(wc.Ublock), 'm/s', 'Peregrine (1976)', 'When the opposing current exceeds the blocking speed the waves cannot propagate against it and break at the blocking point, concentrating energy and scour there.'));
 
@@ -181,6 +182,9 @@ export default {
       : eng('ok', `The toe wave (Hs = ${f(HsToe)} m, Hs/h = ${f(HsToe / hToe, 2)}) is not depth-limited; it changes by ${f(dHdSlr, 2)} m per metre of sea-level rise.`,
         'Design on the offshore extreme statistics; confirm the offshore boundary sea state with a hindcast extreme-value analysis and re-check if the foreshore erodes.', 'CIRIA C683 Rock Manual (2007) §4.2.4; Goda (2000) ch. 3',
         'Offshore-governed design waves are insensitive to sea-level rise, so the armour quantity fixed today remains adequate through the scenarios.'));
+    if (breakRatio >= 0.9) advice.push(eng('warn', `The highest wave at the toe (${f(HmaxToe)} m) is ${f(breakRatio, 2)} times the Goda breaking height for the toe depth and foreshore slope (${f(hbGoda)} m): the largest waves of the design sea break at or just in front of the structure.`,
+      'Treat walls and caissons for impulsive (breaking) wave pressures and use breaking-wave stability and overtopping formulae; take the depth-limited height with the end-of-life water level as the design wave.', 'Goda (2000) §3.5 and §4.2; EurOtop (2018) §7.3 (impulsive conditions); CIRIA C683 Rock Manual (2007) §5.2',
+      'Breaking on the structure raises armour damage and maintenance rock over the life; a toe berm or a milder foreshore that trips the waves seaward reduces both.'));
     advice.push(eng('info', `Recommended wave theory at the toe: ${theory.theory}${theory.theory === 'streamFunction' ? ` (order ${theory.streamFunctionOrder})` : ''} (Ursell number ${f(theory.ursell)}). Set-up at the toe is ${f(setupToe, 2)} m and the longshore current about ${f(Vlong, 2)} m/s.`,
       'Add the set-up to the still-water level in the overtopping and stability modules, and calibrate γ and the friction factor against measured nearshore wave heights before final design.', 'USACE Coastal Engineering Manual Part II ch. 3–4; Battjes & Janssen (1978)'));
     if (inp.layout === 'gap' && inp.gapB < L) advice.push(eng('warn', `The gap (${f(inp.gapB)} m) is narrower than the local wavelength (${f(L)} m): the two-tip diffraction solution is outside its validity.`, 'Use a mild-slope or Boussinesq harbour model for the entrance, or treat the result as indicative only.', 'Penney & Price (1952); PIANC WG 24 harbour-tranquillity practice'));
@@ -199,6 +203,7 @@ export default {
         { key: 'thetaToe', label: 'Wave angle at the toe', value: r(thetaToe), unit: 'deg', explain: 'Angle between the wave direction and the shore-normal at the structure. It enters the obliquity factors for run-up, overtopping and wall pressure.' },
         { key: 'setupToe', label: 'Wave set-up at the toe', value: r(setupToe, 3), unit: 'm', explain: 'Rise of the mean water level driven by breaking (radiation stress). Positive values add to the still-water level at the structure; negative is set-down outside the surf zone.' },
         { key: 'HbToe', label: 'Breaking wave height at the toe (Goda)', value: r(hbGoda), unit: 'm', explain: 'Largest individual wave the toe depth and foreshore slope can sustain. Waves above it have broken seaward.' },
+        { key: 'breakRatio', label: 'Highest toe wave over the Goda breaking height', value: r(breakRatio, 3), unit: '-', explain: 'Highest individual wave reaching the toe over the largest wave the local depth can carry. Near or above 1 the design wave breaks on the structure: loads become impulsive and the design wave follows the water level. A regime indicator, not a pass/fail limit.' },
         { key: 'LToe', label: 'Wavelength at the toe', value: r(L), unit: 'm', explain: 'Linear-theory wavelength at the peak period in the toe depth; the length scale for diffraction, berm widths and wall-pressure distribution.' },
         { key: 'Kd', label: 'Diffraction coefficient at the point of interest', value: r(Kd, 3), unit: '-', explain: 'Local over incident wave height behind the breakwater. Multiply the toe wave by Kd to get the wave at the berth or lee structure.' },
         { key: 'Krefl', label: 'Reflection coefficient of the structure', value: r(Krefl, 3), unit: '-', explain: 'Reflected over incident wave height (Seelig & Ahrens). High reflection raises standing-wave heights and toe scour in front of the structure and disturbs navigation.' },

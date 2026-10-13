@@ -20,8 +20,8 @@ export default {
   searchTerms: 'anchor pile mooring lateral uplift capacity padeye',
   inputs: [
     ...anchorLoadInputs({ H: 2750, V: 1300 }),
-    { key: 'D', label: 'Pile outer diameter', unit: 'm', type: 'number', default: 2.4, min: 0.4, max: 8, group: 'Pile', role: 'geometry', design: true },
-    { key: 'L', label: 'Embedded length', unit: 'm', type: 'number', default: 26, min: 3, max: 120, group: 'Pile', role: 'geometry', design: true },
+    { key: 'D', label: 'Pile outer diameter', unit: 'm', type: 'number', default: 2.8, min: 0.4, max: 8, group: 'Pile', role: 'geometry', design: true },
+    { key: 'L', label: 'Embedded length', unit: 'm', type: 'number', default: 24, min: 3, max: 120, group: 'Pile', role: 'geometry', design: true },
     { key: 'tw', label: 'Wall thickness', unit: 'mm', type: 'number', default: 50, min: 10, max: 150, group: 'Pile', role: 'geometry' },
     { key: 'steel', label: 'Steel', type: 'select', source: 'materials:steel', default: 's355', group: 'Pile', role: 'material' },
     { key: 'zPadeye', label: 'Padeye depth below mudline', unit: 'm', type: 'number', default: 16, min: 0, max: 120, group: 'Pile', role: 'bc',

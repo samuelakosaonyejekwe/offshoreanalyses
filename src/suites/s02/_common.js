@@ -111,7 +111,7 @@ export function deckInputs(over = {}, omit = []) {
     { key: 'cD', label: 'Leg / column diameter', unit: 'mm', type: 'number', default: 914, min: 100, max: 3000, group: m, role: 'geometry', design: true },
     { key: 'ct', label: 'Leg / column wall thickness', unit: 'mm', type: 'number', default: 32, min: 5, max: 120, group: m, role: 'geometry', design: true, uncertain: { dist: 'normal', cov: 0.03 } },
     { key: 'brD', label: 'Brace diameter', unit: 'mm', type: 'number', default: 508, min: 60, max: 2000, group: m, role: 'geometry', design: true, showIf: { key: 'bracing', in: ['perimeter'] } },
-    { key: 'brt', label: 'Brace wall thickness', unit: 'mm', type: 'number', default: 22, min: 4, max: 80, group: m, role: 'geometry', showIf: { key: 'bracing', in: ['perimeter'] } },
+    { key: 'brt', label: 'Brace wall thickness', unit: 'mm', type: 'number', default: 25, min: 4, max: 80, group: m, role: 'geometry', showIf: { key: 'bracing', in: ['perimeter'] } },
     { key: 'tPlate', label: 'Deck plate thickness', unit: 'mm', type: 'number', default: 10, min: 0, max: 50, group: m, role: 'geometry', design: true, help: 'Counted as weight and mass on every level; 0 for grated decks.' },
     { key: 'secSteel', label: 'Secondary steel allowance', unit: 'kg/m²', type: 'number', default: 70, min: 0, max: 400, group: m, role: 'load', help: 'Stiffeners, stringers, grating, handrails and outfitting steel per unit deck area.' },
     { key: 'mat', label: 'Steel', type: 'select', source: 'materials:steel', default: 's355', group: m, role: 'material' },
@@ -145,7 +145,7 @@ export function buildDeck(inp, ctx, { wall = 1 } = {}) {
     need(2 * tf < h, `${what}: flange thickness must be less than half the depth.`); need(tw < b, `${what}: web thickness must be less than the flange width.`);
     return run(() => iSection({ h: h / 1e3, b: b / 1e3, tw: (tw * wall) / 1e3, tf: (tf * wall) / 1e3, welded: true }), what);
   };
-  const sections = { girder: isec(inp.gh, inp.gb, inp.gtw, inp.gtf, 'Girder'), beam: isec(inp.bh, inp.bb, inp.btw, inp.btf, 'Beam'), column: tube(inp.cD, inp.ct), brace: tube(inp.brD ?? 508, inp.brt ?? 22) };
+  const sections = { girder: isec(inp.gh, inp.gb, inp.gtw, inp.gtf, 'Girder'), beam: isec(inp.bh, inp.bb, inp.btw, inp.btf, 'Beam'), column: tube(inp.cD, inp.ct), brace: tube(inp.brD ?? 508, inp.brt ?? 25) };
   const areaMass = (inp.tPlate / 1e3) * steel.rho + inp.secSteel;   // kg/m² of plate + secondary steel
   let model, levelsZ, levelNodes, supNodes, grid = null, trib, planArea, span, x0 = 0, y0 = 0, Lx = inp.Lx, Ly = inp.Ly;
   if (inp.geom) {

@@ -57,7 +57,8 @@ export default {
       // the far end of the sweep may exceed the taut limit: fall back to the solved range only
       curve = run(() => restoringCurve(sys, { direction: dirLoad, offsets: linspace(0, Math.max(eq.offset, 0.01 * b.depth), 25), pose0: calm.pose }), 'Restoring curve');
     }
-    const residual = Math.hypot(eq.F[0] + Fext[0], eq.F[1] + Fext[1]);
+    // A residual below 1e-9 of the applied load (or below 1 mN with no load) is the solver's round-off: reported as zero.
+    const resRaw = Math.hypot(eq.F[0] + Fext[0], eq.F[1] + Fext[1]), residual = resRaw < Math.max(1e-9 * Math.hypot(Fext[0], Fext[1]), 1e-3) ? 0 : resRaw;
     const util = eq.maxTension / b.MBL;
     const checks = [
       check('Mean tension against break load (quasi-static screen)', eq.maxTension * inp.sfStatic / 1e3, b.MBL / 1e3, 'kN', 'API RP 2SK (3rd ed.) §6.3, quasi-static intact factor',
@@ -110,7 +111,7 @@ export default {
         { key: 'grounded', label: 'Smallest grounded length', value: round(grMin, 5), unit: 'm',
           explain: 'Line length still on the seabed for the most loaded line. This is the reserve against anchor uplift.' },
         { key: 'residual', label: 'Force-balance residual', value: round(residual, 3), unit: 'N',
-          explain: 'Unbalanced horizontal force left by the solver; it should be negligible against the applied load (verification of equilibrium).' },
+          explain: 'Unbalanced horizontal force left by the solver; it should be negligible against the applied load (verification of equilibrium). A residual below 1e-9 of the applied load is arithmetic round-off and is reported as 0.' },
       ],
       checks,
       plots: [

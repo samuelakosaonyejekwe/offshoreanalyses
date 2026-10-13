@@ -7,13 +7,27 @@ import { ec3Chi, elasticCriticalMoment } from '../../engine/structural/steelchec
 import { plateUltimateStrength, stiffenerColumnBuckling, stiffenerTripping, plateBucklingCoefficient } from '../../engine/structural/plates.js';
 import { deckInputs, solverInput, buildDeck, twistRestrained, loadCase, equipmentOf, framePlot, need, run, fmt, round, cap, adv, check, fsCheck, steelCo2Text, CONFIRM, DECK_LIMITS } from './_common.js';
 
+/**
+ * Members for the frame stability eigenproblem. On top of the twist restraint, a welded deck plate is an in-plane
+ * diaphragm: a girder or beam under it cannot bow sideways between grid points. Without that restraint the lowest
+ * eigenmode of a braced deck is weak-axis bowing of the compressed chord girder of the perimeter truss, which the
+ * plating prevents. The plate strip tributary to the member (width b, thickness t) is added to the weak-axis second
+ * moment of area as t b³/12. Grated decks (plate thickness 0) get no such restraint and keep the mode.
+ */
+function stabilityMembers(deck, tPlate) {
+  return twistRestrained(deck).map((m, i) => {
+    const o = deck.orig[i], b = deck.trib[i];
+    return tPlate > 0 && o.horizontal && o.kind === 'I' && b > 0 ? { ...m, section: { ...m.section, Iz: o.sec.Iz + (tPlate * b ** 3) / 12 } } : m;
+  });
+}
+
 export default {
   id: 's02-buckling-stability', suite: 2, title: 'Buckling and stability',
   summary: 'Elastic critical load factor and sway amplification of the deck frame, column effective lengths and buckling resistance, deck plate and stiffened-panel buckling, and lateral-torsional buckling of girders.',
   covers: [5], fidelity: 'numerical',
   standards: ['EN 1993-1-1:2005 §5.2 (αcr and second-order effects), §6.3 (member buckling)', 'EN 1993-1-5:2006 §4, §5, §10 (plate buckling)', 'DNV-RP-C201 (2010) §6–§7 (stiffened panels)', 'ISO 19902:2020 §13.5 (effective lengths)', 'NORSOK N-004 (2022) §6.3'],
   models: ['Geometric stiffness formulation', 'Linear (eigenvalue) frame stability analysis', 'Second-order analysis (P–Δ and P–δ)', 'Euler buckling', 'Lateral–torsional buckling', 'Plate buckling (effective width)', 'Perry–Robertson column curves', 'Stiffener tripping'],
-  limits: `${DECK_LIMITS} Frame buckling is linear eigenvalue analysis on the first-order axial forces; imperfections enter only through the code buckling curves. Nonlinear post-buckling and imperfection-sensitivity analyses are outside this module.`,
+  limits: `${DECK_LIMITS} Frame buckling is linear eigenvalue analysis on the first-order axial forces; imperfections enter only through the code buckling curves. The deck plate is taken as an in-plane diaphragm that stops plated girders and beams twisting or bowing sideways, so αcr is the lowest mode of the legs, columns, braces and frame sway. Nonlinear post-buckling and imperfection-sensitivity analyses are outside this module.`,
   searchTerms: 'frame buckling critical load factor P-delta effective length stiffened panel buckling offshore deck',
   inputs: [
     ...deckInputs(),
@@ -43,7 +57,7 @@ export default {
     deck.levelNodes.forEach((ns, k) => { for (const n of ns) extra.push({ node: n, F: [(inp.Hx * 1e3 * zs[k]) / zsum / ns.length, 0, 0, 0, 0, 0] }); });
     const grav = loadCase(deck, inp, { name: 'gravity', gDead: inp.gG * inp.swFac, gEquip: inp.gG, gLive: inp.gQ, eqs });
     const comb = loadCase(deck, inp, { name: 'design', gDead: inp.gG * inp.swFac, gEquip: inp.gG, gLive: inp.gQ, extra, eqs });
-    const ref = run(() => refineModel({ ...deck.model, members: twistRestrained(deck), loadCases: [grav, comb] }, inp.nSub), 'Mesh refinement');
+    const ref = run(() => refineModel({ ...deck.model, members: stabilityMembers(deck, inp.tPlate / 1e3), loadCases: [grav, comb] }, inp.nSub), 'Mesh refinement');
     const bk = run(() => bucklingAnalysis(ref.model, { loadCase: 'gravity', nModes: 3 }), 'Frame buckling analysis (check that the frame is stable and carries compression)');
     const pos = bk.factors.filter((f) => f > 0 && Number.isFinite(f));
     need(pos.length, 'No positive buckling load factor was found: the frame carries no compression under the gravity combination.');

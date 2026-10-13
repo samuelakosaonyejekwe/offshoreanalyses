@@ -4,7 +4,7 @@ import { farmAep } from '../../engine/aero/aep.js';
 import { farmFlow, jensenDeficit, gaussianDeficit, wakeGrowthFromTI, effectiveTurbulence, deepArrayFrandsen, superpose, rotorPoints } from '../../engine/aero/wake.js';
 import { cableLayout, capacityDensity, checkLayout } from '../../engine/aero/layout.js';
 import { curveInputs, getCurve } from './_curve.js';
-import { site, adv, check, worst, sev, fmt, round, run, need, linspace, interp, DEG, LIMIT_WAKE, LIMIT_POLAR, LIMIT_CODE, CONFIRM, energyCo2Text } from './_common.js';
+import { costInput, money, site, adv, check, worst, sev, fmt, round, run, need, linspace, interp, DEG, LIMIT_WAKE, LIMIT_POLAR, LIMIT_CODE, CONFIRM, energyCo2Text } from './_common.js';
 
 // Indicative 12-sector rose with south-westerly prevailing winds (frequency %, sector Weibull scale / omnidirectional scale).
 const ROSE = [[0, 5, 0.85], [30, 5, 0.85], [60, 6, 0.88], [90, 6, 0.9], [120, 6, 0.92], [150, 7, 0.95], [180, 9, 1.02], [210, 13, 1.1], [240, 15, 1.14], [270, 12, 1.1], [300, 9, 1.02], [330, 7, 0.92]];
@@ -62,6 +62,8 @@ export default {
     { key: 'tiClass', label: 'Design turbulence intensity of the turbine class', unit: '-', type: 'number', default: 0.14, min: 0.08, max: 0.2, group: 'Acceptance', role: 'criteria', help: `Representative TI of the type certificate near rated wind speed: IEC class B Iref = 0.14 (A 0.16, C 0.12). ${CONFIRM}` },
     { key: 'minSpacing', label: 'Minimum centre spacing', unit: 'D', type: 'number', default: 4, min: 2, max: 10, group: 'Acceptance', role: 'criteria', help: 'Supplier site-suitability limit; below about 3–4 D wake-induced loads usually exceed the type class.' },
     { key: 'lossTarget', label: 'Allowable wake loss', unit: '%', type: 'number', default: 12, min: 1, max: 40, group: 'Acceptance', role: 'criteria' },
+    costInput('energyPrice', 'Value of delivered energy', 'USD/MWh', 80, 1000, 'Used to express the wake loss as revenue.'),
+    costInput('cableRate', 'Array cable supplied and installed', 'USD/m', 500, 5000, 'Supply, lay and burial per metre of route.'),
   ],
   mesh: { key: 'nBins', label: 'Wind-speed bins', levels: [16, 32, 64], qoi: 'wakeLoss' },
   compute(inp) {
@@ -181,8 +183,8 @@ export default {
           gov.uc > 1 ? `'${gov.name}' is exceeded (utilisation ${fmt(gov.uc)}): widen the spacing in the prevailing direction, rotate the rows away from ${fmt(prev.dirDeg)}° or remove interior positions, then re-run.` : `Keep the layout; test row direction and spacing with the design study (the prevailing energy direction is ${fmt(prev.dirDeg)}°) and confirm the turbine class against the effective turbulence with the supplier.`,
           'IEC 61400-1:2019 Annex E (wind-farm turbulence) and IEC 61400-15-1 energy-yield practice; engineering wake models are calibrated against farm SCADA and lidar data before financial close.',
           `Wakes cost ${fmt(lostMwh, 4)} MWh a year. ${energyCo2Text(lostMwh)} Wider spacing recovers energy but lengthens array cables (now ${fmt(cab.length / 1e3, 4)} km) and enlarges the seabed footprint.`),
-        adv('economic', 'info', `One percentage point of wake loss is ${fmt(onePoint, 4)} MWh a year for this array; the cable estimate is ${fmt(cab.length / 1e3, 4)} km.`,
-          'Trade spacing against cable length and lease area with the layout as design variables: each extra rotor diameter of in-row spacing adds roughly one diameter of cable per turbine but recovers energy every year of operation.',
+        adv('economic', 'info', `One percentage point of wake loss is ${fmt(onePoint, 4)} MWh a year for this array; the cable estimate is ${fmt(cab.length / 1e3, 4)} km. At the indicative rates entered the wake loss costs ${money(lostMwh * inp.energyPrice)} a year (${money(onePoint * inp.energyPrice)} per point) and the array cable ${money(cab.length * inp.cableRate)}.`,
+          'Trade spacing against cable length and lease area with the layout as design variables: each extra rotor diameter of in-row spacing adds roughly one diameter of cable per turbine but recovers energy every year of operation.' + ` Here one point of wake loss a year equals the installed cost of about ${fmt(onePoint * inp.energyPrice / Math.max(inp.cableRate, 1e-9))} m of cable at the indicative rates.`,
           'LCOE-based layout optimisation (IEA Wind Task 37 practice): maximise net energy per unit of whole-life cost, not energy alone; ISO 15686-5 whole-life costing for the cable and loss trade.'),
       ],
       publish: { 'energy.wakeLossFrac': wakeLoss, 'energy.aepArray': far.aepWh, 'array.cableLength': cab.length, 'array.count': n, 'array.effectiveTI': ieff },

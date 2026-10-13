@@ -4,7 +4,7 @@
 import { pmsmSteadyState, converterLoss, gearboxEfficiency, optimalTorqueGain } from '../../engine/electrical/machines.js';
 import { transformer } from '../../engine/electrical/circuit.js';
 import { weibull } from '../../engine/aero/aep.js';
-import { turbineInputs, getTurbine, optimumCp, site, adv, check, worst, sev, fmt, round, run, need, thin, RPM, LIMIT_POLAR, LIMIT_CODE, CONFIRM, energyCo2Text, CO2_COPPER } from './_common.js';
+import { turbineInputs, getTurbine, optimumCp, site, adv, check, worst, sev, fmt, round, run, need, thin, RPM, LIMIT_POLAR, LIMIT_CODE, LIMIT_CONTROL, CONFIRM, energyCo2Text, CO2_COPPER } from './_common.js';
 
 export default {
   id: 's16-generator-converter', suite: 16, title: 'Drivetrain, generator and power converter',
@@ -12,7 +12,7 @@ export default {
   covers: [12, 13], fidelity: 'analytical',
   standards: ['IEC 61400-1:2019 §9–10 (mechanical and electrical systems)', 'IEC 61400-4:2012 (gearboxes)', 'IEC 60034-1 / IEC 60034-2-1 (rotating machines: rating, losses and efficiency)', 'IEC 61800-4 / IEC 62477-1 (power converters)', 'IEC 60076-1 (power transformers) and IEC 60076-16 (wind-turbine transformers)', 'IEC 61400-21-1:2019 (electrical characteristics, grid connection)'],
   models: ['Electrical machine d–q axis model of the permanent-magnet synchronous generator', 'Electromagnetic torque relationship Te = 1.5·p·ψm·iq (maximum torque per ampere)', 'Faraday induction: speed-proportional back-EMF', 'Copper, iron and friction loss models', 'Averaged converter model: conduction and switching losses of a two-level IGBT bridge', 'Transformer equivalent circuit from test data', 'Gearbox stage and no-load losses', 'Generator torque control: optimal torque gain k·Ω² (maximum power point tracking)', 'Two-inertia torsional drivetrain with Runge–Kutta integration', 'Weibull-weighted annual conversion efficiency'],
-  limits: `Fundamental-frequency, steady-state electrical models with averaged converter losses: harmonics, switching transients, field weakening limits of a real design, thermal behaviour and grid-fault ride-through control are not modelled. Machine parameters are derived from per-unit values and are generic; device loss data are placeholders. The torsional model has two inertias (rotor and generator) on one shaft stiffness. ${LIMIT_POLAR} Maxwell field (finite-element) machine design and switching-level converter simulation are outside the module. ${LIMIT_CODE}`,
+  limits: `Fundamental-frequency, steady-state electrical models with averaged converter losses: harmonics, switching transients, field weakening limits of a real design, thermal behaviour and grid-fault ride-through control are not modelled. Machine parameters are derived from per-unit values and are generic; device loss data are placeholders. The torsional model has two inertias (rotor and generator) on one shaft stiffness. ${LIMIT_POLAR} Maxwell field (finite-element) machine design and switching-level converter simulation are outside the module. ${LIMIT_CONTROL} ${LIMIT_CODE}`,
   publishes: ['drivetrain.efficiencyRated', 'drivetrain.efficiencyAnnual', 'drivetrain.shaftTorqueMin'],
   searchTerms: 'wind turbine PMSG full converter efficiency drivetrain torsional grid loss',
   inputs: [

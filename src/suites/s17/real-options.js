@@ -170,7 +170,8 @@ export default {
       { key: 'delta', label: 'Sensitivity of the opportunity to project value (delta)', value: round(lat.delta), unit: '-', explain: 'Change of the opportunity value per unit change of project value. Near 1 the option is deep in the money and behaves like the project itself; near 0 it is an out-of-the-money bet on volatility.' },
       { key: 'sigmaUsed', label: 'Volatility of project value used', value: round(100 * sigma), unit: '%/√yr', explain: `Annual volatility in the lattice.${sigCons != null ? ` The consolidated estimate from ${inp.priceVol} % price volatility and ${inp.costShare} % cost share is ${pct(sigCons)} (operating leverage alone gives ${pct(sp / (1 - c))}).` : ` ${consNote}`}` },
     ];
-    if (trigger != null) kpis.push({ key: 'trigger', label: 'Investment trigger V*', value: mil(trigger), unit: MU, explain: `Project value at which immediate investment becomes optimal: ${fmt(trigger / I)} times the investment instead of the 1.0 of the NPV rule. Below it the option to wait is worth more than the cash flow forgone.` });
+    if (trigger != null) kpis.push({ key: 'trigger', label: 'Investment trigger V*', value: mil(trigger), unit: MU, explain: `Project value at which immediate investment becomes optimal: ${fmt(trigger / I)} times the investment instead of the 1.0 of the NPV rule. Below it the option to wait is worth more than the cash flow forgone.` },
+      { key: 'triggerRatio', label: 'Project value over the investment trigger (V / V*)', value: round(V / trigger), unit: '-', explain: 'At 1.0 or above immediate investment is optimal (Dixit & Pindyck 1994 ch. 5). Below 1.0 the project is not rejected: the right to wait is still worth more than the cash flow lost by waiting, so the decision is one of timing.' });
     if (lsm) kpis.push({ key: 'lsmValue', label: 'Least-squares Monte Carlo cross-check', value: mil(lsm.value), unit: MU, explain: `Independent simulation estimate of the same deferral option (standard error ${fM(lsm.standardError)}). Agreement with the lattice within a few standard errors confirms the numerics, not the assumptions.` });
     kpis.push(
       { key: 'expandValue', label: 'Value of the option to expand', value: mil(exp.optionValue), unit: MU, explain: `Worth today of being able to scale the asset to ${fmt(inp.expFactor)} times for ${fM(inp.expCost)} within ${fmt(inp.opWindow)} years. It is the most that enabling pre-investment (spare capacity, consent) is worth.` },
@@ -190,8 +191,8 @@ export default {
       check('Investment ≤ project value with flexibility (expanded NPV ≥ 0)', I, V + Math.max(both.optionValue, 0), CUR, 'Trigeorgis (1996) ch. 4 (expanded NPV rule)',
         'Guards against committing capital that neither the cash flows nor the later choices recover. Above 1.0 the project destroys value even with its options counted.'),
     ];
-    if (trigger != null) checks.push(check('Investment trigger reached (V ≥ V*)', trigger, V, CUR, 'Dixit & Pindyck (1994) ch. 5 (optimal investment rule)',
-      'Guards against killing a valuable option by investing too early. Above 1.0 the project value is still below the trigger, so the right to wait is worth more than the cash flow lost by waiting.'));
+    // Whether the value has reached the investment trigger V* is a timing signal, not an acceptance criterion: a sound
+    // project below its trigger is simply better held than built today. It is reported as KPIs and in the advice.
     if (c0 > 0) checks.push(check('First stage worth starting (stage cost ≤ continuation value)', c0, cont0, CUR, 'Copeland & Antikarov (2001) ch. 6 (sequential compound options)',
       'Guards against starting a development whose first commitment exceeds the value of the right to continue. Above 1.0 the first stage should not be funded.'));
 

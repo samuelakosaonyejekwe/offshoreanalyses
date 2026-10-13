@@ -5,7 +5,7 @@ import { simulateCoupled, buildSupportStructure } from '../../engine/aero/couple
 import { surfaceLookup } from '../../engine/aero/bem.js';
 import { ntmSigma, turbulenceScale, ewm, eogGust, eogSpeed, rotorEffectiveTurbulence } from '../../engine/aero/turbulence.js';
 import { turbineInputs, getTurbine, tunedController, steadyAt, supportInputs, supportSegments, foundationInputs, foundationOf, adv, check, worst, sev, fmt, round, run, need, thin, linspace, G, RPM, DEG,
-  LIMIT_POLAR, LIMIT_COUPLED, LIMIT_CODE, CFD_OUT, CONFIRM, SUPPLIER, steelCo2Text, segmentsMass } from './_common.js';
+  LIMIT_POLAR, LIMIT_COUPLED, LIMIT_CODE, LIMIT_CONTROL, CFD_OUT, CONFIRM, SUPPLIER, steelCo2Text, segmentsMass } from './_common.js';
 
 const fixed = { key: 'concept', in: ['monopile'] }, floating = { key: 'concept', in: ['floating'] };
 const on = (list, showIf) => list.map((i) => (i.showIf ? i : { ...i, showIf }));
@@ -16,7 +16,7 @@ export default {
   covers: [1], fidelity: 'reduced-order',
   standards: ['IEC 61400-1:2019 §6.3 (normal turbulence and extreme operating gust), §7.4 (design load cases)', 'IEC 61400-3-1:2019 (fixed offshore wind turbines)', 'IEC TS 61400-3-2:2019 (floating offshore wind turbines)', 'DNV-ST-0437 (2016) Loads and site conditions for wind turbines', 'NREL/TP-500-38060 (5-MW reference turbine and baseline controller)'],
   models: ['Fully coupled aero-hydro-servo-elastic simulation (reduced order)', 'Rotor Cp/Ct/Cq surfaces from blade element momentum theory', 'Dynamic inflow (Øye time constant)', 'Variable-speed generator torque control and gain-scheduled PI pitch control', 'Supervisory start-up / shutdown / emergency-stop logic', 'Euler–Bernoulli beam finite elements and modal reduction of the support structure', 'Coupled lateral / rocking foundation springs', 'Three-degree-of-freedom floating-body dynamics (surge, heave, pitch)', 'Kaimal turbulence with rotor averaging', 'JONSWAP irregular waves, Airy kinematics, Morison equation, MacCamy–Fuchs diffraction', 'Rainflow counting and damage-equivalent loads', 'Fourth-order Runge–Kutta integration'],
-  limits: `${LIMIT_COUPLED} ${LIMIT_POLAR} Floaters use constant added mass and damping with a long-wave Froude–Krylov estimate of the wave forces (import RAO-based forces from a diffraction analysis for design); side-side and torsional response are not computed. ${CFD_OUT} A 10-minute run with at least six seeds per wind speed is required by IEC 61400-1 for design loads; the default run is shorter. ${LIMIT_CODE}`,
+  limits: `${LIMIT_COUPLED} ${LIMIT_POLAR} Floaters use constant added mass and damping with a long-wave Froude–Krylov estimate of the wave forces (import RAO-based forces from a diffraction analysis for design); side-side and torsional response are not computed. ${CFD_OUT} A 10-minute run with at least six seeds per wind speed is required by IEC 61400-1 for design loads; the default run is shorter. ${LIMIT_CONTROL} ${LIMIT_CODE}`,
   publishes: ['owt.delMudline', 'owt.towerTopAccMax', 'owt.mudlineMomentOp', 'vessel.pitchMaxDeg'],
   searchTerms: 'aero-hydro-servo-elastic offshore wind turbine simulation monopile floating',
   inputs: [

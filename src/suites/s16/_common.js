@@ -79,6 +79,11 @@ export const LIMIT_WAKE = 'Wake deficits come from engineering models (Jensen/Pa
 export const LIMIT_WEC = 'Hydrodynamic coefficients are closed-form approximations for a truncated vertical cylinder in heave (or imported coefficient tables): there is no boundary-element (diffraction–radiation) solver in the module.';
 export const LIMIT_TIDAL = 'Channel blockage uses one-dimensional actuator-disc (linear momentum) theory; the tide is a harmonic synthesis without nodal corrections and turbulence is not resolved.';
 export const LIMIT_PV = 'Photovoltaic yield uses published transposition (Hay–Davies / isotropic), Erbs decomposition and single-diode models with the floating-specific thermal coefficients as inputs; no ray-traced shading or measured module-temperature data.';
+/** Indicative unit-rate input (role 'cost'): never a quoted price, only a way to express a quantity as money in the advice. */
+export const COST_HELP = 'Indicative placeholder — replace with current quotations.';
+export const costInput = (key, label, unit, def, max, note = '') => ({ key, label, unit, type: 'number', default: def, min: 0, max, group: 'Indicative unit rates', role: 'cost', help: `${note ? `${note} ` : ''}${COST_HELP}` });
+export const money = (v) => (Math.abs(v) >= 1e6 ? `${fmt(v / 1e6)} M USD` : `${fmt(v / 1e3)} k USD`);
+export const LIMIT_CONTROL = 'Control is limited to the classical baseline loops named in the models; model-predictive control, Kalman filtering (state estimation) and state-space (LQR/LQG or other full-state feedback) control are not implemented.';
 export const LIMIT_CODE = 'Code factors and loss assumptions are overridable inputs recalled from the documents and must be confirmed against the governing editions (IEC 61400-1, IEC 61400-3-1 / -3-2, IEC TS 62600, IEC 61853).';
 export const CONFIRM = 'Overridable default recalled from the document — confirm against the governing edition.';
 export const PXX = 'Pxx is an exceedance value: the annual energy that is exceeded with xx % probability (P90 < P50; P50 is the median estimate).';

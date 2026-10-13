@@ -30,7 +30,7 @@ export default {
   inputs: [
     { key: 'baseYear', label: 'Price base year (time zero)', unit: 'yr', type: 'int', default: 2026, min: 1990, max: 2100, group: 'Opening financial state', role: 'ic', help: 'All money is constant money of this year; the discount rate is real.' },
     { key: 'inflation', label: 'General inflation', unit: '%/yr', type: 'number', default: 2, min: -2, max: 30, group: 'Opening financial state', role: 'ic', help: 'Used for tax depreciation and debt service, which are fixed in money of the day.' },
-    { key: 'aaceClass', label: 'Class of the quantity-based estimate (AACE 18R-97)', type: 'select', default: '4', group: 'Opening financial state', role: 'ic', options: [5, 4, 3, 2, 1].map((c) => ({ value: String(c), label: `Class ${c} — ${AACE_CLASSES[c].usage}` })),
+    { key: 'aaceClass', label: 'Class of the quantity-based estimate (AACE 18R-97)', type: 'select', default: '3', group: 'Opening financial state', role: 'ic', options: [5, 4, 3, 2, 1].map((c) => ({ value: String(c), label: `Class ${c} — ${AACE_CLASSES[c].usage}` })),
       help: 'Sets the uncertainty of the capital cost in the simulation and the prior of the Bayesian update.' },
 
     { key: 'steel', label: 'Structural steel', unit: 'tonnes', type: 'number', default: 62000, min: 0, max: 5e6, group: 'Engineering quantities', role: 'geometry', bind: 'quantities.steel_t', design: true, uncertain: { dist: 'normal', cov: 0.07 }, help: 'From the structural suites.' },
@@ -70,7 +70,7 @@ export default {
     cost({ key: 'opexPerMW', label: 'Fixed operating cost', unit: `${CUR}/MW/yr`, default: 9.0e4, min: 0, max: 1e7, group: 'Unit rates', help: 'Excluding the component replacement policy below.' }),
     cost({ key: 'opexVar', label: 'Variable operating cost', unit: `${CUR}/MWh`, default: 1.5, min: 0, max: 1e4, group: 'Unit rates' }),
     cost({ key: 'pDecom', label: 'Decommissioning cost', unit: '% of CAPEX', default: 8, min: 0, max: 100, group: 'Unit rates', help: 'Terminal condition: spent in the year after the last operating year.' }),
-    cost({ key: 'price', label: 'Unit price (inflation-indexed)', unit: `${CUR}/MWh`, default: 108, min: 0.01, max: 1e5, group: 'Unit rates', uncertain: { dist: 'normal', cov: 0.12 } }),
+    cost({ key: 'price', label: 'Unit price (inflation-indexed)', unit: `${CUR}/MWh`, default: 124, min: 0.01, max: 1e5, group: 'Unit rates', uncertain: { dist: 'normal', cov: 0.12 } }),
 
     { key: 'units', label: 'Wearing components of one kind', unit: '-', type: 'int', default: 34, min: 0, max: 5000, group: 'Reliability and maintenance', role: 'operation', help: 'For example main bearings or gearboxes. 0 leaves the replacement policy out.' },
     { key: 'mShape', label: 'Weibull shape of component life', unit: '-', type: 'number', default: 2.6, min: 0.3, max: 10, group: 'Reliability and maintenance', role: 'ic', help: 'Opening reliability assumption; above 1 the component wears out and planned replacement can pay.' },
