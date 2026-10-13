@@ -11,28 +11,87 @@ Everything is plain ES modules without DOM or network access, so it runs in the 
 
 ## 1. What was run against real solvers, and what was not
 
-Checked on the development machine with `which` and the usual install locations:
+State of 2026-10-13. "Executed" means: a case written by the application's writer was unpacked, run by the solver
+without editing, and its results were read back by the application's reader. The open solvers were installed
+outside the repository (virtual environment, conda-forge package, build from source); nothing of them is kept
+here except the small result files under `tests/interop/fixtures/` (provenance in its `README.md`).
 
-| Solver | Found | Status of the hand-off |
+| Solver | Version run | Status of the hand-off |
 | --- | --- | --- |
-| OpenFOAM v2406 (openfoam.com) | yes, `/usr/lib/openfoam/openfoam2406` | **Executed end to end** (wave tank and current case, see §5.3) |
-| CalculiX (`ccx`) | no | **Not executed.** The deck follows the documented input format and is re-read by the app's Abaqus importer; it has not been run through `ccx` |
-| NEMOH (`preProc`, `solver`, `postProc`) | no | **Not executed.** Input files follow the NEMOH v3.0 manual; the result readers are tested on files laid out as the manual describes, not on real NEMOH output |
-| Capytaine (Python package) | no (`import capytaine` fails; `xarray` missing too) | **Not executed.** The generated script passes `python3 -m py_compile` (syntax only); its API calls are written from the Capytaine 2 documentation |
-| WAMIT | no (commercial) | **Not executed.** Only the GDF geometry is written; it is re-read by the app's GDF importer |
+| OpenFOAM | v2406 (openfoam.com) | **Executed** (wave tank and current case, §5.3) |
+| Capytaine | 3.0.0 (Python 3.12) | **Executed**: barge 20 × 8 × 2 m (768 panels, 12 frequencies × 3 headings, and 5 × 3), vertical cylinder D = 8 m, 40 m draught (1128 panels, 12 frequencies), hemisphere a = 5 m (2592 panels); deep water; CSV read back |
+| NEMOH | v3, master `dcc8113` of 2026-06-24, built from source with gfortran | **Executed**: the barge, 5 frequencies × 3 headings, `preProc`, `solver`, `postProc`; `RadiationCoefficients.tec`, `ExcitationForce.tec`, `CM.dat`, `CA.dat` read back |
+| CalculiX (`ccx`) | 2.23 (conda-forge) | **Executed**: static, `*FREQUENCY` and `*BUCKLE` steps of a cantilever and a portal frame (B32R with PIPE; B31 and B32 with RECT), static step of a plate (S6, S3); `.dat` and `.frd` read back |
+| WAMIT | — (proprietary) | **Not executed.** The `.gdf` files of the three hulls were loaded with an independent GDF reader (Capytaine `load_mesh`): panel count, vertex count after welding, wetted area, displaced volume and normal direction equal those of the source mesh (§3.3) |
 
-Consequences to keep in mind until someone runs these cases:
+The registry (`SOLVER_EXPORTS`) carries the same information in the `executed` flag and the `notes` of each entry.
 
-* a keyword or column that a particular solver build rejects would not have been caught for NEMOH, Capytaine,
-  WAMIT or CalculiX;
-* the conversion of NEMOH / Capytaine excitation phases to the app's convention (complex conjugate, see §3.2)
-  follows the documented time conventions and has not been confirmed against a solved benchmark;
-* the unit of the phase column of NEMOH's `ExcitationForce.tec` (radians or degrees) is detected from the
-  values, with an explicit override;
-* the meaning of the per-block number in NEMOH's `CA.dat` / `CM.dat` (period or frequency) is read from the
-  header word, with an explicit override.
+### 1.1 Defects the runs exposed, and their fixes
 
-The registry (`SOLVER_EXPORTS`) carries the same information in the `executed` flag of each entry.
+| Where | What the solver showed | Fix |
+| --- | --- | --- |
+| NEMOH writer | `preProc` stopped with "Cannot open file './barge.dat'": the mesh named in `Nemoh.cal` is opened relative to the case folder, and `mesh/` is where preProc writes its own files | the mesh is written to the case folder as `<name>.dat` |
+| NEMOH reader, `CM.dat` / `CA.dat` | each line of a block belongs to one *radiating* degree of freedom, so the block was read transposed (A15 and A51 exchanged: 229 t·m against 256 t·m for the barge); the frequency is printed with four decimals only, which made the consistency check with `ExcitationForce.tec` fail for frequencies such as 2π/7 | block transposed; within the rounding the frequencies of `ExcitationForce.tec` are used |
+| Capytaine script | with Capytaine 3.0.0 `separate_complex_values(ds).to_netcdf(...)` raised a `TypeError` (categorical coordinate) after all problems had been solved, and no CSV was written | the CSV is written first; NetCDF goes through `cpt.export_dataset` when it exists, and a failure there is reported, not fatal |
+| Capytaine script | only the infinite-frequency added mass was requested | `A0` rows (omega = 0) added; `readCapytaineCsv` returns `db.A0` |
+| CalculiX writer, tubes | "*BEAM SECTION of type PIPE can only be used for B32R elements": every deck with a tubular member was rejected | a model with a PIPE or BOX section is written with B32R elements and generated mid-side nodes |
+| CalculiX writer, beam orientation | without an orientation of its own, a member got the local 1-axis (0, 0, −1): a rectangle b × h lay on its side (tip deflection 59.4 mm instead of 14.9 mm) and `Iy` of a generic section acted in the horizontal plane | default 1-axis = local y of `frame3d.js` (horizontal normal to the member; (0, 1, 0) for vertical members) |
+| CalculiX writer, shells | S3 shells gave 0.12 of the plate-theory deflection (they are expanded to wedges that lock in bending) | S6 shells with generated mid-side nodes are the default for surfaces; `elementOrder: 1` still writes S3, with a warning note |
+| CalculiX writer, shell pressure | a positive `P` moved the plate along its normal, opposite to the documented meaning of a positive pressure | the pressure of shells is written with the opposite sign |
+| CalculiX writer, supports | a supported edge of quadratic elements was free at its generated mid-side node | mid-side nodes whose two end nodes are in a support set are added to it (beams, and shell edges that are boundary edges or interior lines) |
+| CalculiX `.dat` reader | `*FREQUENCY` and `*BUCKLE` steps print no nodal table: the reader threw; shell stress rows end with the name of the expanded element and the whole table was dropped | eigenvalues, natural frequencies and buckling factors are returned (`eigenvalues`, `frequencies`, `bucklingFactors`); the trailing name is ignored |
+
+### 1.2 The phase convention, settled
+
+NEMOH and Capytaine write complex amplitudes for exp(−iωt). The application uses exp(+iωt) with the heading as
+the propagation direction. Conjugating the excitation (done by `readNemohResults` and inside the Capytaine script)
+is correct; it was confirmed on the solved barge in the longest waves, where the answer is known:
+
+* heave: F₃ → ρ g A_wp e^(−kT) − ω² A₃₃ + iω B₃₃. At ω = 0.1 rad/s Capytaine gives 1 596 404 + 129.0 i N/m after
+  conversion; ρ g A_wp e^(−kT) − ω² A₃₃ = 1 596 421 and ω B₃₃ = 129.4. The imaginary part is positive — the force
+  leads the elevation by the radiation-damping term; without the conjugation it would lag. NEMOH at 0.25 rad/s:
+  Im F₃ = 4651, ω B₃₃ = 4653;
+* surge, wave towards +x: F₁ → + iω² (ρV + A₁₁): 3911 i against 3918; the sign reverses for 180°;
+* the application's own long-wave model (`floaterRAO`) puts the surge force of the cylinder at +90.0°, converted
+  Capytaine at +89.99° (25 s) to +69° (4 s, diffraction);
+* NEMOH and Capytaine, read through the two independent readers, agree within 0.05 % (added mass), 0.1 %
+  (damping) and 0.3 % (real and imaginary parts of the excitation) on the same mesh.
+
+NEMOH v3 writes the phase column of `ExcitationForce.tec` in radians and rad/s in `CM.dat` / `CA.dat`.
+
+### 1.3 What still was not executed
+
+* WAMIT: neither the solver nor a file written by it (`hydroDbFromWamit` is tested on files laid out as the manual
+  describes);
+* NEMOH and Capytaine in finite depth and with more than one body; NEMOH's QTF module; Capytaine 2.x (the
+  script keeps the 2.x NetCDF call as a fallback, which was not run);
+* CalculiX: solid (volume) models, `*PLASTIC`, `NLGEOM`, `*DYNAMIC`, gravity and line loads, BOX and CIRC
+  sections, and generic sections written as equivalent rectangles;
+* OpenFOAM Foundation releases (§5).
+
+Two things observed and left as they are: the total of the reaction forces that CalculiX prints for the supported
+nodes of an expanded shell did not equal the applied load (23.3 kN of 30 kN for the plate), and with `OUTPUT=2D`
+the nodal stresses of shells are mid-surface values. Use the displacements, or request section forces by hand.
+The application's Abaqus importer does not know the element type S6; decks of surface models are read back by it
+only when written with `elementOrder: 1`.
+
+### 1.4 The built-in models against these solvers
+
+`src/spec/cross-solver.json` holds every number; the application displays it. Summary (relative difference of the
+built-in value from the reference):
+
+| Built-in model | Reference | Result |
+| --- | --- | --- |
+| `addedMassBem`, ω → ∞ and ω → 0, barge / cylinder / hemisphere, six diagonal terms | Capytaine at ω = inf and 0, same meshes | translations within 3.5 % (largest: cylinder surge), rotations within 5.7 % (barge roll). Hemisphere heave at ω → ∞: built-in −0.13 %, Capytaine +1.5 % from the exact ρπa³/3 |
+| `boxBargeRAO`, head sea | Capytaine + `raoSolve` | heave within 5 % for T ≥ 8 s (wavelength ≥ 5 L), −16 % at 6 s, −31 % at 5 s; pitch within 4 % for T ≥ 6 s, −19 % at 5 s, −63 % at 4 s |
+| `boxBargeRAO`, beam sea | same | heave tends to 1 + kT instead of 1 (+1.3 % at 25 s, +8 % at 10 s, up to +14 % at 4 s); roll 3–12 % high from 6 s, two to three times too high at 4–5 s (natural period 4.97 s against about 5.2 s) |
+| `floaterRAO`, spar D = 8 m, draught 40 m | same | surge force within 5 % for T ≥ 6 s (5.1 % at 5 s), +43 % at 4 s; heave force within 5 % for T ≥ 12 s, +7 % at 10 s, +24 % at 7 s and wrong below (the force nearly cancels there); surge RAO within 5 % at 6–10 s and 25 s, heave RAO within 2 % for T ≥ 16 s, pitch RAO within 5 % at 5–10 s; near the heave (≈ 13 s) and pitch (≈ 15 s) resonances the assumed 2 % damping decides (−48 … +50 %) |
+| `analyzeFrame` | CalculiX `*STATIC` | cantilevers within 1.4 %; portal sway +7.5 % (CalculiX joints are stiff blocks of the tube size) |
+| `modalAnalysis` | CalculiX `*FREQUENCY` | cantilever within 1.9 %, portal within 3.5 % (six modes each) |
+| `bucklingAnalysis` | CalculiX `*BUCKLE` | cantilever within 1.5 %, portal within 5.6 % (four modes each) |
+| `navierPlate` | CalculiX S6 shells | centre deflection within 0.7 % |
+
+The regression tests keep the built-in models within these recorded differences.
 
 ## 2. Common conventions
 
@@ -69,11 +128,11 @@ inward-oriented surface is detected (negative displaced volume) and reversed. No
 | --- | --- |
 | `Nemoh.cal` | environment, one body, 6 degrees of freedom and 6 generalised forces (rotations and moments about `cog`), frequency line with the v3 type flag (`1` = rad/s), heading range; IRF, Kochin, free-surface, RAO and QTF output switched off |
 | `input_solver.txt` | v3 solver settings (Gauss order 2, LU) |
-| `mesh/<name>.dat` | solver-format mesh: `2 0`, node table, `0 0. 0. 0.`, panel table, `0 0 0 0` |
+| `<name>.dat` | solver-format mesh in the case folder (preProc opens it relative to that folder and writes its own files to `mesh/`): `2 0`, node table, `0 0. 0. 0.`, panel table, `0 0 0 0` |
 | `results/` | empty folder |
 | `ID.dat`, `input.txt` | only read by NEMOH v2; harmless for v3 |
 
-NEMOH takes uniform ranges (count, min, max). Lists that are not uniformly spaced are replaced by the uniform
+Run: `preProc <case>`, `solver <case>`, `postProc <case>`. NEMOH takes uniform ranges (count, min, max). Lists that are not uniformly spaced are replaced by the uniform
 range with the same count and limits, and a note says so. Deep water is written as depth `0.`.
 
 Not written: `Mesh.cal` (the mesh is already in solver format, so NEMOH's `mesh` pre-processor is not needed),
@@ -87,11 +146,12 @@ container of `src/engine/hydro/hydrodb.js` (`createHydroDb`), so `raoSolve`, `hy
 Cummins model work on it directly.
 
 * radiation: `RadiationCoefficients.tec` (one zone per radiating mode, columns ω, then (A, B) per force mode),
-  or `CM.dat` (added mass) with `CA.dat` (damping);
-* excitation: `ExcitationForce.tec` (one zone per heading, columns ω, then (modulus, phase) per mode);
+  or `CM.dat` (added mass) with `CA.dat` (damping) — blocks with one line per radiating mode, frequency in rad/s
+  with four decimals (the seven-digit frequencies of `ExcitationForce.tec` replace them when that file is there);
+* excitation: `ExcitationForce.tec` (one zone per heading, columns ω, then (modulus, phase in radians) per mode);
 * `rho`, `g`, `depth` from `Nemoh.cal` when it is among the files;
 * NEMOH and Capytaine write complex amplitudes for exp(−iωt); the app uses exp(+iωt), so the excitation is
-  conjugated (`conjugate: false` switches this off);
+  conjugated (`conjugate: false` switches this off) — confirmed on solved cases, §1.2;
 * single body with six modes only; multi-body and generalised-mode results are rejected;
 * NEMOH's files do not contain the infinite-frequency added mass: pass `Ainf` (for example from
   `addedMassBem`, §6) when the time-domain model needs it.
@@ -102,31 +162,45 @@ Cummins model work on it directly.
 vertices per panel, counter-clockwise seen from the fluid). The WAMIT control files are not written. WAMIT
 output is read with the existing `hydroDbFromWamit` (`.1`, `.3`) using the same `ULEN`.
 
+Checked with an independent reader (Capytaine 3.0.0 `load_mesh(..., file_format="gdf")`), since WAMIT is not
+available:
+
+| Hull | Panels (app / reader) | Vertices | Wetted area, m² (app / reader) | Volume, m³ (app / reader) |
+| --- | --- | --- | --- | --- |
+| barge 20 × 8 × 2 m | 768 / 768 | 413 / 413 | 272 / 272.0 | 320 / 320.0 |
+| cylinder D = 8 m, 40 m draught | 1128 / 1128 | 577 / 577 | 1052.1344 / 1052.1344 | 1987.7302 / 1987.7302 |
+| hemisphere a = 5 m | 2592 / 2592 | 1345 / 1345 | 156.89192 / 156.89192 | 261.23368 / 261.23368 |
+
+The volume is ∫ z n_z dS with the reader's own normals (right-hand rule on the vertex order); it is positive and
+equals ∫ x n_x dS, so the normals point into the fluid on every face family.
+
 ### 3.4 Capytaine
 
 `writeCapytaineScript({ … same arguments … })` writes `run_capytaine.py` and `mesh/<name>.dat`. The script
-loads the mesh, solves all radiation and diffraction problems with `BEMSolver.fill_dataset`, saves the complete
-dataset as NetCDF and writes `<name>_hydro.csv` in the app's CSV schema (`kind,omega,headingDeg,i,j,re,im`),
-converted to exp(+iωt), with `# rho=`, `# g=`, `# depth=` comment lines and, in deep water, the
-infinite-frequency added mass (`AINF` rows). `readCapytaineCsv(text)` reads that CSV. The NetCDF file itself is
-not read by this module.
+loads the mesh, solves all radiation and diffraction problems with `BEMSolver.fill_dataset` and writes
+`<name>_hydro.csv` in the app's CSV schema (`kind,omega,headingDeg,i,j,re,im`), converted to exp(+iωt), with
+`# solver=`, `# rho=`, `# g=`, `# depth=` comment lines and, in deep water, the added mass at ω = ∞ and ω = 0
+(`AINF` and `A0` rows). Afterwards it saves the complete dataset as NetCDF (`cpt.export_dataset`, or the 2.x
+call when that function is missing); if that step fails the CSV is already complete. `readCapytaineCsv(text)`
+reads the CSV. The NetCDF file itself is not read by this module. Run with Capytaine 3.0.0 (§1).
 
 ## 4. CalculiX (`src/interop/calculix.js`)
 
-Target: CalculiX CrunchiX 2.20 / 2.21, Abaqus-style `.inp`.
+Target: CalculiX CrunchiX 2.20 – 2.23, Abaqus-style `.inp`; run with 2.23 (§1).
 
 `writeCalculixCase(model, { material, supports, loads, analysis, steps, elementOrder, thickness,
 genericSection, name })`
 
 | Model | Elements | Section |
 | --- | --- | --- |
-| `frame` | B31, or B32 with generated mid-side nodes (`elementOrder: 2`) | `*BEAM SECTION` PIPE for tubes, CIRC / RECT / BOX when the imported section carries that shape; orientation line per section |
-| `surface` | S3 | `*SHELL SECTION` with the group's thickness or `thickness` |
+| `frame` | B31, or B32 with generated mid-side nodes (`elementOrder: 2`); B32R for the whole model when it holds a PIPE or BOX section, because CalculiX has these sections for B32R only | `*BEAM SECTION` PIPE for tubes, CIRC / RECT / BOX when the section carries that shape; orientation line per section: the member's own, else the horizontal normal to the member (local y of `frame3d.js`), so that h and `Iy` act in the vertical plane |
+| `surface` | S6 with generated mid-side nodes (default), S3 with `elementOrder: 1` (far too stiff in bending in CalculiX, §1.1) | `*SHELL SECTION` with the group's thickness or `thickness` |
 | `volume` | C3D4, C3D10, C3D8, C3D20, C3D6 | `*SOLID SECTION`; 5-node pyramids are split into two C3D4 |
 
 Material: `*ELASTIC`, `*DENSITY`, `*PLASTIC` (perfectly plastic, bilinear from a tangent modulus, or a table).
 Supports: `*NSET` + `*BOUNDARY` (`'fixed'`, `'pinned'`, or a list of degrees of freedom; non-zero prescribed
-values allowed). Loads: nodal forces and moments (`*CLOAD`), gravity and pressure (`*DLOAD`), frame line loads
+values allowed); the generated mid-side node of an edge whose two ends are supported is supported with them. Loads: nodal forces and moments (`*CLOAD`), gravity and pressure (`*DLOAD`; a positive pressure on a shell acts against the element normal and is written
+with the opposite sign, because CalculiX applies a positive `P` along the normal), frame line loads
 lumped to the member ends. Step: `*STATIC`, `*STATIC` with `NLGEOM`, `*BUCKLE`, `*FREQUENCY`, `*DYNAMIC, DIRECT`.
 Output: `*NODE FILE` (U, RF), `*EL FILE` (S, E, PEEQ), `*NODE PRINT`, `*EL PRINT`; `OUTPUT=2D` for beams and
 shells so that results return on the original nodes.
@@ -148,9 +222,13 @@ Readers:
   `vonMises`, and for the 3-D viewer `nodeValues` (von Mises stress when available, else displacement
   magnitude), `valueLabel`, `valueUnit`, `deformed`. Binary `.frd` is not read.
 * `readCalculixDat(text, { nodeCount, positions, scale })` — printed tables: displacements, reaction forces and
-  their total, integration-point stresses averaged to one von Mises value per element.
+  their total, integration-point stresses averaged to one von Mises value per element; from a `*FREQUENCY` step
+  `eigenvalues` (rad²/s²) and `frequencies` (Hz), from a `*BUCKLE` step `bucklingFactors`.
 
-Both readers are tested on files written in the test in the documented layout, not on files produced by `ccx`.
+In the `.frd` file of a frequency step every mode is one result set whose `time` is the frequency in Hz; in a
+buckling step the first set is the pre-load state (`time` 0) and the following ones carry the buckling factor.
+Both readers are tested on files produced by `ccx` 2.23 (`tests/interop/fixtures/calculix/`) as well as on files
+written in the tests in the documented layout.
 
 ## 5. OpenFOAM (`src/interop/openfoam.js`)
 
@@ -228,6 +306,10 @@ and `wettedPanels(surface)`.
 
 A∞ is the constant added mass of the Cummins time-domain equation.
 
+Both limits were compared with Capytaine 3.0.0 (radiation problems at ω = inf and ω = 0) on identical meshes of a
+barge, a vertical cylinder and a hemisphere: translational terms within 3.5 %, rotational terms within 5.7 %
+(§1.4, `src/spec/cross-solver.json`).
+
 **This is not a radiation/diffraction solver.** It gives no frequency dependence, no wave damping and no
 excitation forces; for those use the hand-off of §3.
 
@@ -284,8 +366,14 @@ node --test tests/interop/ tests/engine/hydro.bem.test.js
 * NEMOH mesh and GDF: panel and node counts, wetted area and volume, normals into the fluid for a box and a
   cylinder; both files are read back by the app's panel importers;
 * NEMOH and Capytaine result readers: fixtures in the documented layouts → database → `raoSolve`;
-* CalculiX: a cantilever deck is re-read by the app's Abaqus importer to the same nodes, elements, section,
-  material and sets; shells and all solid types likewise; `.frd` and `.dat` readers on fixed-format fixtures;
+* CalculiX: a cantilever deck is re-read by the app's Abaqus importer to the same elements, section, material and
+  sets; S3 shells and all solid types likewise; `.frd` and `.dat` readers on fixed-format fixtures;
 * OpenFOAM: folder contents, patch consistency across fields, balanced dictionaries, STL read back by the STL
   importer, both `forces` layouts;
-* ZIP: read back by `src/geometry/zip.js`, CRC-32 check value, executable bits.
+* ZIP: read back by `src/geometry/zip.js`, CRC-32 check value, executable bits;
+* `cross-solver.test.js`, on the stored solver output of §1 (no solver needed): the readers return the recorded
+  values from real Capytaine, NEMOH and CalculiX files; the phase convention checks of §1.2; NEMOH against
+  Capytaine; every built-in model stays within the difference recorded in `src/spec/cross-solver.json` (a change
+  that moves a result further from the reference fails); the writer properties that the runs showed to be
+  necessary (B32R for tubes, beam orientation, S6, pressure sign, supported mid-side nodes, mesh location for
+  NEMOH, CSV before NetCDF); the GDF measurements of the independent reader.

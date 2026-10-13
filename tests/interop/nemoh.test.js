@@ -34,8 +34,9 @@ test('NEMOH mesh of a box: panel and node counts, normals into the fluid, read b
   // wetted nodes: lattice points on the bottom and sides with z <= 0
   assert.equal(r.mesh.nNodes, 5 * 3 + 2 * (4 + 2) * 2);
   assert.ok(rel(r.mesh.volume, 16) < 1e-6 && rel(r.mesh.area, 8 + 24) < 1e-6);
-  assert.deepEqual(r.files.map((f) => f.path), ['Nemoh.cal', 'input_solver.txt', 'input.txt', 'ID.dat', 'mesh/barge_box.dat', 'results/']);
-  const text = file(r, 'mesh/barge_box.dat');
+  assert.deepEqual(r.files.map((f) => f.path), ['Nemoh.cal', 'input_solver.txt', 'input.txt', 'ID.dat', 'barge_box.dat', 'results/']);
+  // NEMOH's preProc opens the mesh named in Nemoh.cal relative to the case folder
+  const text = file(r, 'barge_box.dat');
   const lines = text.trim().split('\n');
   assert.equal(lines[0].trim().split(/\s+/).join(' '), '2 0');
   assert.equal(lines.length, 1 + r.mesh.nNodes + 1 + BOX_PANELS + 1);

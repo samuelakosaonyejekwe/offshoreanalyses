@@ -1,0 +1,1579 @@
+{
+ "generated": "2026-10-13",
+ "solvers": [
+  {
+   "name": "Capytaine",
+   "version": "3.0.0"
+  },
+  {
+   "name": "NEMOH",
+   "version": "v3, master dcc8113 (2026-06-24), built from source with gfortran"
+  },
+  {
+   "name": "CalculiX CrunchiX (ccx)",
+   "version": "2.23"
+  }
+ ],
+ "comparisons": [
+  {
+   "id": "added-mass-infinite",
+   "title": "Added mass in the infinite-frequency limit: panel method against Capytaine on the same meshes",
+   "builtIn": "addedMassBem({ limit: 'infinite' }) — src/engine/hydro/bem.js",
+   "reference": "Capytaine 3.0.0, RadiationProblem with omega = inf, deep water",
+   "quantity": "Diagonal of the 6 × 6 added-mass matrix about the origin on the waterline (barge 20 × 8 m, 2 m draught, 768 panels; vertical cylinder D = 8 m, 40 m draught, 1128 panels; floating hemisphere a = 5 m, 2592 panels)",
+   "unit": "kg (A11–A33), kg·m² (A44–A66)",
+   "cases": [
+    {
+     "label": "barge A11 surge",
+     "builtIn": 24583.308757741474,
+     "reference": 24699.997992267366,
+     "relDiff": -0.004724260891131406
+    },
+    {
+     "label": "barge A22 sway",
+     "builtIn": 64795.7543689866,
+     "reference": 65252.206683056065,
+     "relDiff": -0.00699520119352518
+    },
+    {
+     "label": "barge A33 heave",
+     "builtIn": 555123.2136232468,
+     "reference": 542088.9238244385,
+     "relDiff": 0.024044560266701896
+    },
+    {
+     "label": "barge A44 roll",
+     "builtIn": 1200626.6206073654,
+     "reference": 1135810.4378212641,
+     "relDiff": 0.057066021430858684
+    },
+    {
+     "label": "barge A55 pitch",
+     "builtIn": 12346733.92715524,
+     "reference": 11988761.553029131,
+     "relDiff": 0.02985899523839154
+    },
+    {
+     "label": "barge A66 yaw",
+     "builtIn": 2055188.7239469667,
+     "reference": 2035979.6180276233,
+     "relDiff": 0.009434822308266741
+    },
+    {
+     "label": "cylinder A11 surge",
+     "builtIn": 1719955.9941075353,
+     "reference": 1780527.6001335501,
+     "relDiff": -0.03401890878943497
+    },
+    {
+     "label": "cylinder A22 sway",
+     "builtIn": 1719955.994107537,
+     "reference": 1780527.6001335504,
+     "relDiff": -0.03401890878943418
+    },
+    {
+     "label": "cylinder A33 heave",
+     "builtIn": 136207.63897293652,
+     "reference": 136984.71416444422,
+     "relDiff": -0.0056727146254789635
+    },
+    {
+     "label": "cylinder A44 roll",
+     "builtIn": 909620868.9014884,
+     "reference": 938404194.8442763,
+     "relDiff": -0.03067263136815404
+    },
+    {
+     "label": "cylinder A55 pitch",
+     "builtIn": 909620868.9014881,
+     "reference": 938404194.8442763,
+     "relDiff": -0.030672631368154422
+    },
+    {
+     "label": "cylinder A66 yaw",
+     "builtIn": 8646.447789606924,
+     "reference": 8558.359616242416,
+     "relDiff": null
+    },
+    {
+     "label": "hemisphere A11 surge",
+     "builtIn": 73387.25161070198,
+     "reference": 74655.74979971437,
+     "relDiff": -0.01699129929597522
+    },
+    {
+     "label": "hemisphere A22 sway",
+     "builtIn": 73415.26271946066,
+     "reference": 74689.29905504885,
+     "relDiff": -0.01705781620268216
+    },
+    {
+     "label": "hemisphere A33 heave",
+     "builtIn": 134001.10830711556,
+     "reference": 136146.83933371748,
+     "relDiff": -0.015760417480881746
+    },
+    {
+     "label": "hemisphere A44 roll",
+     "builtIn": 1.3652050502151167,
+     "reference": 1.3615918675961702,
+     "relDiff": null
+    },
+    {
+     "label": "hemisphere A55 pitch",
+     "builtIn": 1.6936774263737653,
+     "reference": 1.6916135761816786,
+     "relDiff": null
+    },
+    {
+     "label": "hemisphere A66 yaw",
+     "builtIn": 1.1531435091431834,
+     "reference": 1.1488380878703746,
+     "relDiff": null
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "Translational terms within 3.4 % (largest: cylinder A11 surge), rotational terms within 5.7 % (largest: barge A44 roll), both codes on the identical flat-panel mesh.",
+   "note": "Both are constant-panel methods on the same triangles; the differences are discretisation differences between the potential formulation used here and Capytaine's default source formulation, not a converged reference. For the hemisphere the exact heave value is rho pi a^3 / 3 = 134172.18624706406 kg: the built-in result is the closer of the two. Terms that vanish by symmetry (hemisphere A44–A66, cylinder A66) are listed without a relative difference: both codes return discretisation noise there."
+  },
+  {
+   "id": "added-mass-zero",
+   "title": "Added mass in the zero-frequency limit: panel method against Capytaine on the same meshes",
+   "builtIn": "addedMassBem({ limit: 'zero' }) — src/engine/hydro/bem.js",
+   "reference": "Capytaine 3.0.0, RadiationProblem with omega = 0, deep water",
+   "quantity": "Diagonal of the 6 × 6 added-mass matrix about the origin on the waterline (barge 20 × 8 m, 2 m draught, 768 panels; vertical cylinder D = 8 m, 40 m draught, 1128 panels; floating hemisphere a = 5 m, 2592 panels)",
+   "unit": "kg (A11–A33), kg·m² (A44–A66)",
+   "cases": [
+    {
+     "label": "barge A11 surge",
+     "builtIn": 63391.29950041002,
+     "reference": 63621.57426030688,
+     "relDiff": -0.003619444544938325
+    },
+    {
+     "label": "barge A22 sway",
+     "builtIn": 186898.121992498,
+     "reference": 187786.34775185346,
+     "relDiff": -0.004729980480419141
+    },
+    {
+     "label": "barge A33 heave",
+     "builtIn": 860400.9899929987,
+     "reference": 844196.374215731,
+     "relDiff": 0.019195315535821742
+    },
+    {
+     "label": "barge A44 roll",
+     "builtIn": 1220069.924523974,
+     "reference": 1154892.0093562936,
+     "relDiff": 0.05643637209336043
+    },
+    {
+     "label": "barge A55 pitch",
+     "builtIn": 13870160.501356706,
+     "reference": 13507480.756385941,
+     "relDiff": 0.02685028774142807
+    },
+    {
+     "label": "barge A66 yaw",
+     "builtIn": 4579084.103488841,
+     "reference": 4522118.134844729,
+     "relDiff": 0.012597187190924265
+    },
+    {
+     "label": "cylinder A11 surge",
+     "builtIn": 1926801.3022935202,
+     "reference": 1997275.7689525224,
+     "relDiff": -0.035285295978913715
+    },
+    {
+     "label": "cylinder A22 sway",
+     "builtIn": 1926801.3022935223,
+     "reference": 1997275.7689525224,
+     "relDiff": -0.03528529597891267
+    },
+    {
+     "label": "cylinder A33 heave",
+     "builtIn": 140886.0711231301,
+     "reference": 141977.09636526252,
+     "relDiff": -0.007684515813209478
+    },
+    {
+     "label": "cylinder A44 roll",
+     "builtIn": 922645192.7900145,
+     "reference": 952154732.6188861,
+     "relDiff": -0.030992378463221098
+    },
+    {
+     "label": "cylinder A55 pitch",
+     "builtIn": 922645192.7900149,
+     "reference": 952154732.6188861,
+     "relDiff": -0.03099237846322072
+    },
+    {
+     "label": "cylinder A66 yaw",
+     "builtIn": 8812.948783781165,
+     "reference": 8723.696993505835,
+     "relDiff": null
+    },
+    {
+     "label": "hemisphere A11 surge",
+     "builtIn": 134001.03720276288,
+     "reference": 136130.38339443627,
+     "relDiff": -0.01564196132103468
+    },
+    {
+     "label": "hemisphere A22 sway",
+     "builtIn": 134001.52380344833,
+     "reference": 136140.78268410484,
+     "relDiff": -0.015713578535980266
+    },
+    {
+     "label": "hemisphere A33 heave",
+     "builtIn": 222617.6367657388,
+     "reference": 225178.93334273936,
+     "relDiff": -0.011374494669543829
+    },
+    {
+     "label": "hemisphere A44 roll",
+     "builtIn": 1.7773650266839351,
+     "reference": 1.7790100421617785,
+     "relDiff": null
+    },
+    {
+     "label": "hemisphere A55 pitch",
+     "builtIn": 3.3957869504651645,
+     "reference": 3.417804294598661,
+     "relDiff": null
+    },
+    {
+     "label": "hemisphere A66 yaw",
+     "builtIn": 1.189444980494833,
+     "reference": 1.1856082571317748,
+     "relDiff": null
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "Translational terms within 3.5 % (largest: cylinder A11 surge), rotational terms within 5.6 % (largest: barge A44 roll), both codes on the identical flat-panel mesh.",
+   "note": "Both are constant-panel methods on the same triangles; the differences are discretisation differences between the potential formulation used here and Capytaine's default source formulation, not a converged reference. For the hemisphere the exact surge value is rho pi a^3 / 3 = 134172.18624706406 kg: the built-in result is the closer of the two. Terms that vanish by symmetry (hemisphere A44–A66, cylinder A66) are listed without a relative difference: both codes return discretisation noise there."
+  },
+  {
+   "id": "barge-rao-heave",
+   "title": "Barge heave RAO in head seas: closed-form box model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 180 }) — src/engine/hydro/floater.js",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "heave amplitude per unit wave amplitude, barge 20 × 8 × 2 m draught",
+   "unit": "m/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.1948327293377773,
+     "reference": 0.2501051015625212,
+     "relDiff": -0.22099658055526283
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.587142603920263,
+     "reference": 0.8479582199813033,
+     "relDiff": -0.3075807391392362
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.7882494715717677,
+     "reference": 0.9335903415433051,
+     "relDiff": -0.15567949185429278
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.8869623892638607,
+     "reference": 0.9573740782351797,
+     "relDiff": -0.07354668417711463
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.9363292263322174,
+     "reference": 0.9712674608340672,
+     "relDiff": -0.035971795525659794
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.9762359774440964,
+     "reference": 0.9863215261871308,
+     "relDiff": -0.010225416839499117
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.9893757336014489,
+     "reference": 0.99294756888846,
+     "relDiff": -0.003597204322691017
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.9945721365998658,
+     "reference": 0.9960625050610208,
+     "relDiff": -0.0014962599772428136
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.9969413655715731,
+     "reference": 0.9976476019887023,
+     "relDiff": -0.000707901683641985
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.9988083617249945,
+     "reference": 0.9990177530470375,
+     "relDiff": -0.0002095971982523394
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 0.9995282321465805,
+     "reference": 0.9995934784347569,
+     "relDiff": -0.00006527282298655878
+    }
+   ],
+   "verdict": "agrees within stated range",
+   "validity": "Within 5 % at wave periods 8, 10, 12, 14, 16, 20, 25 s (7 of 11); largest difference 31 % at T = 5 s.",
+   "note": "The closed-form model under-predicts heave in short waves: it is within 5 % from T = 8 s (wavelength 100 m, five barge lengths) and 16 % low at 6 s (wavelength 56 m). Reference: Capytaine coefficients read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.667 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed."
+  },
+  {
+   "id": "barge-rao-pitch",
+   "title": "Barge pitch RAO in head seas: closed-form box model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 180 }) — src/engine/hydro/floater.js",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "pitch amplitude per unit wave amplitude, barge 20 × 8 × 2 m draught",
+   "unit": "rad/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.10415130517342439,
+     "reference": 0.27943457664462584,
+     "relDiff": -0.627278390440994
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.11634386676528352,
+     "reference": 0.1440409325228163,
+     "relDiff": -0.19228607641196382
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.09649411345937792,
+     "reference": 0.10039391275827578,
+     "relDiff": -0.03884497766600284
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.07637496660906642,
+     "reference": 0.07608044532553679,
+     "relDiff": 0.0038711824341908616
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.060510716330178446,
+     "reference": 0.0595475491075438,
+     "relDiff": 0.016174758442117455
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.0397313815477317,
+     "reference": 0.03901838761485026,
+     "relDiff": 0.018273280277990724
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.02780427887811398,
+     "reference": 0.02739251133575644,
+     "relDiff": 0.015032120907440953
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.02048537322672919,
+     "reference": 0.020241978697012768,
+     "relDiff": 0.012024245917833132
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.015703113665673705,
+     "reference": 0.01555105760338012,
+     "relDiff": 0.009777859883982054
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.010058997085507579,
+     "reference": 0.009989584946564056,
+     "relDiff": 0.00694845074293076
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 0.006439827866337888,
+     "reference": 0.006407260808829857,
+     "relDiff": 0.005082836250890622
+    }
+   ],
+   "verdict": "agrees within stated range",
+   "validity": "Within 5 % at wave periods 6, 7, 8, 10, 12, 14, 16, 20, 25 s (9 of 11); largest difference 63 % at T = 4 s.",
+   "note": "The closed-form pitch is within 4 % from T = 6 s (wavelength 56 m, 2.8 barge lengths) and far too low at 4 s, where the wavelength (25 m) is close to the barge length. Reference: Capytaine coefficients read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.667 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed."
+  },
+  {
+   "id": "barge-rao-heaveBeam",
+   "title": "Barge heave RAO in beam seas: closed-form box model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 90 }) — src/engine/hydro/floater.js",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "heave amplitude per unit wave amplitude, barge 20 × 8 × 2 m draught",
+   "unit": "m/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 1.3847361548324117,
+     "reference": 1.2192618410677025,
+     "relDiff": 0.1357167986326908
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 1.3057123061195084,
+     "reference": 1.322850217582841,
+     "relDiff": -0.012955292470411009
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 1.2257691379679885,
+     "reference": 1.1092570494213863,
+     "relDiff": 0.10503614884158508
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 1.172925909465679,
+     "reference": 1.0446184042768536,
+     "relDiff": 0.12282715359361049
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 1.1352458718158924,
+     "reference": 1.0215023006300978,
+     "relDiff": 0.11134930495568501
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 1.0872158853855165,
+     "reference": 1.006957555918938,
+     "relDiff": 0.07970378591909523
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 1.0600233315724412,
+     "reference": 1.002964816862627,
+     "relDiff": 0.05688984673290816
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 1.0436003157181808,
+     "reference": 1.0014919207615056,
+     "relDiff": 0.04204566615440808
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 1.0330464062705975,
+     "reference": 1.0008380322120005,
+     "relDiff": 0.03218140500457573
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 1.0208389065150212,
+     "reference": 1.0003277877483978,
+     "relDiff": 0.02050439767627681
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 1.0131880517818495,
+     "reference": 1.000130770464775,
+     "relDiff": 0.01305557403359012
+    }
+   ],
+   "verdict": "differs",
+   "validity": "Within 5 % at wave periods 5, 14, 16, 20, 25 s (5 of 11); largest difference 14 % at T = 4 s.",
+   "note": "In beam seas the closed-form expression tends to 1 + kT in long waves instead of 1 and peaks near its heave natural period 2 pi sqrt(2T/g) = 4.0 s; Capytaine gives a heave RAO of 1.0001 at 25 s. Reference: Capytaine coefficients read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.667 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed."
+  },
+  {
+   "id": "barge-rao-roll",
+   "title": "Barge roll RAO in beam seas: one-degree-of-freedom Froude–Krylov model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 90 }) — src/engine/hydro/floater.js",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "roll amplitude per unit wave amplitude, barge 20 × 8 × 2 m draught",
+   "unit": "rad/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.2292416173623478,
+     "reference": 0.07688520197208795,
+     "relDiff": 1.9816090935882644
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 1.061531950101909,
+     "reference": 0.4362101621027059,
+     "relDiff": 1.4335332881400655
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.2602376061221135,
+     "reference": 0.23986684362687127,
+     "relDiff": 0.08492529516472185
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.13374298625569248,
+     "reference": 0.11894409479936548,
+     "relDiff": 0.12441888335263489
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.08729000799420929,
+     "reference": 0.07857195124340871,
+     "relDiff": 0.11095634781670159
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.04835870710080425,
+     "reference": 0.0447422407870565,
+     "relDiff": 0.08082890463532523
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.03149369584914319,
+     "reference": 0.029660257128236014,
+     "relDiff": 0.06181466037129443
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.022344741155050918,
+     "reference": 0.021280785068562846,
+     "relDiff": 0.049996091923310025
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.01674738494671206,
+     "reference": 0.016068332042773203,
+     "relDiff": 0.04226032310828827
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.01046653114902384,
+     "reference": 0.010130811526128958,
+     "relDiff": 0.033138472868536516
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 0.006601857346506198,
+     "reference": 0.00642640989807298,
+     "relDiff": 0.027301004949252874
+    }
+   ],
+   "verdict": "differs",
+   "validity": "Within 5 % at wave periods 14, 16, 20, 25 s (4 of 11); largest difference 200 % at T = 4 s.",
+   "note": "boxBargeRAO was run with its defaults (kxx = 0.4 B including added inertia, 5 % of critical damping); the same external roll damping was added to the Capytaine solution, which also carries its own added inertia, radiation damping and sway–roll coupling. The roll natural periods differ (4.97 s in the simple model against about 5.2 s with the dry inertia plus the Capytaine added inertia), so the response at 4–5 s is two to three times too high; from 6 s upwards the simple model is 3–12 % high. Reference: Capytaine coefficients read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.667 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed."
+  },
+  {
+   "id": "spar-force-surge",
+   "title": "Spar surge excitation force: slender-member model against Capytaine",
+   "builtIn": "buildFloater + floaterRAO({ headingDeg: 0, viscous: false }) — src/engine/hydro/floater.js",
+   "reference": "Capytaine 3.0.0",
+   "quantity": "surge excitation force amplitude per unit wave amplitude, vertical cylinder D = 8 m, draught 40 m",
+   "unit": "N/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 981457.3584395817,
+     "reference": 686176.7997835523,
+     "relDiff": 0.4303272257954112
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 996896.908632113,
+     "reference": 948441.9219535557,
+     "relDiff": 0.051089039357045785
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 993225.4452820222,
+     "reference": 1027137.6282332704,
+     "relDiff": -0.033016201547964745
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 969699.2862534291,
+     "reference": 1013741.0178224912,
+     "relDiff": -0.04344475639711555
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 927191.6497542715,
+     "reference": 963263.5818349015,
+     "relDiff": -0.03744762364203293
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 807977.0430566096,
+     "reference": 825084.3954959359,
+     "relDiff": -0.020734063730587927
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 679981.3666418192,
+     "reference": 685742.4210646467,
+     "relDiff": -0.0084011929929654
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 566040.6341023602,
+     "reference": 566178.132229916,
+     "relDiff": -0.00024285312294609792
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 471738.8813525019,
+     "reference": 469309.7626739178,
+     "relDiff": 0.0051759389464733855
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 334869.2229148334,
+     "reference": 331068.55918528116,
+     "relDiff": 0.011479989941978186
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 229513.93293473253,
+     "reference": 226045.1588445013,
+     "relDiff": 0.015345491617528626
+    }
+   ],
+   "verdict": "agrees within stated range",
+   "validity": "Within 5 % at wave periods 6, 7, 8, 10, 12, 14, 16, 20, 25 s (9 of 11); largest difference 43 % at T = 4 s.",
+   "note": "Long-wave inertia force; diffraction reduces the true force in short waves. Slender-member model: one vertical cylinder D = 8 m, draught 40 m, Ca = 1, half-disc end, 2 % of critical damping in every mode, no drag. Reference: Capytaine coefficients solved with raoSolve using the mass and hydrostatic matrices of the same model and no added damping. The model states its own limit D/wavelength < 0.2, i.e. T > 5.06 s."
+  },
+  {
+   "id": "spar-force-heave",
+   "title": "Spar heave excitation force: slender-member model against Capytaine",
+   "builtIn": "buildFloater + floaterRAO({ headingDeg: 0, viscous: false }) — src/engine/hydro/floater.js",
+   "reference": "Capytaine 3.0.0",
+   "quantity": "heave excitation force amplitude per unit wave amplitude, vertical cylinder D = 8 m, draught 40 m",
+   "unit": "N/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 14521.525383107772,
+     "reference": 5.293716259106704,
+     "relDiff": 2742.162774945975
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 6590.6796158091165,
+     "reference": 464.72689242994755,
+     "relDiff": 13.181833939817865
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 7551.930476809561,
+     "reference": 3951.448556184617,
+     "relDiff": 0.911180259449321
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 17774.64363202575,
+     "reference": 14303.753593432133,
+     "relDiff": 0.24265588860446724
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 37305.27792126883,
+     "reference": 32985.59872871889,
+     "relDiff": 0.13095651917905057
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 94370.53371619008,
+     "reference": 88071.70726055762,
+     "relDiff": 0.07151929548722792
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 157430.93779878918,
+     "reference": 149968.74840067083,
+     "relDiff": 0.049758296163022284
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 214491.88589986565,
+     "reference": 206565.1215038806,
+     "relDiff": 0.03837416664669664
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 262199.010330821,
+     "reference": 254185.17014052437,
+     "relDiff": 0.031527567819421655
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 332053.007669971,
+     "reference": 324293.19581989676,
+     "relDiff": 0.023928383173305284
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 386232.41403251566,
+     "reference": 378925.7029409447,
+     "relDiff": 0.019282701159783054
+    }
+   ],
+   "verdict": "differs",
+   "validity": "Within 5 % at wave periods 12, 14, 16, 20, 25 s (5 of 11); largest difference 270000 % at T = 4 s.",
+   "note": "The heave force is the small difference between the bottom pressure and the added-mass force; the half-disc end added mass of the model (87466.66666666666 kg) is below the Capytaine heave added mass (134612.4678643129 kg at 10 s), and the cancellation period is therefore misplaced in short waves. Slender-member model: one vertical cylinder D = 8 m, draught 40 m, Ca = 1, half-disc end, 2 % of critical damping in every mode, no drag. Reference: Capytaine coefficients solved with raoSolve using the mass and hydrostatic matrices of the same model and no added damping. The model states its own limit D/wavelength < 0.2, i.e. T > 5.06 s."
+  },
+  {
+   "id": "spar-rao-surge",
+   "title": "Spar surge RAO: slender-member model against Capytaine",
+   "builtIn": "buildFloater + floaterRAO({ headingDeg: 0, viscous: false }) — src/engine/hydro/floater.js",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "surge amplitude per unit wave amplitude, vertical cylinder D = 8 m, draught 40 m",
+   "unit": "m/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.39217916109410056,
+     "reference": 0.32601708815044356,
+     "relDiff": 0.20294050633666758
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.5870850277520989,
+     "reference": 0.55356788149689,
+     "relDiff": 0.06054749087785952
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.7847317836611918,
+     "reference": 0.7552429733221293,
+     "relDiff": 0.039045461369006065
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.9748060940052737,
+     "reference": 0.9470459846307681,
+     "relDiff": 0.02931231410619277
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 1.1569069826553144,
+     "reference": 1.1363600583386293,
+     "relDiff": 0.018081350330743734
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 1.538103630125127,
+     "reference": 1.558952056360141,
+     "relDiff": -0.013373359462824709
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 2.1271695722978134,
+     "reference": 2.3135645760916197,
+     "relDiff": -0.08056615567164735
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 4.029990040266622,
+     "reference": 7.148100048935449,
+     "relDiff": -0.43621521625640935
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 2.9086731261750542,
+     "reference": 1.9433897425352356,
+     "relDiff": 0.4967008739999651
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.20905596690079933,
+     "reference": 0.24865541139431113,
+     "relDiff": -0.15925430406465618
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 0.6192116520157853,
+     "reference": 0.6323522579634914,
+     "relDiff": -0.020780515578493784
+    }
+   ],
+   "verdict": "differs",
+   "validity": "Within 5 % at wave periods 6, 7, 8, 10, 25 s (5 of 11); largest difference 50 % at T = 16 s.",
+   "note": "The pitch resonance near 14–16 s couples into surge; there the response is governed by damping, which the slender model assumes (2 %) and the potential solution derives from wave radiation only. Slender-member model: one vertical cylinder D = 8 m, draught 40 m, Ca = 1, half-disc end, 2 % of critical damping in every mode, no drag. Reference: Capytaine coefficients solved with raoSolve using the mass and hydrostatic matrices of the same model and no added damping. The model states its own limit D/wavelength < 0.2, i.e. T > 5.06 s."
+  },
+  {
+   "id": "spar-rao-heave",
+   "title": "Spar heave RAO: slender-member model against Capytaine",
+   "builtIn": "buildFloater + floaterRAO({ headingDeg: 0, viscous: false }) — src/engine/hydro/floater.js",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "heave amplitude per unit wave amplitude, vertical cylinder D = 8 m, draught 40 m",
+   "unit": "m/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.0030278207192030336,
+     "reference": 8.256967200732482e-7,
+     "relDiff": 3665.9889144460126
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.0022822840006930796,
+     "reference": 0.0001572233835228639,
+     "relDiff": 13.516186775494392
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.004079509098458878,
+     "reference": 0.002075911987365488,
+     "relDiff": 0.965164767720296
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.014495720530474331,
+     "reference": 0.011311757421590744,
+     "relDiff": 0.2814737790262687
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.04546071073495384,
+     "reference": 0.038830722817635104,
+     "relDiff": 0.17074078039844542
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.2744333431911506,
+     "reference": 0.24363983314160664,
+     "relDiff": 0.1263894727412917
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 1.8195862273847176,
+     "reference": 1.5508735702257725,
+     "relDiff": 0.17326535335812482
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 2.8633324847613846,
+     "reference": 3.288000975770249,
+     "relDiff": -0.12915704531060282
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 1.5006406000689274,
+     "reference": 1.528233443104186,
+     "relDiff": -0.018055384901937022
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 1.1312876781879027,
+     "reference": 1.125548459617679,
+     "relDiff": 0.005099041734882838
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 1.0447010410895599,
+     "reference": 1.034815369110202,
+     "relDiff": 0.009553078041214412
+    }
+   ],
+   "verdict": "differs",
+   "validity": "Within 5 % at wave periods 16, 20, 25 s (3 of 11); largest difference 370000 % at T = 4 s.",
+   "note": "Heave resonance lies between 12 and 14 s; near it the amplitude is set by the assumed damping. Slender-member model: one vertical cylinder D = 8 m, draught 40 m, Ca = 1, half-disc end, 2 % of critical damping in every mode, no drag. Reference: Capytaine coefficients solved with raoSolve using the mass and hydrostatic matrices of the same model and no added damping. The model states its own limit D/wavelength < 0.2, i.e. T > 5.06 s."
+  },
+  {
+   "id": "spar-rao-pitch",
+   "title": "Spar pitch RAO: slender-member model against Capytaine",
+   "builtIn": "buildFloater + floaterRAO({ headingDeg: 0, viscous: false }) — src/engine/hydro/floater.js",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "pitch amplitude per unit wave amplitude, vertical cylinder D = 8 m, draught 40 m",
+   "unit": "rad/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.013142037259243549,
+     "reference": 0.011066298299715352,
+     "relDiff": 0.18757301703873186
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.019288039500480195,
+     "reference": 0.01840802513997904,
+     "relDiff": 0.04780601687629796
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.025116430288731208,
+     "reference": 0.02447492996092695,
+     "relDiff": 0.02621050719362154
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.03035813233420562,
+     "reference": 0.029919009982331005,
+     "relDiff": 0.014677034839519919
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.03523194506756173,
+     "reference": 0.03523277876463669,
+     "relDiff": -0.000023662541082219037
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.04636607169543056,
+     "reference": 0.04845015076497528,
+     "relDiff": -0.04301491402275068
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.0681107914610775,
+     "reference": 0.0779825822861941,
+     "relDiff": -0.12658968882163177
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.15205898281800806,
+     "reference": 0.29426956870301296,
+     "relDiff": -0.48326636869654965
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.15438526508425449,
+     "reference": 0.12204524310623359,
+     "relDiff": 0.26498387937881945
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.028621399720588955,
+     "reference": 0.02598686490279913,
+     "relDiff": 0.10137947873450684
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 0.011713510769962429,
+     "reference": 0.011158579121913877,
+     "relDiff": 0.049731389810979125
+    }
+   ],
+   "verdict": "agrees within stated range",
+   "validity": "Within 5 % at wave periods 5, 6, 7, 8, 10, 25 s (6 of 11); largest difference 48 % at T = 14 s.",
+   "note": "Pitch resonance lies near 14–16 s; near it the amplitude is set by the assumed damping. Slender-member model: one vertical cylinder D = 8 m, draught 40 m, Ca = 1, half-disc end, 2 % of critical damping in every mode, no drag. Reference: Capytaine coefficients solved with raoSolve using the mass and hydrostatic matrices of the same model and no added damping. The model states its own limit D/wavelength < 0.2, i.e. T > 5.06 s."
+  },
+  {
+   "id": "nemoh-capytaine-barge",
+   "title": "NEMOH against Capytaine for the same exported barge, both read back by the application",
+   "builtIn": "readNemohResults on NEMOH v3 (master dcc8113, 2026-06-24) output — src/interop/nemoh.js",
+   "reference": "Capytaine 3.0.0 output read with readCapytaineCsv",
+   "quantity": "Added mass, radiation damping and complex excitation force (exp(+i omega t), unit amplitude) of the barge 20 × 8 × 2 m, 768 panels, 5 frequencies",
+   "unit": "kg, kg·m² / N·s/m, N·m·s / N/m, N·m/m",
+   "cases": [
+    {
+     "label": "omega = 0.25 rad/s, A11",
+     "builtIn": 64677.19,
+     "reference": 64697.014633433646,
+     "relDiff": -0.0003064226927002407
+    },
+    {
+     "label": "omega = 0.25 rad/s, B11",
+     "builtIn": 2.483602,
+     "reference": 2.4843125726490243,
+     "relDiff": -0.00028602385096281426
+    },
+    {
+     "label": "omega = 0.25 rad/s, A33",
+     "builtIn": 883457.4,
+     "reference": 883851.0763550536,
+     "relDiff": -0.0004454102796107359
+    },
+    {
+     "label": "omega = 0.25 rad/s, B33",
+     "builtIn": 18613.44,
+     "reference": 18621.463318766655,
+     "relDiff": -0.000430864031967371
+    },
+    {
+     "label": "omega = 0.25 rad/s, A55",
+     "builtIn": 13586640,
+     "reference": 13589701.942871151,
+     "relDiff": -0.00022531346780256043
+    },
+    {
+     "label": "omega = 0.25 rad/s, B55",
+     "builtIn": 417.7523,
+     "reference": 417.92701260896814,
+     "relDiff": -0.00041804574410608705
+    },
+    {
+     "label": "omega = 0.25 rad/s, heading 0, Re F1",
+     "builtIn": -2.417239680544659,
+     "reference": -2.6724032336428536,
+     "relDiff": null
+    },
+    {
+     "label": "omega = 0.25 rad/s, heading 0, Im F1",
+     "builtIn": 24251.649879532986,
+     "reference": 24252.847846781915,
+     "relDiff": -0.00004939491050687968
+    },
+    {
+     "label": "omega = 0.25 rad/s, heading 0, Re F3",
+     "builtIn": 1531962.9386298151,
+     "reference": 1531938.9443564615,
+     "relDiff": 0.000015662682538356915
+    },
+    {
+     "label": "omega = 0.25 rad/s, heading 0, Im F3",
+     "builtIn": 4651.404594482159,
+     "reference": 4654.512545579533,
+     "relDiff": null
+    },
+    {
+     "label": "omega = 0.25 rad/s, heading 0, Re F5",
+     "builtIn": -18.841801492897208,
+     "reference": -13.614811270713972,
+     "relDiff": null
+    },
+    {
+     "label": "omega = 0.25 rad/s, heading 0, Im F5",
+     "builtIn": 326699.3994566665,
+     "reference": 326701.90113237215,
+     "relDiff": -0.000007657365007633212
+    },
+    {
+     "label": "omega = 0.5 rad/s, A11",
+     "builtIn": 68775.81,
+     "reference": 68793.21694605966,
+     "relDiff": -0.0002530328836535486
+    },
+    {
+     "label": "omega = 0.5 rad/s, B11",
+     "builtIn": 295.7373,
+     "reference": 296.00895323568034,
+     "relDiff": -0.0009177196591889714
+    },
+    {
+     "label": "omega = 0.5 rad/s, A33",
+     "builtIn": 842435.9,
+     "reference": 842765.5737893905,
+     "relDiff": -0.0003911808925798215
+    },
+    {
+     "label": "omega = 0.5 rad/s, B33",
+     "builtIn": 109450.5,
+     "reference": 109478.04962528958,
+     "relDiff": -0.0002516451963099164
+    },
+    {
+     "label": "omega = 0.5 rad/s, A55",
+     "builtIn": 13921540,
+     "reference": 13924344.914270679,
+     "relDiff": -0.0002014395857002835
+    },
+    {
+     "label": "omega = 0.5 rad/s, B55",
+     "builtIn": 44556.4,
+     "reference": 44556.606036268815,
+     "relDiff": -0.000004624146386862704
+    },
+    {
+     "label": "omega = 0.5 rad/s, heading 0, Re F1",
+     "builtIn": 83.40255966697394,
+     "reference": 82.60777962379598,
+     "relDiff": null
+    },
+    {
+     "label": "omega = 0.5 rad/s, heading 0, Im F1",
+     "builtIn": 93361.73274712687,
+     "reference": 93365.28513284693,
+     "relDiff": -0.00003804825010715667
+    },
+    {
+     "label": "omega = 0.5 rad/s, heading 0, Re F3",
+     "builtIn": 1307843.2806215084,
+     "reference": 1307770.377476133,
+     "relDiff": 0.00005574613604272377
+    },
+    {
+     "label": "omega = 0.5 rad/s, heading 0, Im F3",
+     "builtIn": 54539.83620410373,
+     "reference": 54555.40069974314,
+     "relDiff": -0.00028529706389789474
+    },
+    {
+     "label": "omega = 0.5 rad/s, heading 0, Re F5",
+     "builtIn": 1090.073967895202,
+     "reference": 1110.8664884184,
+     "relDiff": null
+    },
+    {
+     "label": "omega = 0.5 rad/s, heading 0, Im F5",
+     "builtIn": 1192214.5016580466,
+     "reference": 1192214.0262527145,
+     "relDiff": 3.987583786956131e-7
+    },
+    {
+     "label": "omega = 0.75 rad/s, A11",
+     "builtIn": 76855.25,
+     "reference": 76874.81217913906,
+     "relDiff": -0.0002544679926303223
+    },
+    {
+     "label": "omega = 0.75 rad/s, B11",
+     "builtIn": 4167.61,
+     "reference": 4168.537751224447,
+     "relDiff": -0.000222560350850746
+    },
+    {
+     "label": "omega = 0.75 rad/s, A33",
+     "builtIn": 712956.6,
+     "reference": 713204.3315502178,
+     "relDiff": -0.0003473500359698752
+    },
+    {
+     "label": "omega = 0.75 rad/s, B33",
+     "builtIn": 227636.7,
+     "reference": 227639.66265548315,
+     "relDiff": -0.00001301467173415044
+    },
+    {
+     "label": "omega = 0.75 rad/s, A55",
+     "builtIn": 14471850,
+     "reference": 14473768.451121932,
+     "relDiff": -0.00013254676060422862
+    },
+    {
+     "label": "omega = 0.75 rad/s, B55",
+     "builtIn": 529461.9,
+     "reference": 529464.8251383564,
+     "relDiff": -0.000005524707624595363
+    },
+    {
+     "label": "omega = 0.75 rad/s, heading 0, Re F1",
+     "builtIn": 634.5779331827293,
+     "reference": 633.4172719542494,
+     "relDiff": null
+    },
+    {
+     "label": "omega = 0.75 rad/s, heading 0, Im F1",
+     "builtIn": 188450.8315833515,
+     "reference": 188457.7398490638,
+     "relDiff": -0.000036656842631273604
+    },
+    {
+     "label": "omega = 0.75 rad/s, heading 0, Re F3",
+     "builtIn": 997363.8819176806,
+     "reference": 997260.9779385746,
+     "relDiff": 0.00010318660950587158
+    },
+    {
+     "label": "omega = 0.75 rad/s, heading 0, Im F3",
+     "builtIn": 165726.11914570013,
+     "reference": 165722.3958268264,
+     "relDiff": 0.000022467203995896544
+    },
+    {
+     "label": "omega = 0.75 rad/s, heading 0, Re F5",
+     "builtIn": 7393.67757290162,
+     "reference": 7444.218848332868,
+     "relDiff": null
+    },
+    {
+     "label": "omega = 0.75 rad/s, heading 0, Im F5",
+     "builtIn": 2228797.7363663907,
+     "reference": 2228761.7288719635,
+     "relDiff": 0.000016155829472847284
+    },
+    {
+     "label": "omega = 1 rad/s, A11",
+     "builtIn": 82430.18,
+     "reference": 82448.61415040932,
+     "relDiff": -0.00022358350833772333
+    },
+    {
+     "label": "omega = 1 rad/s, B11",
+     "builtIn": 20073.38,
+     "reference": 20074.93653313224,
+     "relDiff": -0.00007753614212780295
+    },
+    {
+     "label": "omega = 1 rad/s, A33",
+     "builtIn": 579911.8,
+     "reference": 580120.4142941446,
+     "relDiff": -0.0003596051595570672
+    },
+    {
+     "label": "omega = 1 rad/s, B33",
+     "builtIn": 301194.1,
+     "reference": 301129.2436031614,
+     "relDiff": 0.00021537727808338333
+    },
+    {
+     "label": "omega = 1 rad/s, A55",
+     "builtIn": 14345480,
+     "reference": 14347228.70806853,
+     "relDiff": -0.00012188472799250168
+    },
+    {
+     "label": "omega = 1 rad/s, B55",
+     "builtIn": 2062480,
+     "reference": 2061916.4097985467,
+     "relDiff": 0.0002733331956499486
+    },
+    {
+     "label": "omega = 1 rad/s, heading 0, Re F1",
+     "builtIn": -6555.023934196431,
+     "reference": -6550.800412131775,
+     "relDiff": -0.0006447337422818643
+    },
+    {
+     "label": "omega = 1 rad/s, heading 0, Im F1",
+     "builtIn": 257360.73471853105,
+     "reference": 257364.19498608704,
+     "relDiff": -0.000013445023136082662
+    },
+    {
+     "label": "omega = 1 rad/s, heading 0, Re F3",
+     "builtIn": 667166.0265713725,
+     "reference": 667042.2043675161,
+     "relDiff": 0.00018562873989935076
+    },
+    {
+     "label": "omega = 1 rad/s, heading 0, Im F3",
+     "builtIn": 265836.1250880075,
+     "reference": 265746.05592661287,
+     "relDiff": 0.0003389294380326911
+    },
+    {
+     "label": "omega = 1 rad/s, heading 0, Re F5",
+     "builtIn": -69400.84058096138,
+     "reference": -69250.39811153969,
+     "relDiff": -0.0021724419429238998
+    },
+    {
+     "label": "omega = 1 rad/s, heading 0, Im F5",
+     "builtIn": 2823741.275004255,
+     "reference": 2823601.2373226564,
+     "relDiff": 0.00004959541728047475
+    },
+    {
+     "label": "omega = 1.25 rad/s, A11",
+     "builtIn": 76292.93,
+     "reference": 76309.5232410775,
+     "relDiff": -0.0002174465305606958
+    },
+    {
+     "label": "omega = 1.25 rad/s, B11",
+     "builtIn": 45117.41,
+     "reference": 45116.702970612634,
+     "relDiff": 0.000015671122684428774
+    },
+    {
+     "label": "omega = 1.25 rad/s, A33",
+     "builtIn": 484089,
+     "reference": 484319.75244006293,
+     "relDiff": -0.0004764464775602775
+    },
+    {
+     "label": "omega = 1.25 rad/s, B33",
+     "builtIn": 310719,
+     "reference": 310573.7608962559,
+     "relDiff": 0.000467647696073762
+    },
+    {
+     "label": "omega = 1.25 rad/s, A55",
+     "builtIn": 13050990,
+     "reference": 13053906.443322014,
+     "relDiff": -0.00022341536877690956
+    },
+    {
+     "label": "omega = 1.25 rad/s, B55",
+     "builtIn": 3667858,
+     "reference": 3666501.462882011,
+     "relDiff": 0.00036998133826530977
+    },
+    {
+     "label": "omega = 1.25 rad/s, heading 0, Re F1",
+     "builtIn": -48755.63929965016,
+     "reference": -48736.158796244374,
+     "relDiff": -0.0003997135573862146
+    },
+    {
+     "label": "omega = 1.25 rad/s, heading 0, Im F1",
+     "builtIn": 236556.2420293373,
+     "reference": 236525.64938624436,
+     "relDiff": 0.0001293417571088955
+    },
+    {
+     "label": "omega = 1.25 rad/s, heading 0, Re F3",
+     "builtIn": 352113.607504842,
+     "reference": 351922.86892283143,
+     "relDiff": 0.0005419897337003698
+    },
+    {
+     "label": "omega = 1.25 rad/s, heading 0, Im F3",
+     "builtIn": 263850.7900535568,
+     "reference": 263623.78848377906,
+     "relDiff": 0.0008610815096896867
+    },
+    {
+     "label": "omega = 1.25 rad/s, heading 0, Re F5",
+     "builtIn": -460536.30901345995,
+     "reference": -460150.1035053866,
+     "relDiff": -0.0008393033167465216
+    },
+    {
+     "label": "omega = 1.25 rad/s, heading 0, Im F5",
+     "builtIn": 2597101.2729588076,
+     "reference": 2596726.9500038857,
+     "relDiff": 0.0001441518350327219
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "Added mass within 0.048 %, damping within 0.092 % (largest: omega = 0.5 rad/s, B11), real and imaginary parts of the excitation within 0.22 % (largest: omega = 1 rad/s, heading 0, Re F5) for 0.25–1.25 rad/s.",
+   "note": "This is a solver-to-solver check of the hand-off itself: the same mesh went through the NEMOH writer and the Capytaine script, and two independent readers returned the same signs, units and phase convention. Parts of the excitation smaller than 2 % of the modulus are listed without a relative difference."
+  },
+  {
+   "id": "frame-static",
+   "title": "Frame static deflection: beam elements against CalculiX",
+   "builtIn": "analyzeFrame — src/engine/structural/frame3d.js",
+   "reference": "CalculiX 2.23, *STATIC, beams expanded to solid elements",
+   "quantity": "Nodal displacement under a point load; tube 500 × 20 mm or rectangle 200 × 400 mm, E = 210 GPa, 10 members per cantilever, 5 per portal member",
+   "unit": "m",
+   "cases": [
+    {
+     "label": "cantilever tube 10 m, tip load 10 kN: tip deflection uz (B32R, PIPE)",
+     "builtIn": -0.018319995377738957,
+     "reference": -0.01807179,
+     "relDiff": -0.01373441024596656
+    },
+    {
+     "label": "cantilever rectangle 0.2 × 0.4 m, tip load 10 kN: tip deflection uz (B31)",
+     "builtIn": -0.014899523809524324,
+     "reference": -0.01485469,
+     "relDiff": -0.0030181585428119767
+    },
+    {
+     "label": "cantilever rectangle 0.2 × 0.4 m, tip load 10 kN: tip deflection uz (B32)",
+     "builtIn": -0.014899523809524324,
+     "reference": -0.01474969,
+     "relDiff": -0.010158437873902745
+    },
+    {
+     "label": "portal frame 6 × 5 m, 100 kN at the eaves: sway ux (B32R, PIPE)",
+     "builtIn": 0.004566209253011601,
+     "reference": 0.004247098,
+     "relDiff": 0.07513630554595178
+    }
+   ],
+   "verdict": "agrees within stated range",
+   "validity": "All four deflections within 7.5 % (largest: portal frame 6 × 5 m, 100 kN at the eaves: sway ux (B32R, PIPE)).",
+   "note": "CalculiX has no beam element of its own: it expands each beam into 20-node bricks, which makes the tube slightly stiffer than Timoshenko beam theory. The built-in cantilever results equal P L^3 / (3 E I) + P L / (kappa G A). In the portal frame the expanded members overlap at the corners and form stiff joints of the size of the tube (0.5 m on members of 5 and 6 m), which the centre-line beam model does not have: the built-in sway is the larger."
+  },
+  {
+   "id": "frame-modal-cantilever",
+   "title": "Natural frequencies of the cantilever tube 10 m: frame modal analysis against CalculiX",
+   "builtIn": "modalAnalysis (consistent mass) — src/engine/structural/framemodal.js",
+   "reference": "CalculiX 2.23, *FREQUENCY (B32R, PIPE)",
+   "quantity": "First six natural frequencies, tube 500 × 20 mm, steel 7850 kg/m³, fixed bases",
+   "unit": "Hz",
+   "cases": [
+    {
+     "label": "cantilever tube 10 m, mode 1",
+     "builtIn": 4.900067569497551,
+     "reference": 4.942547,
+     "relDiff": -0.008594643713544648
+    },
+    {
+     "label": "cantilever tube 10 m, mode 2",
+     "builtIn": 4.900067569517477,
+     "reference": 4.942547,
+     "relDiff": -0.008594643709513244
+    },
+    {
+     "label": "cantilever tube 10 m, mode 3",
+     "builtIn": 30.13263604955086,
+     "reference": 30.52148,
+     "relDiff": -0.012740009673486982
+    },
+    {
+     "label": "cantilever tube 10 m, mode 4",
+     "builtIn": 30.132636049556634,
+     "reference": 30.52148,
+     "relDiff": -0.01274000967329783
+    },
+    {
+     "label": "cantilever tube 10 m, mode 5",
+     "builtIn": 80.27393490511353,
+     "reference": 80.19153,
+     "relDiff": 0.0010276011084154985
+    },
+    {
+     "label": "cantilever tube 10 m, mode 6",
+     "builtIn": 82.0301709728308,
+     "reference": 83.59951,
+     "relDiff": -0.018772107960551353
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "All six frequencies within 1.9 % (largest: cantilever tube 10 m, mode 6).",
+   "note": "Modes 1–4 are the two bending pairs, mode 5 is torsion, mode 6 the third bending mode; the built-in model is the softer of the two in bending, consistent with the static comparison."
+  },
+  {
+   "id": "frame-modal-portal",
+   "title": "Natural frequencies of the portal frame 6 × 5 m: frame modal analysis against CalculiX",
+   "builtIn": "modalAnalysis (consistent mass) — src/engine/structural/framemodal.js",
+   "reference": "CalculiX 2.23, *FREQUENCY (B32R, PIPE)",
+   "quantity": "First six natural frequencies, tube 500 × 20 mm, steel 7850 kg/m³, fixed bases",
+   "unit": "Hz",
+   "cases": [
+    {
+     "label": "portal frame 6 × 5 m, mode 1",
+     "builtIn": 10.293626590536443,
+     "reference": 10.45892,
+     "relDiff": -0.015804060979867737
+    },
+    {
+     "label": "portal frame 6 × 5 m, mode 2",
+     "builtIn": 16.071402198006687,
+     "reference": 16.64872,
+     "relDiff": -0.03467640767538366
+    },
+    {
+     "label": "portal frame 6 × 5 m, mode 3",
+     "builtIn": 20.93063562924576,
+     "reference": 21.25275,
+     "relDiff": -0.015156361918068904
+    },
+    {
+     "label": "portal frame 6 × 5 m, mode 4",
+     "builtIn": 51.43789128347353,
+     "reference": 52.84907,
+     "relDiff": -0.026702053915545997
+    },
+    {
+     "label": "portal frame 6 × 5 m, mode 5",
+     "builtIn": 60.18623388027834,
+     "reference": 61.07995,
+     "relDiff": -0.014631906537606197
+    },
+    {
+     "label": "portal frame 6 × 5 m, mode 6",
+     "builtIn": 98.35870382096344,
+     "reference": 101.9418,
+     "relDiff": -0.03514844920372761
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "All six frequencies within 3.5 % (largest: portal frame 6 × 5 m, mode 6).",
+   "note": "In-plane sway, out-of-plane and beam modes in ascending order; the modes were matched by order."
+  },
+  {
+   "id": "frame-buckling-cantilever",
+   "title": "Elastic buckling factors of the cantilever tube 10 m: frame buckling analysis against CalculiX",
+   "builtIn": "bucklingAnalysis — src/engine/structural/framebuckling.js",
+   "reference": "CalculiX 2.23, *BUCKLE (B32R, PIPE)",
+   "quantity": "Load factors on 1 MN axial compression at the tip",
+   "unit": "-",
+   "cases": [
+    {
+     "label": "cantilever tube 10 m, mode 1",
+     "builtIn": 4.49282117532628,
+     "reference": 4.531915,
+     "relDiff": -0.00862633669733872
+    },
+    {
+     "label": "cantilever tube 10 m, mode 2",
+     "builtIn": 4.492821175326282,
+     "reference": 4.531915,
+     "relDiff": -0.008626336697338328
+    },
+    {
+     "label": "cantilever tube 10 m, mode 3",
+     "builtIn": 39.35224305760409,
+     "reference": 39.94306,
+     "relDiff": -0.014791479230582504
+    },
+    {
+     "label": "cantilever tube 10 m, mode 4",
+     "builtIn": 39.352243057608526,
+     "reference": 39.94306,
+     "relDiff": -0.014791479230471503
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "All four factors within 1.5 % (largest: cantilever tube 10 m, mode 3).",
+   "note": "Euler: pi^2 E I / (4 L^2) / 1 MN = 4.508 for the first pair. The built-in factors are lower (it includes shear flexibility; the expanded solid tube of CalculiX is stiffer in bending)."
+  },
+  {
+   "id": "frame-buckling-portal",
+   "title": "Elastic buckling factors of the portal frame 6 × 5 m: frame buckling analysis against CalculiX",
+   "builtIn": "bucklingAnalysis — src/engine/structural/framebuckling.js",
+   "reference": "CalculiX 2.23, *BUCKLE (B32R, PIPE)",
+   "quantity": "Load factors on 1 MN on each column top",
+   "unit": "-",
+   "cases": [
+    {
+     "label": "portal frame 6 × 5 m, mode 1",
+     "builtIn": 17.78702481338147,
+     "reference": 18.26507,
+     "relDiff": -0.02617264465006322
+    },
+    {
+     "label": "portal frame 6 × 5 m, mode 2",
+     "builtIn": 43.102008601063986,
+     "reference": 43.81909,
+     "relDiff": -0.016364589016705205
+    },
+    {
+     "label": "portal frame 6 × 5 m, mode 3",
+     "builtIn": 48.71237313660016,
+     "reference": 51.59644,
+     "relDiff": -0.055896625104364515
+    },
+    {
+     "label": "portal frame 6 × 5 m, mode 4",
+     "builtIn": 144.6121700391524,
+     "reference": 152.1445,
+     "relDiff": -0.0495077374525375
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "All four factors within 5.6 % (largest: portal frame 6 × 5 m, mode 3).",
+   "note": "Sway buckling first; the modes were matched by order."
+  },
+  {
+   "id": "plate-bending",
+   "title": "Simply supported plate under uniform pressure: Navier series against CalculiX shells",
+   "builtIn": "navierPlate — src/engine/structural/plates.js",
+   "reference": "CalculiX 2.23, *STATIC, 12 × 10 cells of two triangles",
+   "quantity": "Centre deflection of a 2 × 1.5 m plate, t = 20 mm, 10 kPa",
+   "unit": "m",
+   "cases": [
+    {
+     "label": "centre deflection, S6 shells (default of the writer)",
+     "builtIn": -0.002181309492886831,
+     "reference": -0.002167075,
+     "relDiff": -0.006568528032869589
+    },
+    {
+     "label": "centre deflection, S3 shells (elementOrder 1)",
+     "builtIn": -0.002181309492886831,
+     "reference": -0.0002529606,
+     "relDiff": -7.623119540698556
+    }
+   ],
+   "verdict": "agrees within stated range",
+   "validity": "Within 0.66 % of CalculiX S6 shells; CalculiX S3 shells give 0.116 of the plate-theory deflection and are not a usable reference.",
+   "note": "The S3 result is a property of CalculiX (three-node shells are expanded into six-node wedges that lock in bending), not of the plate theory; the writer therefore uses S6 unless elementOrder 1 is requested. Thin-plate theory has no shear deformation."
+  }
+ ]
+}

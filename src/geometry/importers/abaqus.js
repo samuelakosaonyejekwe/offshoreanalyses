@@ -21,7 +21,7 @@ export function abaqusType(name) {
   if (/^(B2[1-3]|B3[13]|PIPE[23]1|T[23]D2|ELBOW31|FRAME[23]D|ITT[23]1)/.test(t)) return ['line2', 2];
   if (/^(B[23]2|PIPE[23]2|T[23]D3|ELBOW32)/.test(t)) return ['line3', 3, [0, 2, 1]];
   if (/^(S3|STRI3|M3D3|R3D3|SFM3D3|DS3|CPS3|CPE3|CPEG3|CAX3|DC2D3|AC2D3|CGAX3|SC6)/.test(t) && !/^SC6/.test(t)) return ['tri3', 3];
-  if (/^(STRI65|M3D6|DS6|CPS6|CPE6|CAX6|DC2D6|AC2D6|SFM3D6)/.test(t)) return ['tri6', 6];
+  if (/^(S6|STRI65|M3D6|DS6|CPS6|CPE6|CAX6|DC2D6|AC2D6|SFM3D6)/.test(t)) return ['tri6', 6];
   if (/^(S4|M3D4|R3D4|SFM3D4|DS4|CPS4|CPE4|CPEG4|CAX4|DC2D4|AC2D4|CGAX4)/.test(t)) return ['quad4', 4];
   if (/^(S8|M3D8|DS8|CPS8|CPE8|CAX8|DC2D8|AC2D8|SFM3D8)/.test(t)) return ['quad8', 8];
   if (/^(S9|M3D9)/.test(t)) return ['quad9', 9];

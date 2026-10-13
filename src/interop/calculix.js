@@ -5,16 +5,19 @@
 //   readCalculixFrd     ASCII results file (.frd): nodal DISP, STRESS … blocks → arrays in the app's node order
 //   readCalculixDat     printed tables (.dat): displacements, stresses at integration points, reaction forces
 //
-// Target: CalculiX CrunchiX 2.20 / 2.21 (Dhondt, "CalculiX CrunchiX User's Manual version 2.21", 2023). The deck
-// keeps to keywords shared with Abaqus/Standard, so the app's own Abaqus importer reads the mesh back.
+// Target: CalculiX CrunchiX 2.20 – 2.23 (Dhondt, "CalculiX CrunchiX User's Manual version 2.21", 2023); beam and
+// shell decks were run with ccx 2.23 and their .dat / .frd files read back (tests/interop/fixtures). The deck keeps
+// to keywords shared with Abaqus/Standard, so the app's own Abaqus importer reads beam, S3 and solid meshes back.
 //
 // Numbering: node id = app node index + 1; element id = member / triangle / cell index + 1 (cells counted
 // through the blocks of a volume model in order; a 5-node pyramid, which CalculiX does not have, becomes two
 // tetrahedra and shifts the following ids). Units are SI throughout (m, N, Pa, kg/m³).
 //
-// Element choice: frame → B31 (2-node) or B32 (3-node, mid-side nodes generated) beams; surface → S3 shells;
-// volume → C3D4, C3D10, C3D8, C3D20, C3D6. CalculiX expands beams and shells into solid elements internally;
-// the output requests use OUTPUT=2D so that results come back on the original nodes.
+// Element choice: frame → B31 (2-node) or B32 (3-node, mid-side nodes generated) beams, B32R when a PIPE or BOX
+// section is present; surface → S6 shells (mid-side nodes generated) or S3; volume → C3D4, C3D10, C3D8, C3D20,
+// C3D6. CalculiX expands beams and shells into solid elements internally; the output requests use OUTPUT=2D so
+// that results come back on the original nodes (for shells these are mid-surface values: bending stresses
+// cancel there, so the nodal stress of a bent shell in the .frd file is not its surface stress).
 
 import { worldCoords } from '../geometry/exporters.js';
 
@@ -68,13 +71,21 @@ function sectionCard(sec, mode, notes, label) {
   return { kw: '*BEAM SECTION', section: 'RECT', data: `${num(r.a)}, ${num(r.b)}` };
 }
 
-/** Direction of the local 1-axis of a beam: the member's own `orient`, else (0, 0, -1), else (0, 1, 0) for vertical members. */
+/**
+ * Direction of the local 1-axis of a beam: the member's own `orient` (imported decks), otherwise the local y-axis
+ * of the frame engine (frame3d.js, "vertical web" convention: local z is the upward normal to the member, local
+ * y = z × x is horizontal; (0, 1, 0) for vertical members). With the 1-axis there, the first dimension of a RECT
+ * or BOX section is its horizontal width b, the second its depth h, and Iy is the second moment for bending in
+ * the vertical plane — as in the application's own frame analysis.
+ */
 function beamOrient(m, nodes) {
   if (m.orient && m.orient.length >= 3) return m.orient.slice(0, 3);
   const dx = nodes[3 * m.b] - nodes[3 * m.a]; const dy = nodes[3 * m.b + 1] - nodes[3 * m.a + 1]; const dz = nodes[3 * m.b + 2] - nodes[3 * m.a + 2];
   const l = Math.hypot(dx, dy, dz);
   if (!(l > 0)) throw new RangeError('calculix: a member has zero length');
-  return Math.abs(dz) / l > 0.99 ? [0, 1, 0] : [0, 0, -1];
+  if (Math.abs(dz) > 0.999999 * l) return [0, 1, 0];
+  const h = Math.hypot(dx, dy);
+  return [-dy / h, dx / h, 0];
 }
 
 /**
@@ -103,7 +114,8 @@ function beamOrient(m, nodes) {
  *   to every listed node, or divided equally among them when `share` is true;
  *   `{ type: 'gravity', g?: 9.80665 (m/s²), direction?: [0, 0, -1] }`;
  *   `{ type: 'pressure', p (Pa), elements?: number[] (0-based; default all), face?: 1…6 (volume models) }` —
- *   on shells a positive pressure acts against the element normal;
+ *   on shells a positive pressure acts against the element normal (written with the opposite sign, because
+ *   CalculiX applies a positive shell pressure along the normal);
  *   `{ type: 'line', members: number[], q: [qx, qy, qz] (N/m) }` — frame only, lumped to the member end nodes
  *   (q L / 2 each; the fixed-end moments of a consistent load vector are not applied)
  * @param {'static'|'static-nlgeom'|'buckle'|'frequency'|'dynamic'} [o.analysis='static']
@@ -111,14 +123,16 @@ function beamOrient(m, nodes) {
  *   maxIncrement?:number, timeStep?:number, endTime?:number, nlgeom?:boolean}} [o.steps] a number sets the
  *   mode count (buckle, frequency) or the increment limit (other analyses); time values in s (dynamic) or as
  *   fractions of the step (static)
- * @param {1|2} [o.elementOrder=1] frame: 1 → B31, 2 → B32 (mid-side nodes are generated)
+ * @param {1|2} [o.elementOrder] frame (default 1): 1 → B31, 2 → B32, and B32R whenever a PIPE or BOX section is
+ *   present (CalculiX has these sections for B32R only); surface (default 2): 1 → S3, 2 → S6; mid-side nodes are
+ *   generated for the quadratic elements
  * @param {number} [o.thickness] shell thickness, m (surface models; a group's own `thickness` wins)
  * @param {'rect-equivalent'|'general'} [o.genericSection='rect-equivalent'] how { A, Iy, Iz, J } sections are written
  * @param {string} [o.name] job name (file name without extension)
  * @returns {{files:{path:string, text:string}[], notes:string[], counts:{nodes:number, elements:number,
  *   appNodes:number}}} the deck `<name>.inp`; counts.nodes includes generated mid-side nodes
  */
-export function writeCalculixCase(model, { material, supports, loads = [], analysis = 'static', steps = {}, elementOrder = 1, thickness, genericSection = 'rect-equivalent', name } = {}) {
+export function writeCalculixCase(model, { material, supports, loads = [], analysis = 'static', steps = {}, elementOrder, thickness, genericSection = 'rect-equivalent', name } = {}) {
   if (!model || !['frame', 'surface', 'volume'].includes(model.kind)) throw new RangeError("model must be a 'frame', 'surface' or 'volume' model");
   if (!ANALYSES.includes(analysis)) throw new RangeError(`analysis must be one of ${ANALYSES.join(', ')}`);
   if (!material || !(material.E > 0)) throw new RangeError('material.E must be > 0');
@@ -126,7 +140,8 @@ export function writeCalculixCase(model, { material, supports, loads = [], analy
   const needsMass = analysis === 'frequency' || analysis === 'dynamic' || loads.some((l) => l && l.type === 'gravity');
   if (needsMass && !(material.rho > 0)) throw new RangeError('material.rho must be > 0 for frequency, dynamic and gravity analyses');
   if (material.fy !== undefined && !(material.fy > 0)) throw new RangeError('material.fy must be > 0');
-  if (![1, 2].includes(elementOrder)) throw new RangeError('elementOrder must be 1 or 2');
+  if (![undefined, 1, 2].includes(elementOrder)) throw new RangeError('elementOrder must be 1 or 2');
+  const surfaceOrder = elementOrder === undefined ? 2 : elementOrder;
   if (!['rect-equivalent', 'general'].includes(genericSection)) throw new RangeError("genericSection must be 'rect-equivalent' or 'general'");
   if (!Array.isArray(supports)) throw new RangeError('supports must be a list');
   if (supports.length === 0 && analysis !== 'frequency') throw new RangeError('supports must not be empty (the model would be free to move as a rigid body)');
@@ -143,6 +158,8 @@ export function writeCalculixCase(model, { material, supports, loads = [], analy
   const rotational = model.kind !== 'volume';
   // element id(s) of each app element, for load sets
   const elemIds = [];
+  // generated mid-side nodes that a support on both end nodes must hold as well: [end, end, id]
+  const midSides = [];
 
   if (model.kind === 'frame') {
     const mem = model.members || [];
@@ -156,26 +173,58 @@ export function writeCalculixCase(model, { material, supports, loads = [], analy
       groups.get(key).ids.push(i + 1);
       elemIds.push([i + 1]);
     });
-    if (elementOrder === 2) {
-      for (const m of mem) L.push(`${++nNodes}, ${num((X[3 * m.a] + X[3 * m.b]) / 2)}, ${num((X[3 * m.a + 1] + X[3 * m.b + 1]) / 2)}, ${num((X[3 * m.a + 2] + X[3 * m.b + 2]) / 2)}`);
-      notes.push(`${mem.length} mid-side nodes (ids ${nApp + 1}…${nNodes}) were generated for the B32 elements; results on them are ignored by the readers.`);
+    // CalculiX accepts SECTION=PIPE and SECTION=BOX on B32R elements only ("*BEAM SECTION of type PIPE can only
+    // be used for B32R elements"), so a model holding such a section is written with B32R throughout
+    const cards = Array.from(groups.values(), (grp) => sectionCard(grp.section, genericSection, notes, grp.label));
+    const reduced = cards.some((c) => c.section === 'PIPE' || c.section === 'BOX');
+    const quadratic = elementOrder === 2 || reduced;
+    const type = reduced ? 'B32R' : quadratic ? 'B32' : 'B31';
+    if (quadratic) {
+      for (const m of mem) { L.push(`${++nNodes}, ${num((X[3 * m.a] + X[3 * m.b]) / 2)}, ${num((X[3 * m.a + 1] + X[3 * m.b + 1]) / 2)}, ${num((X[3 * m.a + 2] + X[3 * m.b + 2]) / 2)}`); midSides.push([m.a, m.b, nNodes]); }
+      notes.push(`${mem.length} mid-side nodes (ids ${nApp + 1}…${nNodes}) were generated for the ${type} elements; results on them are ignored by the readers.`);
     }
-    L.push(`*ELEMENT, TYPE=${elementOrder === 2 ? 'B32' : 'B31'}, ELSET=EALL`);
-    mem.forEach((m, i) => L.push(elementOrder === 2 ? `${i + 1}, ${m.a + 1}, ${nApp + 1 + i}, ${m.b + 1}` : `${i + 1}, ${m.a + 1}, ${m.b + 1}`));
+    if (reduced && elementOrder !== 2) notes.push('Tubular (PIPE) and BOX sections exist in CalculiX for the 3-node reduced-integration beam B32R only: the members are written as B32R instead of B31.');
+    L.push(`*ELEMENT, TYPE=${type}, ELSET=EALL`);
+    mem.forEach((m, i) => L.push(quadratic ? `${i + 1}, ${m.a + 1}, ${nApp + 1 + i}, ${m.b + 1}` : `${i + 1}, ${m.a + 1}, ${m.b + 1}`));
     nElem = mem.length;
     let g = 0;
     for (const grp of groups.values()) {
       const set = `BEAM${++g}`;
       L.push(`*ELSET, ELSET=${set}`, ...idLines(grp.ids));
-      const card = sectionCard(grp.section, genericSection, notes, grp.label);
+      const card = cards[g - 1];
       sections.push(`${card.kw}, ELSET=${set}, MATERIAL=${mat}, SECTION=${card.section}`, card.data, grp.orient.map(num).join(', '));
     }
-    notes.push('Beam local 1-axis: the member\'s own orientation when the model carries one, otherwise (0, 0, -1), or (0, 1, 0) for members within 8° of vertical.');
+    notes.push('Beam local 1-axis: the member\'s own orientation when the model carries one, otherwise the horizontal normal to the member (local y of the frame analysis; (0, 1, 0) for vertical members), so that the depth h of a section and Iy act in the vertical plane.');
   } else if (model.kind === 'surface') {
     const idx = model.indices;
     if (!idx || idx.length < 3) throw new RangeError('model.indices is empty');
-    L.push('*ELEMENT, TYPE=S3, ELSET=EALL');
-    for (let f = 0; f < idx.length / 3; f++) { L.push(`${f + 1}, ${idx[3 * f] + 1}, ${idx[3 * f + 1] + 1}, ${idx[3 * f + 2] + 1}`); elemIds.push([f + 1]); }
+    if (surfaceOrder === 2) {
+      // six-node triangles: one mid-side node per edge, shared by the neighbouring elements
+      const mid = new Map();
+      const midNode = (p, q) => {
+        const key = p < q ? `${p},${q}` : `${q},${p}`;
+        let e = mid.get(key);
+        if (!e) { e = { p, q, id: ++nNodes, used: 0 }; mid.set(key, e); L.push(`${e.id}, ${num((X[3 * p] + X[3 * q]) / 2)}, ${num((X[3 * p + 1] + X[3 * q + 1]) / 2)}, ${num((X[3 * p + 2] + X[3 * q + 2]) / 2)}`); }
+        e.used++;
+        return e.id;
+      };
+      const rows = [];
+      for (let f = 0; f < idx.length / 3; f++) {
+        const a = idx[3 * f]; const b = idx[3 * f + 1]; const c = idx[3 * f + 2];
+        rows.push(`${f + 1}, ${a + 1}, ${b + 1}, ${c + 1}, ${midNode(a, b)}, ${midNode(b, c)}, ${midNode(c, a)}`); elemIds.push([f + 1]);
+      }
+      // an interior edge joining two nodes of the free boundary (the diagonal of a corner cell) is not part of a
+      // supported line even when both of its ends are supported
+      const onBoundary = new Set();
+      for (const e of mid.values()) if (e.used === 1) { onBoundary.add(e.p); onBoundary.add(e.q); }
+      for (const e of mid.values()) if (e.used === 1 || !(onBoundary.has(e.p) && onBoundary.has(e.q))) midSides.push([e.p, e.q, e.id]);
+      L.push('*ELEMENT, TYPE=S6, ELSET=EALL', ...rows);
+      notes.push(`${mid.size} mid-side nodes (ids ${nApp + 1}…${nNodes}) were generated for the S6 shell elements; results on them are ignored by the readers.`);
+    } else {
+      L.push('*ELEMENT, TYPE=S3, ELSET=EALL');
+      for (let f = 0; f < idx.length / 3; f++) { L.push(`${f + 1}, ${idx[3 * f] + 1}, ${idx[3 * f + 1] + 1}, ${idx[3 * f + 2] + 1}`); elemIds.push([f + 1]); }
+      notes.push('S3 shells are expanded by CalculiX into 6-node wedges, which are far too stiff in bending (a simply supported 2 × 1.5 m plate of 12 × 10 cells deflected 0.12 of the plate-theory value in CalculiX 2.23, against 0.99 with S6): use elementOrder 2 (S6) unless the membrane response is all that matters.');
+    }
     nElem = idx.length / 3;
     const groups = model.groups && model.groups.length ? model.groups : [{ name: 'all', start: 0, count: idx.length }];
     groups.forEach((grp, k) => {
@@ -219,7 +268,10 @@ export function writeCalculixCase(model, { material, supports, loads = [], analy
   supports.forEach((s, k) => {
     const nodes = resolveNodes(s.nodes, model, nApp, `supports[${k}]`);
     const set = `SUP${k + 1}`;
-    L.push(`*NSET, NSET=${set}`, ...idLines(nodes.map((i) => i + 1)));
+    // a quadratic edge whose two end nodes are held is held at its generated mid-side node too
+    const held = new Set(nodes);
+    const mids = midSides.filter((e) => held.has(e[0]) && held.has(e[1])).map((e) => e[2]);
+    L.push(`*NSET, NSET=${set}`, ...idLines([...nodes.map((i) => i + 1), ...mids]));
     let dofs = s.dofs === undefined || s.dofs === 'fixed' ? (rotational ? [1, 2, 3, 4, 5, 6] : [1, 2, 3]) : s.dofs === 'pinned' ? [1, 2, 3] : s.dofs;
     if (!Array.isArray(dofs) || !dofs.length || dofs.some((d) => !Number.isInteger(d) || d < 1 || d > 6)) throw new RangeError(`supports[${k}].dofs must be 'fixed', 'pinned' or a list of degrees of freedom 1…6`);
     if (!rotational && dofs.some((d) => d > 3)) { dofs = dofs.filter((d) => d <= 3); notes.push(`supports[${k}]: rotational degrees of freedom do not exist on solid elements and were dropped.`); }
@@ -264,7 +316,7 @@ export function writeCalculixCase(model, { material, supports, loads = [], analy
       if (model.kind === 'volume') {
         if (!Number.isInteger(ld.face) || ld.face < 1 || ld.face > 6) throw new RangeError(`loads[${k}].face must be the element face number 1…6 for a volume model`);
         dload.push(`${set}, P${ld.face}, ${num(ld.p)}`);
-      } else dload.push(`${set}, P, ${num(ld.p)}`);
+      } else dload.push(`${set}, P, ${num(-ld.p)}`); // CalculiX applies a positive shell pressure along the element normal (run in 2.23)
     } else if (ld.type === 'line') {
       if (model.kind !== 'frame') throw new RangeError(`loads[${k}]: line loads apply to frame models`);
       const q = ld.q || [];
@@ -469,10 +521,12 @@ export function readCalculixFrd(text, { nodeCount, positions, step = 'last', sca
  * @returns {{tables:{kind:string, set:string, time:number, rows:number[][]}[], nodeCount:number,
  *   displacement:Float64Array|null, reactions:{node:number, F:number[]}[], totalForce:number[]|null,
  *   elementStress:{element:number[], vonMises:number[]}|null, nodeValues:number[]|null, valueLabel:string|null,
- *   valueUnit:string|null, deformed:number[][]|null, time:number|null}} tables in file order; the summary fields
+ *   valueUnit:string|null, deformed:number[][]|null, time:number|null, eigenvalues:number[]|null,
+ *   frequencies:number[]|null, bucklingFactors:number[]|null}} tables in file order; the summary fields
  *   come from the last table of each kind: displacement 3 per node (m, NaN where not printed), reactions (N, node
  *   as 0-based app index), total reaction (N), mean von Mises stress per element over its integration points
- *   (Pa, element as 0-based index), nodeValues = displacement magnitude (m)
+ *   (Pa, element as 0-based index), nodeValues = displacement magnitude (m); from a *FREQUENCY step the
+ *   eigenvalues (rad²/s²) and natural frequencies (Hz), from a *BUCKLE step the buckling factors (-), in mode order
  */
 export function readCalculixDat(text, { nodeCount, positions, scale = 1 } = {}) {
   const tables = [];
@@ -483,15 +537,38 @@ export function readCalculixDat(text, { nodeCount, positions, scale = 1 } = {}) 
     if (!cur) continue;
     const t = line.trim();
     if (!t) continue;
-    const v = t.split(/\s+/).map(Number);
+    // shell and beam rows of *EL PRINT may end with the name of the expanded element ("_shell_0000000862")
+    const v = t.replace(/\s+_[A-Za-z]\S*\s*$/, '').split(/\s+/).map(Number);
     if (v.every((x) => Number.isFinite(x))) cur.rows.push(v); else cur = null;
   }
-  if (!tables.length) throw new RangeError('dat: no result tables found (expected lines such as "displacements (vx,vy,vz) for set NALL and time …")');
+  // tables of a *FREQUENCY step ("E I G E N V A L U E   O U T P U T": mode, eigenvalue, omega, frequency, imaginary
+  // part) and of a *BUCKLE step ("B U C K L I N G   F A C T O R   O U T P U T": mode, factor)
+  const spaced = (title) => {
+    const rows = []; let on = false;
+    for (const line of String(text).split(/\r?\n/)) {
+      const flat = line.replace(/\s+/g, '').toUpperCase();
+      if (!on) { if (flat === title) on = true; continue; }
+      const t = line.trim();
+      if (!t) continue;
+      const v = t.split(/\s+/).map(Number);
+      if (v.every((x) => Number.isFinite(x))) rows.push(v); else if (rows.length) break;
+    }
+    return rows;
+  };
+  const eig = spaced('EIGENVALUEOUTPUT'); const buck = spaced('BUCKLINGFACTOROUTPUT');
+  const modal = {
+    eigenvalues: eig.length ? eig.map((r) => r[1]) : null, frequencies: eig.length ? eig.map((r) => r[3]) : null,
+    bucklingFactors: buck.length ? buck.map((r) => r[1]) : null,
+  };
+  if (!tables.length) {
+    if (!eig.length && !buck.length) throw new RangeError('dat: no result tables found (expected lines such as "displacements (vx,vy,vz) for set NALL and time …", an eigenvalue table or a buckling-factor table)');
+    return { tables, nodeCount: nodeCount === undefined ? 0 : nodeCount, displacement: null, reactions: [], totalForce: null, elementStress: null, nodeValues: null, valueLabel: null, valueUnit: null, deformed: null, time: null, ...modal };
+  }
   const last = (kind) => { for (let k = tables.length - 1; k >= 0; k--) if (tables[k].kind === kind) return tables[k]; return null; };
   const d = last('displacements');
   let n = nodeCount;
   if (n === undefined) { n = 0; if (d) for (const r of d.rows) n = Math.max(n, r[0]); }
-  const out = { tables, nodeCount: n, displacement: null, stress: null, reactions: [], totalForce: null, elementStress: null, time: d ? d.time : null };
+  const out = { tables, nodeCount: n, displacement: null, stress: null, reactions: [], totalForce: null, elementStress: null, time: d ? d.time : null, ...modal };
   if (d && n > 0) {
     out.displacement = new Float64Array(3 * n).fill(NaN);
     for (const r of d.rows) if (r[0] >= 1 && r[0] <= n) for (let c = 0; c < 3; c++) out.displacement[3 * (r[0] - 1) + c] = r[1 + c];

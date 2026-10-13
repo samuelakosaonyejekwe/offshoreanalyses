@@ -1,9 +1,9 @@
 // Hand-off to frequency-domain potential-flow (radiation/diffraction) solvers and back.
 //
-//   writeNemohCase        NEMOH v3 case folder (Nemoh.cal, input_solver.txt, mesh/<name>.dat, results/ …)
+//   writeNemohCase        NEMOH v3 case folder (Nemoh.cal, input_solver.txt, <name>.dat, results/ …)
 //   readNemohResults      NEMOH results (RadiationCoefficients.tec or CA.dat/CM.dat, ExcitationForce.tec) → hydro database
 //   writeWamitGdf         WAMIT low-order geometric data file (.gdf) of the same wetted mesh
-//   writeCapytaineScript  Python script for Capytaine 2.x that solves the exported mesh and writes a CSV
+//   writeCapytaineScript  Python script for Capytaine 2.x / 3.x that solves the exported mesh and writes a CSV
 //   readCapytaineCsv      that CSV → hydro database
 //
 // Targets: NEMOH v3.0 (Kurnia & Ducrozet, "NEMOH v3.0 User Manual", 2022; the load-case line of Nemoh.cal carries
@@ -16,6 +16,10 @@
 //
 // Conventions of the hydro database (src/engine/hydro/hydrodb.js): SI, exp(+i omega t), heading = propagation
 // direction from +x. NEMOH and Capytaine use exp(-i omega t); the readers conjugate the excitation by default.
+// Confirmed on solved cases with NEMOH v3 and Capytaine 3.0.0 (tests/interop/cross-solver.test.js): after the
+// conjugation the heave force of a barge in a long wave is rho g Awp exp(-kT) - omega² A33 + i omega B33 (it
+// leads the elevation by the radiation-damping term), and the surge force is + i omega² (rho V + A11) for a wave
+// travelling towards +x — the phases of the application's own long-wave models.
 
 import { wettedPanels } from '../engine/hydro/bem.js';
 import { createHydroDb, parseHydroCsv } from '../engine/hydro/hydrodb.js';
@@ -81,9 +85,10 @@ function uniformRange(values, name) {
 /**
  * Writes a NEMOH v3.0 case: one rigid body, six degrees of freedom and six generalised forces about `cog`.
  *
- * Folder: Nemoh.cal, input_solver.txt (v3 solver settings), mesh/<name>.dat (solver-format mesh), results/,
- * plus ID.dat and input.txt, which only NEMOH v2 reads (v3 takes the case folder on the command line).
- * Run (v3):  preProc <case> ; hydrosCal <case> (optional) ; solver <case> ; postProc <case>.
+ * Folder: Nemoh.cal, input_solver.txt (v3 solver settings), <name>.dat (solver-format mesh, in the case folder:
+ * preProc opens the mesh named in Nemoh.cal relative to that folder and writes its own files to mesh/),
+ * results/, plus ID.dat and input.txt, which only NEMOH v2 reads (v3 takes the case folder on the command line).
+ * Run (v3):  preProc <case> ; solver <case> ; postProc <case>.
  * NEMOH takes a uniform frequency range and a uniform heading range (count, min, max): lists that are not
  * uniformly spaced are replaced by the uniform range with the same count and limits, and a note says so.
  * Reference: NEMOH v3.0 User Manual (2022), "Description of input files"; Babarit & Delhommeau, EWTEC 2015.
@@ -183,7 +188,7 @@ export function writeNemohCase({ surface, rho = 1025, g = G0, depth = null, omeg
     { path: 'input_solver.txt', text: solver },
     { path: 'input.txt', text: v2input },
     { path: 'ID.dat', text: '1\n.\n' },
-    { path: `mesh/${nm}.dat`, text: nemohMeshText(mesh) },
+    { path: `${nm}.dat`, text: nemohMeshText(mesh) },
     { path: 'results/', text: '' },
   ];
   return { files, notes, mesh: { nNodes: mesh.nNodes, nPanels: mesh.nPanels, area: mesh.area, volume: mesh.volume } };
@@ -280,10 +285,11 @@ export function parseNemohRadiation(text) {
 
 /**
  * Parses NEMOH `CA.dat` (radiation damping) or `CM.dat` (added mass): a header line with the number of
- * frequencies, then per frequency one line with the frequency (or period) followed by a 6×6 block.
+ * frequencies, then per frequency one line with the frequency in rad/s (format F7.4, i.e. rounded to four
+ * decimals) followed by a 6×6 block with one line per radiating degree of freedom.
  * @param {string} text file content
- * @param {{abscissa?:'auto'|'omega'|'period'}} [opts] meaning of the per-block value; 'auto' reads it from the
- *   header ("periods" → s, otherwise rad/s)
+ * @param {{abscissa?:'auto'|'omega'|'period'}} [opts] meaning of the per-block value; NEMOH v3 always writes rad/s
+ *   under the header "Nb de frequency"; 'auto' takes seconds only when the header says "period"
  * @returns {{omega:number[], M:number[][][]}} rad/s; [frequency][6][6], SI
  */
 export function parseNemohMatrixDat(text, { abscissa = 'auto' } = {}) {
@@ -298,14 +304,16 @@ export function parseNemohMatrixDat(text, { abscissa = 'auto' } = {}) {
   for (let k = 0; k < count; k++) {
     const o = 37 * k;
     omega.push(isPeriod ? (2 * Math.PI) / vals[o] : vals[o]);
-    M.push(Array.from({ length: 6 }, (_, i) => vals.slice(o + 1 + 6 * i, o + 7 + 6 * i)));
+    // each line of a block belongs to one radiating degree of freedom j and lists the six force components i
+    // (Results.f90 of NEMOH v3: AddedMass(l, j, k), k = 1…6), so the block is the transpose of M[i][j]
+    M.push(Array.from({ length: 6 }, (_, i) => Array.from({ length: 6 }, (_, j) => vals[o + 1 + 6 * j + i])));
   }
   return { omega, M };
 }
 
 /**
  * Parses NEMOH `ExcitationForce.tec`: one zone per wave direction ("… beta = <deg> deg"), rows
- * `omega  |F_1| arg(F_1) … |F_6| arg(F_6)` per unit wave amplitude.
+ * `omega  |F_1| arg(F_1) … |F_6| arg(F_6)` per unit wave amplitude; NEMOH v3 writes the phase in radians.
  * @param {string} text file content
  * @param {{phaseUnit?:'auto'|'rad'|'deg', conjugate?:boolean}} [opts] unit of the phase column ('auto': degrees
  *   when any |phase| exceeds 2π + 0.01, radians otherwise); conjugate = true converts from NEMOH's
@@ -385,7 +393,11 @@ export function readNemohResults({ files, rho, g, depth, phaseUnit = 'auto', con
   const ft = findText(map, 'ExcitationForce.tec');
   if (ft) {
     exc = parseNemohExcitation(ft, { phaseUnit, conjugate });
-    if (exc.omega.length !== rad.omega.length || exc.omega.some((w, i) => Math.abs(w - rad.omega[i]) > 1e-5 * Math.max(w, 1e-12))) throw new RangeError('ExcitationForce.tec and the radiation coefficients list different frequencies');
+    // CM.dat / CA.dat print the frequency with four decimals only: within that rounding the seven-digit values of
+    // ExcitationForce.tec are taken instead
+    const fromDat = !tec;
+    if (exc.omega.length !== rad.omega.length || exc.omega.some((w, i) => Math.abs(w - rad.omega[i]) > (fromDat ? 6e-5 : 1e-5 * Math.max(w, 1e-12)))) throw new RangeError('ExcitationForce.tec and the radiation coefficients list different frequencies');
+    if (fromDat) rad.omega = exc.omega.slice();
     used.push('ExcitationForce.tec');
   }
   const db = createHydroDb({ omega: rad.omega, A: rad.A, B: rad.B, headingsDeg: exc.headingsDeg, Fre: exc.Fre, Fim: exc.Fim, Ainf, A0, rho: rho1, g: g1, depth: depth1 });
@@ -394,10 +406,11 @@ export function readNemohResults({ files, rho, g, depth, phaseUnit = 'auto', con
 }
 
 /**
- * Python script for Capytaine 2.x: loads the exported NEMOH-format mesh, solves radiation and diffraction for
+ * Python script for Capytaine 2.x and 3.x (run with 3.0.0): loads the exported NEMOH-format mesh, solves radiation and diffraction for
  * the given frequencies and headings, saves the full dataset as NetCDF and writes `<name>_hydro.csv` in the CSV
  * schema of hydrodb.js (`kind,omega,headingDeg,i,j,re,im`), already converted to exp(+i omega t), together with
- * the infinite-frequency added mass (rows `AINF`).
+ * the infinite-frequency and zero-frequency added mass in deep water (rows `AINF`, `A0`). The CSV is written
+ * first; the NetCDF export is attempted afterwards and a failure there is reported without losing the CSV.
  * Run:  pip install capytaine ; python run_capytaine.py   (in the folder holding the script and mesh/).
  * Reference: Capytaine documentation v2 (user manual: "Resolution", "Outputs"); Ancellin & Dias (2019).
  * Validity: as writeNemohCase. Capytaine removes nothing above z = 0 here: the mesh is already the wetted part.
@@ -416,7 +429,7 @@ export function writeCapytaineScript({ surface, rho = 1025, g = G0, depth = null
   const mesh = wettedMesh(surface);
   const nm = safeName(name);
   const py = `#!/usr/bin/env python3
-"""Radiation/diffraction of '${nm}' with Capytaine 2.x.
+"""Radiation/diffraction of '${nm}' with Capytaine (2.x or 3.x).
 
 Reads  mesh/${nm}.dat  (NEMOH mesh format, wetted surface, z up, waterline z = 0).
 Writes ${nm}_hydro.nc  (complete Capytaine dataset) and
@@ -447,40 +460,50 @@ test_matrix = xr.Dataset(coords={
 })
 solver = cpt.BEMSolver()
 ds = solver.fill_dataset(test_matrix, body)
-cpt.io.xarray.separate_complex_values(ds).to_netcdf("${nm}_hydro.nc")
 
 # only the optional dimensions of length one are dropped, never omega / wave_direction
-ds = ds.squeeze(dim=[d for d in ("water_depth", "rho", "g") if d in ds.dims], drop=True)
+flat = ds.squeeze(dim=[d for d in ("water_depth", "rho", "g") if d in ds.dims], drop=True)
 rows = ["# solver=capytaine " + cpt.__version__, "# rho=%r" % RHO, "# g=%r" % G,
         "# depth=%s" % ("inf" if np.isinf(DEPTH) else repr(DEPTH)), "kind,omega,headingDeg,i,j,re,im"]
 for w in OMEGAS:
     for j, rad in enumerate(DOFS):
         for i, inf in enumerate(DOFS):
-            a = float(ds["added_mass"].sel(omega=w, radiating_dof=rad, influenced_dof=inf))
-            b = float(ds["radiation_damping"].sel(omega=w, radiating_dof=rad, influenced_dof=inf))
+            a = float(flat["added_mass"].sel(omega=w, radiating_dof=rad, influenced_dof=inf))
+            b = float(flat["radiation_damping"].sel(omega=w, radiating_dof=rad, influenced_dof=inf))
             rows.append("A,%r,,%d,%d,%r," % (w, i + 1, j + 1, a))
             rows.append("B,%r,,%d,%d,%r," % (w, i + 1, j + 1, b))
     for h in HEADINGS_DEG:
         for i, inf in enumerate(DOFS):
-            f = complex(ds["excitation_force"].sel(omega=w, influenced_dof=inf).sel(wave_direction=np.deg2rad(h), method="nearest"))
+            f = complex(flat["excitation_force"].sel(omega=w, influenced_dof=inf).sel(wave_direction=np.deg2rad(h), method="nearest"))
             # Capytaine uses exp(-i omega t); the conjugate is the exp(+i omega t) amplitude
             rows.append("F,%r,%r,%d,,%r,%r" % (w, h, i + 1, f.real, -f.imag))
 
-# infinite-frequency added mass (constant term of the Cummins equation)
+# added mass in the two frequency limits (deep water): AINF is the constant term of the Cummins equation
 if np.isinf(DEPTH):
-    for j, rad in enumerate(DOFS):
-        res = solver.solve(cpt.RadiationProblem(body=body, radiating_dof=rad, omega=np.inf, rho=RHO, g=G), keep_details=False)
-        for i, inf in enumerate(DOFS):
-            rows.append("AINF,,,%d,%d,%r," % (i + 1, j + 1, res.added_masses[inf]))
+    for kind, w in (("AINF", np.inf), ("A0", 0.0)):
+        for j, rad in enumerate(DOFS):
+            res = solver.solve(cpt.RadiationProblem(body=body, radiating_dof=rad, omega=w, rho=RHO, g=G), keep_details=False)
+            for i, inf in enumerate(DOFS):
+                rows.append("%s,,,%d,%d,%r," % (kind, i + 1, j + 1, float(res.added_masses[inf])))
 
 with open("${nm}_hydro.csv", "w") as fh:
     fh.write("\\n".join(rows) + "\\n")
-print("wrote ${nm}_hydro.nc and ${nm}_hydro.csv")
+print("wrote ${nm}_hydro.csv")
+
+# complete dataset for other tools; the CSV above does not depend on it
+try:
+    if hasattr(cpt, "export_dataset"):
+        cpt.export_dataset("${nm}_hydro.nc", ds)
+    else:
+        cpt.io.xarray.separate_complex_values(ds).to_netcdf("${nm}_hydro.nc")
+    print("wrote ${nm}_hydro.nc")
+except Exception as err:
+    print("NetCDF file not written (%s: %s)" % (type(err).__name__, err))
 `;
   const notes = [
     `${mesh.nPanels} panels, ${mesh.nNodes} nodes; ${om.length} frequencies × ${hd.length} headings.`,
-    'Requires Python 3 with capytaine 2.x (pip install capytaine). The CSV is read back with readCapytaineCsv; the NetCDF file is kept for other tools.',
-    'The infinite-frequency added mass is requested for deep water only.',
+    'Requires Python 3 with capytaine 2.x or 3.x (pip install capytaine; run here with 3.0.0). The CSV is read back with readCapytaineCsv; the NetCDF file is kept for other tools.',
+    'The infinite- and zero-frequency added mass are requested for deep water only.',
   ];
   if (mesh.flipped) notes.push('The surface was oriented inwards; panel normals were reversed to point into the fluid.');
   return { files: [{ path: 'run_capytaine.py', text: py }, { path: `mesh/${nm}.dat`, text: nemohMeshText(mesh) }], notes, mesh: { nNodes: mesh.nNodes, nPanels: mesh.nPanels, area: mesh.area, volume: mesh.volume } };

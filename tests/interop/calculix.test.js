@@ -20,25 +20,28 @@ test('cantilever deck is re-read by the Abaqus importer to the same nodes, eleme
   const r = writeCalculixCase(model, { material: STEEL, supports: [{ nodes: [0], dofs: 'fixed' }], loads: [{ type: 'force', nodes: [4], F: [0, 0, -1e4] }], analysis: 'static' });
   assert.equal(r.files.length, 1);
   assert.equal(r.files[0].path, 'cantilever.inp');
-  assert.deepEqual(r.counts, { nodes: 5, elements: 4, appNodes: 5 });
+  // CalculiX has the PIPE section for B32R only: one generated mid-side node per member
+  assert.deepEqual(r.counts, { nodes: 9, elements: 4, appNodes: 5 });
   const deck = r.files[0].text;
+  assert.match(deck, /\*ELEMENT, TYPE=B32R, ELSET=EALL\n1, 1, 6, 2\n2, 2, 7, 3\n3, 3, 8, 4\n4, 4, 9, 5\n/);
   const back = parseAbaqus({ name: 'cantilever.inp', text: deck });
   const f = byKind(back, 'frame');
   assert.equal(back.models.length, 1);
-  assert.deepEqual(Array.from(f.nodes), Array.from(model.nodes));
-  assert.deepEqual(f.members.map((m) => [m.a, m.b]), model.members.map((m) => [m.a, m.b]));
-  for (const m of f.members) { assert.deepEqual(m.section, { type: 'tube', D: 0.5, t: 0.02 }); assert.equal(m.material, 'S355'); assert.deepEqual(m.orient, [0, 0, -1]); }
-  assert.deepEqual(back.meta.elementTypes, { line2: 4 });
+  // the importer splits each 3-node beam at its mid-side node and numbers the nodes along the way
+  assert.deepEqual(Array.from(f.nodes).filter((_, i) => i % 3 === 0).sort((p, q) => p - q), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(f.members.length, 8);
+  for (const m of f.members) { assert.deepEqual(m.section, { type: 'tube', D: 0.5, t: 0.02 }); assert.equal(m.material, 'S355'); assert.deepEqual(m.orient, [0, 1, 0]); }
+  assert.deepEqual(back.meta.elementTypes, { line3: 4 });
   assert.equal(back.meta.materials.S355.E, 2.1e11);
   assert.equal(back.meta.materials.S355.nu, 0.3);
   assert.equal(back.meta.materials.S355.rho, 7850);
   assert.deepEqual(Array.from(f.sets.nodes.SUP1), [0]);
-  assert.deepEqual(Array.from(f.sets.nodes.NALL), [0, 1, 2, 3, 4]);
-  assert.deepEqual(Array.from(f.sets.members.EALL), [0, 1, 2, 3]);
+  assert.equal(f.sets.nodes.NALL.length, 9);
+  assert.deepEqual(Array.from(f.sets.members.EALL), [0, 2, 4, 6]);
   // step content: fixed root (six degrees of freedom), tip load, linear static, outputs on the original nodes
   assert.match(deck, /\*BOUNDARY\nSUP1, 1, 1\nSUP1, 2, 2\nSUP1, 3, 3\nSUP1, 4, 4\nSUP1, 5, 5\nSUP1, 6, 6\n/);
   assert.match(deck, /\*STEP, INC=200\n\*STATIC\n\*CLOAD\n5, 3, -10000\n/);
-  assert.match(deck, /\*BEAM SECTION, ELSET=BEAM1, MATERIAL=S355, SECTION=PIPE\n0\.25, 0\.02\n0, 0, -1\n/);
+  assert.match(deck, /\*BEAM SECTION, ELSET=BEAM1, MATERIAL=S355, SECTION=PIPE\n0\.25, 0\.02\n0, 1, 0\n/);
   assert.match(deck, /\*PLASTIC\n355000000, 0\.\n/);
   assert.match(deck, /\*NODE FILE, OUTPUT=2D\nU, RF\n\*EL FILE, OUTPUT=2D\nS, E, PEEQ\n/);
   assert.match(deck, /\*NODE PRINT, NSET=NSUP, TOTALS=YES\nRF\n/);
@@ -70,16 +73,23 @@ test('analysis types: NLGEOM, buckling, frequency, dynamic; hardening; B32; dist
   const tab = writeCalculixCase(model, { ...base, material: { ...STEEL, hardening: { table: [[355e6, 0], [470e6, 0.05], [510e6, 0.15]] } } }).files[0].text;
   assert.match(tab, /\*PLASTIC\n355000000, 0\n470000000, 0\.05\n510000000, 0\.15\n/);
 
-  // B32: generated mid-side nodes; the importer splits each 3-node beam at its mid node
-  const b32 = writeCalculixCase(model, { ...base, elementOrder: 2 });
+  // B32 (sections other than PIPE and BOX): generated mid-side nodes; the importer splits each 3-node beam at its mid node
+  const rectModel = cantilever();
+  for (const m of rectModel.members) m.section = { shape: 'rect', b: 0.2, h: 0.4 };
+  assert.match(writeCalculixCase(rectModel, base).files[0].text, /\*ELEMENT, TYPE=B31, ELSET=EALL\n1, 1, 2\n/);
+  const b32 = writeCalculixCase(rectModel, { ...base, elementOrder: 2 });
   assert.deepEqual(b32.counts, { nodes: 9, elements: 4, appNodes: 5 });
   assert.match(b32.files[0].text, /\*ELEMENT, TYPE=B32, ELSET=EALL\n1, 1, 6, 2\n/);
+  // width b along the horizontal local 1-axis, depth h vertical
+  assert.match(b32.files[0].text, /SECTION=RECT\n0\.2, 0\.4\n0, 1, 0\n/);
   const f = byKind(parseAbaqus({ name: 'b32.inp', text: b32.files[0].text }), 'frame');
   assert.equal(f.members.length, 8);
   assert.equal(f.nodes.length / 3, 9);
   // the importer numbers nodes in its own order: compare the set of x coordinates and the member lengths
   assert.deepEqual(Array.from({ length: 9 }, (_, i) => f.nodes[3 * i]).sort((p, q) => p - q), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
   for (const m of f.members) assert.ok(Math.abs(Math.abs(f.nodes[3 * m.b] - f.nodes[3 * m.a]) - 1) < 1e-12);
+  // tubes are B32R whatever the requested order
+  assert.match(writeCalculixCase(model, { ...base, elementOrder: 2 }).files[0].text, /\*ELEMENT, TYPE=B32R, ELSET=EALL\n1, 1, 6, 2\n/);
 
   // a vertical member cannot use the default (0, 0, -1) local 1-axis; generic sections become equivalent rectangles
   const tower = { kind: 'frame', name: 'tower', nodes: Float64Array.from([0, 0, 0, 0, 0, 10, 5, 0, 10]), members: [{ a: 0, b: 1, section: { A: 0.02, Iy: 4e-4, Iz: 1e-4, J: 3e-4 }, group: 'leg' }, { a: 1, b: 2, section: { type: 'tube', D: 0.3, t: 0.01 } }] };
@@ -99,12 +109,21 @@ test('analysis types: NLGEOM, buckling, frequency, dynamic; hardening; B32; dist
 test('shell and solid models: S3 with thickness; C3D4/C3D10/C3D8/C3D20/C3D6, pyramids split, long records wrapped', () => {
   // two triangles forming a 1 × 1 plate
   const plate = { kind: 'surface', name: 'plate', positions: Float32Array.from([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]), indices: Uint32Array.from([0, 1, 2, 0, 2, 3]), groups: [{ name: 'deck', start: 0, count: 6, thickness: 0.012 }] };
-  const sh = writeCalculixCase(plate, { material: STEEL, supports: [{ nodes: [0, 3], dofs: 'pinned' }], loads: [{ type: 'pressure', p: 2500 }, { type: 'force', nodes: [1, 2], F: [0, 0, -10], share: true }] });
+  const shellCase = { material: STEEL, supports: [{ nodes: [0, 3], dofs: 'pinned' }], loads: [{ type: 'pressure', p: 2500 }, { type: 'force', nodes: [1, 2], F: [0, 0, -10], share: true }] };
+  // default: six-node shells (S3 shells lock in bending in CalculiX); the supported edge 1–4 is held at its mid-side node 9 too
+  const s6 = writeCalculixCase(plate, shellCase);
+  assert.deepEqual(s6.counts, { nodes: 9, elements: 2, appNodes: 4 });
+  assert.match(s6.files[0].text, /\*ELEMENT, TYPE=S6, ELSET=EALL\n1, 1, 2, 3, 5, 6, 7\n2, 1, 3, 4, 7, 8, 9\n/);
+  assert.match(s6.files[0].text, /\*NSET, NSET=SUP1\n1, 4, 9\n/);
+  // elementOrder 1: three-node shells, which the app's own Abaqus importer reads back
+  const sh = writeCalculixCase(plate, { ...shellCase, elementOrder: 1 });
+  assert.ok(sh.notes.some((n) => /too stiff in bending/.test(n)));
   const deck = sh.files[0].text;
   assert.match(deck, /\*ELEMENT, TYPE=S3, ELSET=EALL\n1, 1, 2, 3\n2, 1, 3, 4\n/);
   assert.match(deck, /\*SHELL SECTION, ELSET=SHELL1, MATERIAL=S355\n0\.012\n/);
   assert.match(deck, /\*BOUNDARY\nSUP1, 1, 1\nSUP1, 2, 2\nSUP1, 3, 3\n\*STEP/);
-  assert.match(deck, /\*CLOAD\n2, 3, -5\n3, 3, -5\n\*DLOAD\nEALL, P, 2500\n/);
+  // a positive pressure of the app pushes against the element normal; CalculiX applies a positive P along it
+  assert.match(deck, /\*CLOAD\n2, 3, -5\n3, 3, -5\n\*DLOAD\nEALL, P, -2500\n/);
   const s = byKind(parseAbaqus({ name: 'p.inp', text: deck }), 'surface');
   assert.deepEqual(Array.from(s.indices), [0, 1, 2, 0, 2, 3]);
   assert.ok(Math.abs(s.groups[0].thickness - 0.012) < 1e-12);

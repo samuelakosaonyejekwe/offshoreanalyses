@@ -3,7 +3,8 @@
 //
 // Every writer returns `{ files: [{ path, text | bytes }], notes: string[] }`; a path ending in '/' is an empty
 // folder. Readers take the text of a result file (or a list of files) and return plain objects; see the JSDoc
-// of each module and docs/interop.md for what was run against the real solvers.
+// of each module and docs/interop.md for what was run against the real solvers; the comparisons of the built-in
+// models with those solvers are recorded in src/spec/cross-solver.json.
 
 import { writeNemohCase, readNemohResults, writeWamitGdf, writeCapytaineScript, readCapytaineCsv } from './nemoh.js';
 import { writeCalculixCase, readCalculixFrd, readCalculixDat } from './calculix.js';
@@ -17,25 +18,26 @@ export * from './openfoam.js';
 /**
  * Solver hand-offs. `write(model, options)` takes the geometry model as its first argument and the remaining
  * options of the underlying writer as the second; `read(input, options)` parses what the solver wrote
- * (`reads` names the files and the shape of `input`). `executed` tells whether a case written by this entry
- * was run through the real solver during development (see docs/interop.md).
+ * (`reads` names the files and the shape of `input`). `executed` is true only when a case written by this entry
+ * was run through the real solver during development and its results were read back by `read`
+ * (see docs/interop.md §1 for the versions and the cases).
  */
 export const SOLVER_EXPORTS = Object.freeze([
   {
     id: 'nemoh', solver: 'NEMOH v3.0', purpose: 'Frequency-domain radiation/diffraction: added mass, wave damping and excitation of a floating hull',
-    kinds: ['surface'], extension: 'zip', executed: false,
+    kinds: ['surface'], extension: 'zip', executed: true,
     write: (model, o = {}) => writeNemohCase({ ...o, surface: model, name: o.name || model.name }),
     read: (files, o = {}) => readNemohResults({ ...o, files }),
     reads: ['input: [{ path, text }]', 'results/RadiationCoefficients.tec (or CM.dat + CA.dat)', 'results/ExcitationForce.tec', 'Nemoh.cal (optional: rho, g, depth)'],
-    notes: 'Closed hull, z up, waterline at z = 0. Options: rho, g, depth, omegas (rad/s), headingsDeg, cog. Follows the NEMOH v3 manual; not executed against NEMOH.',
+    notes: 'Closed hull, z up, waterline at z = 0. Options: rho, g, depth, omegas (rad/s), headingsDeg, cog. Run with NEMOH v3 (preProc, solver, postProc built from the master branch of 2026-06-24) for a 768-panel barge in deep water, 5 frequencies × 3 headings; results read back and within 0.3 % of Capytaine. Finite depth, more than one body and the QTF module were not run.',
   },
   {
-    id: 'capytaine', solver: 'Capytaine 2.x (Python)', purpose: 'Frequency-domain radiation/diffraction through a ready-to-run Python script',
-    kinds: ['surface'], extension: 'zip', executed: false,
+    id: 'capytaine', solver: 'Capytaine 2.x / 3.x (Python)', purpose: 'Frequency-domain radiation/diffraction through a ready-to-run Python script',
+    kinds: ['surface'], extension: 'zip', executed: true,
     write: (model, o = {}) => writeCapytaineScript({ ...o, surface: model, name: o.name || model.name }),
     read: (text, o = {}) => readCapytaineCsv(text, o),
     reads: ['input: text of <name>_hydro.csv'],
-    notes: 'Same options as NEMOH; frequencies and headings need not be uniformly spaced. The script also requests the infinite-frequency added mass. Not executed against Capytaine.',
+    notes: 'Same options as NEMOH; frequencies and headings need not be uniformly spaced. The script also requests the infinite- and zero-frequency added mass (deep water). Run with Capytaine 3.0.0 for a barge, a vertical cylinder and a hemisphere in deep water; results read back. Not run with Capytaine 2.x or in finite depth.',
   },
   {
     id: 'wamit-gdf', solver: 'WAMIT v7 (low-order GDF)', purpose: 'Panel geometry of the wetted hull for WAMIT and other codes that read GDF',
@@ -43,15 +45,15 @@ export const SOLVER_EXPORTS = Object.freeze([
     write: (model, o = {}) => writeWamitGdf({ ...o, surface: model, name: o.name || model.name }),
     read: (input, o = {}) => hydroDbFromWamit({ ...o, text1: input.text1, text3: input.text3 }),
     reads: ['input: { text1, text3 }', '<run>.1 (added mass and damping) as text1', '<run>.3 (exciting forces) as text3; pass the same ULEN as option L'],
-    notes: 'Options: ulen, g. Only the geometry is written; the WAMIT control files (.pot, .frc, .cfg) are the user\'s. Not executed against WAMIT.',
+    notes: 'Options: ulen, g. Only the geometry is written; the WAMIT control files (.pot, .frc, .cfg) are the user\'s. WAMIT is proprietary and was not run. The .gdf files of three hulls were loaded with an independent GDF reader (Capytaine 3.0.0): panel count, wetted area, displaced volume and normal direction equal those of the source mesh. The reader of WAMIT .1 / .3 output has not seen a file written by WAMIT.',
   },
   {
-    id: 'calculix', solver: 'CalculiX 2.21', purpose: 'Linear and non-linear finite elements: static, large displacement, plasticity, buckling, natural frequencies, implicit dynamics',
-    kinds: ['frame', 'surface', 'volume'], extension: 'inp', executed: false,
+    id: 'calculix', solver: 'CalculiX 2.2x', purpose: 'Linear and non-linear finite elements: static, large displacement, plasticity, buckling, natural frequencies, implicit dynamics',
+    kinds: ['frame', 'surface', 'volume'], extension: 'inp', executed: true,
     write: (model, o = {}) => writeCalculixCase(model, o),
     read: (text, o = {}) => (/^\s{4}[12]C/m.test(text) ? readCalculixFrd(text, o) : readCalculixDat(text, o)),
-    reads: ['input: text of <job>.frd (ASCII nodal results) or of <job>.dat (printed tables)'],
-    notes: 'Options: material { E, nu, rho, fy, hardening }, supports, loads, analysis, steps, elementOrder, thickness. Follows the CalculiX manual; not executed against ccx.',
+    reads: ['input: text of <job>.frd (ASCII nodal results) or of <job>.dat (printed tables; natural frequencies and buckling factors)'],
+    notes: 'Options: material { E, nu, rho, fy, hardening }, supports, loads, analysis, steps, elementOrder, thickness. Run with CalculiX 2.23: static, frequency and buckling steps of beam models (B31, B32, B32R with RECT and PIPE sections) and a static step of a shell plate (S6, S3); .dat and .frd read back. Solid (volume) models, plasticity, NLGEOM and dynamic steps were written to the manual and not run.',
   },
   {
     id: 'openfoam-wave-tank', solver: 'OpenFOAM v2406 (interFoam)', purpose: 'Wave loads on a fixed structure in a numerical wave tank (volume of fluid)',
