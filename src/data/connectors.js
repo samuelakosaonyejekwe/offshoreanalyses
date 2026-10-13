@@ -2,6 +2,7 @@
 // (all listed services send CORS headers), so freshness never depends on any server of ours.
 // Responses are cached in IndexedDB with a time-to-live and reused when the device is offline.
 import { idb, emit } from '../core/store.js';
+import { seabedGridAt } from './seabedgrid.js';
 
 const HOUR = 3600e3, DAY = 24 * HOUR;
 
@@ -51,6 +52,9 @@ export const SOURCES = [
   { id: 'emodnet', name: 'EMODnet Bathymetry', provider: 'European Marine Observation and Data Network', home: 'https://emodnet.ec.europa.eu/en/bathymetry', gives: 'High-resolution depth for European seas', ttl: 90 * DAY, licence: 'CC BY 4.0', suites: [3, 7, 8, 13, 16] },
   { id: 'substrate', name: 'EMODnet Geology seabed substrate', provider: 'European Marine Observation and Data Network (geological surveys of Europe)', home: 'https://emodnet.ec.europa.eu/en/geology', gives: 'Mapped seabed sediment class (Folk) for European seas — screening of seabed type and grain size', ttl: 180 * DAY, licence: 'CC BY 4.0', suites: [4, 5, 7, 8, 12, 15] },
   { id: 'seabedsamples', name: 'NOAA NOS seabed samples', provider: 'NOAA National Centers for Environmental Information', home: 'https://www.ncei.noaa.gov/maps/bathymetry/', gives: 'About 240,000 described bottom samples from hydrographic surveys (United States waters) — screening of seabed type', ttl: 180 * DAY, licence: 'Public domain', suites: [4, 5, 7, 8, 12, 15] },
+  { id: 'ausseabed', name: 'AusSeabed Marine Sediments database', provider: 'Geoscience Australia', home: 'https://www.ausseabed.gov.au', gives: 'About 77,000 laboratory analyses of seabed samples (gravel, sand and mud fractions, Folk class, carbonate content) around Australia and off East Antarctica — screening of seabed type', ttl: 180 * DAY, licence: 'CC BY 4.0', suites: [4, 5, 7, 8, 12, 15] },
+  { id: 'gscgrain', name: 'GSC seabed grain-size analyses', provider: 'Natural Resources Canada, Geological Survey of Canada', home: 'https://open.canada.ca/data/en/dataset/093e437e-ee35-fd32-7da0-807848ec5d64', gives: 'Laboratory grain-size analyses (gravel, sand, silt and clay fractions) of seabed samples from Canadian Pacific, Arctic and Atlantic waters — screening of seabed type', ttl: 180 * DAY, licence: 'Open Government Licence – Canada', suites: [4, 5, 7, 8, 12, 15] },
+  { id: 'seabedgrid', name: 'Global seafloor lithology grid', provider: 'Dutkiewicz, Müller, O’Callaghan & Jónasson (2015), EarthByte Group, University of Sydney — bundled with the app', home: 'https://doi.org/10.1130/G36883.1', gives: 'Predominant surface sediment type anywhere in the ocean on a 0.1° grid interpolated from about 14,500 samples — regional indication only, used where no survey map or sample exists; works offline', ttl: 365 * DAY, licence: 'CC BY-SA 4.0', suites: [4, 5, 7, 8, 12, 15] },
   { id: 'elevation', name: 'Open-Meteo Elevation', provider: 'Open-Meteo (Copernicus GLO-90 DEM)', home: 'https://open-meteo.com/en/docs/elevation-api', gives: 'Land elevation for landfalls, quays and coastal works', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [5, 6, 7, 13] },
   { id: 'quakes', name: 'USGS Earthquake Catalog', provider: 'U.S. Geological Survey', home: 'https://earthquake.usgs.gov/fdsnws/event/1/', gives: 'Global earthquake catalogue (real time) for seismicity screening', ttl: 6 * HOUR, licence: 'Public domain', suites: [1, 2, 3, 5, 6, 7] },
   { id: 'tidegauge', name: 'NOAA CO-OPS tide gauges', provider: 'NOAA Center for Operational Oceanographic Products and Services', home: 'https://tidesandcurrents.noaa.gov', gives: 'Measured hourly water levels at about 300 gauges (United States coasts and territories) — used to check the modelled sea level against field measurements', ttl: 6 * HOUR, licence: 'Public domain', suites: [5, 6, 7, 15] },
@@ -168,9 +172,10 @@ export const emodnetDepth = (lat, lon, o) => cached(`emodnet:${r4(lat)},${r4(lon
   getJson(`https://rest.emodnet-bathymetry.eu/depth_sample?geom=${encodeURIComponent(`POINT(${lon} ${lat})`)}`), o);
 
 // ---- seabed sediment -------------------------------------------------------------------------------------------
-// Two open sources with usable point queries: the EMODnet Geology substrate map (European seas, polygons classed
-// on the Folk scheme) and the bottom samples described during NOAA hydrographic surveys (United States waters).
-// Both describe the seabed SURFACE only.
+// Open sources with usable point queries, best first: the EMODnet Geology substrate map (European seas, polygons
+// classed on the Folk scheme), the bottom samples described during NOAA hydrographic surveys (United States
+// waters), laboratory grain-size analyses of the Australian and Canadian surveys, and — everywhere else — the
+// bundled global lithology grid. All describe the seabed SURFACE only.
 const SUBSTRATE = 'https://drive.emodnet-geology.eu/geoserver/gtk/wms';
 export const seabedSubstrate = (lat, lon, o) => cached(`substrate:${r4(lat)},${r4(lon)}`, 180 * DAY, async () => {
   const e = 0.0005; // about 50 m: a wider box makes the server return neighbouring polygons too
@@ -194,6 +199,58 @@ export const seabedSamples = (lat, lon, { halfDeg = 0.25, force } = {}) => cache
   return (j.features || []).map((f) => f.attributes).filter((a) => Number.isFinite(a.LAT) && Number.isFinite(a.LON) && (a.DESCRP || a.NATSUR))
     .map((a) => ({ lat: a.LAT, lon: a.LON, survey: a.SURVEY, year: a.BEGIN_OBSTIM ? new Date(a.BEGIN_OBSTIM).getUTCFullYear() : null, text: String(a.DESCRP || a.NATSUR), qualifier: a.NATQUA || '' }));
 }, { force });
+
+// Box of about ±17 km around the point: wide enough for the 15 km search radius at any latitude
+const sampleBox = (lat, lon) => { const dLat = 0.15, dLon = Math.min(2, dLat / Math.max(0.05, Math.cos(lat * Math.PI / 180))); return { s: lat - dLat, n: lat + dLat, w: lon - dLon, e: lon + dLon }; };
+const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+
+// Geoscience Australia: one record per analysis, so the records of a sample are merged before use.
+const AUSSEABED = 'https://warehouse.ausseabed.gov.au/geoserver/wfs';
+export const seabedAusseabed = (lat, lon, o) => cached(`ausseabed:${r4(lat)},${r4(lon)}`, 180 * DAY, async () => {
+  const b = sampleBox(lat, lon);
+  const j = await getJson(`${AUSSEABED}?${q({ service: 'WFS', version: '2.0.0', request: 'GetFeature', typeNames: 'ausseabed:Seabed_Sediments_Collection', outputFormat: 'application/json', count: 3000,
+    propertyName: 'SAMPLE_ID,ACQUIRE_DATE,TOP_DEPTH_M,MUD_PERCENT,SAND_PERCENT,GRAVEL_PERCENT,CARBONATE_PERCENT,FOLK_CLASS,SAMPLE_LOCATION', bbox: `${b.s},${b.w},${b.n},${b.e},urn:ogc:def:crs:EPSG::4326` })}`, { timeout: 45000 });
+  const bySample = new Map();
+  for (const f of j.features || []) {
+    const p = f.properties || {}, c = f.geometry?.coordinates;
+    if (!c || (num(p.TOP_DEPTH_M) ?? 0) > 0.1) continue; // sub-samples from down a core are not the seabed surface
+    const key = `${p.SAMPLE_ID}|${c[0]}|${c[1]}`;
+    const sm = bySample.get(key) || bySample.set(key, { lat: c[1], lon: c[0], year: p.ACQUIRE_DATE ? Number(String(p.ACQUIRE_DATE).slice(0, 4)) : null }).get(key);
+    for (const [k, v] of [['gravel', num(p.GRAVEL_PERCENT)], ['sand', num(p.SAND_PERCENT)], ['mud', num(p.MUD_PERCENT)], ['carbonate', num(p.CARBONATE_PERCENT)], ['folk', p.FOLK_CLASS || null]]) if (v != null && sm[k] == null) sm[k] = v;
+  }
+  return { provider: 'ausseabed', samples: [...bySample.values()].filter((sm) => sm.folk || sm.sand != null || sm.mud != null || sm.gravel != null) };
+}, o);
+
+// Geological Survey of Canada: the points sit in one layer per region, so a single identify call spans them all.
+const GSC_GRAIN = 'https://maps-cartes.services.geo.ca/server_serveur/rest/services/NRCan/GSC_Grain_Size_Analyses/MapServer/identify';
+export const seabedCanada = (lat, lon, o) => cached(`gscgrain:${r4(lat)},${r4(lon)}`, 180 * DAY, async () => {
+  const b = sampleBox(lat, lon);
+  const j = await getJson(`${GSC_GRAIN}?${q({ geometry: `${lon},${lat}`, geometryType: 'esriGeometryPoint', sr: 4326, layers: 'all:2,3,4,5,6,7,8', mapExtent: `${b.w},${b.s},${b.e},${b.n}`, imageDisplay: '101,101,96', tolerance: 51, returnGeometry: false, f: 'json' })}`, { timeout: 45000 });
+  if (j.error) throw new Error(j.error.message || 'grain-size service error');
+  const samples = [];
+  for (const r of j.results || []) {
+    const a = r.attributes || {}, code = String(a['Expedition code'] || '');
+    if ((num(a['Subsample top (cm)']) ?? 0) > 10) continue; // deeper sub-samples of a core
+    const sm = { lat: num(a['Station latitude']), lon: num(a['Station longitude']), year: /^(19|20)\d{5}/.test(code) ? Number(code.slice(0, 4)) : /^\d\d/.test(code) ? 1900 + Number(code.slice(0, 2)) : null,
+      gravel: num(a['Percent gravel']), sand: num(a['Percent sand']), mud: num(a['Percent mud']) ?? ((num(a['Percent silt']) ?? 0) + (num(a['Percent clay']) ?? 0)) };
+    if (sm.lat != null && sm.lon != null && (sm.gravel ?? 0) + (sm.sand ?? 0) + (sm.mud ?? 0) > 0) samples.push(sm);
+  }
+  return { provider: 'gscgrain', samples };
+}, o);
+
+/** Regional grain-size samples where a national survey serves them (Australia and East Antarctica, Canada); null elsewhere. */
+export const seabedRegional = (lat, lon, o) => (lat < -5 && (lon > 85 || lat < -55) ? seabedAusseabed(lat, lon, o)
+  : lat > 40 && lon > -142 && lon < -45 ? seabedCanada(lat, lon, o) : Promise.resolve(null));
+
+// Bundled global lithology grid: read once, on the first site that no live source covers.
+let seabedGridBytes = null;
+export async function seabedGrid(lat, lon) {
+  seabedGridBytes ||= fetch(new URL('../../assets/seabed-lithology.bin', import.meta.url)).then(async (r) => {
+    if (!r.ok) throw new Error(`The bundled seabed lithology grid could not be read (${r.status})`);
+    return new Uint8Array(await r.arrayBuffer());
+  }).catch((e) => { seabedGridBytes = null; throw e; });
+  return { data: seabedGridAt(await seabedGridBytes, lat, lon), at: null, stale: false, source: 'bundled' };
+}
 
 export const landElevation = (lat, lon, o) => cached(`elevation:${r4(lat)},${r4(lon)}`, 365 * DAY, () =>
   getJson(`https://api.open-meteo.com/v1/elevation?${q({ latitude: lat, longitude: lon })}`), o);
@@ -348,6 +405,7 @@ export const glossary = (term) => cached(`wiki:${term.toLowerCase()}`, 30 * DAY,
 export async function health() {
   const probes = {
     marine: () => marineNow(57, 2, { force: true }), bathy: () => depthAt(57, 2, { force: true }), quakes: () => earthquakes(36, 140, { radiusKm: 100, minMag: 6, force: true }), substrate: () => seabedSubstrate(54, 3, { force: true }), seabedsamples: () => seabedSamples(31.8, -80.65, { halfDeg: 0.1, force: true }),
+    ausseabed: () => seabedAusseabed(-20, 116, { force: true }), gscgrain: () => seabedCanada(44, -60, { force: true }), seabedgrid: () => seabedGrid(4.2, 6.5),
     fx: () => fxRates('USD', { force: true }), worldbank: () => worldBank('GB', WB_INDICATORS.inflation, { force: true }), commodities: () => commodity('brent', { force: true }),
     literature: () => literature('offshore structure', { n: 1, force: true }), forecast: () => weatherForecast(57, 2, { force: true }), carbon: () => gridCarbon({ force: true }),
     turbines: () => turbineList({ force: true }), treasury: () => treasuryRates({ force: true }), power: () => solarClimatology(4, 6, { force: true }),

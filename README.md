@@ -15,9 +15,10 @@ https://raw.githack.com/samuelakosaonyejekwe/offshoreanalyses/main/index.html
 * **17 connected suites, 296 analysis modules.** Every analysis in the 17-suite specification (261 of 261) is
   covered by a working module. What one analysis computes (loads, motions, reactions, stiffnesses, quantities,
   energy) becomes the default input of the analyses that depend on it.
-* **Any site on Earth.** Waves, wind, currents, tide, water depth, seismicity, solar resource and — where an open
-  map or described samples exist — the seabed sediment class are pulled live by the browser from public sources
-  and reduced to design values. Values you enter from measurements override them and survive a new pull.
+* **Any site on Earth.** Waves, wind, currents, tide, water depth, seismicity, solar resource and the seabed
+  sediment class are pulled live by the browser from public sources and reduced to design values (seabed: mapped
+  or sampled in European, United States, Australian and Canadian waters; elsewhere a bundled global grid gives
+  the regional sediment province, labelled as such). Values you enter from measurements override them and survive a new pull.
 * **Checked against instruments.** The modelled waves, wind, sea temperature and sea level at a site can be
   compared with what the nearest buoy and tide gauge measured over the last weeks.
 * **Your geometry and data.** 69 CAD, mesh, structural, centreline, bathymetry, point-cloud and tabular formats

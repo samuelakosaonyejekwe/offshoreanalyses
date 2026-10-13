@@ -132,12 +132,21 @@ export default async function site(root) {
     }
     summary.append(charts);
     if (d.seismic) summary.append(h('div.card', { style: { marginTop: '14px' } }, h('h3', 'Seismicity'), h('p', `${d.seismic.n} earthquakes of magnitude 4.5 or more within 300 km since 1970${d.seismic.maxMag ? `; largest M ${fmt(d.seismic.maxMag, 2)}` : ''}. Screening PGA (475-year) ≈ ${fmt(d.seismic.pga475, 2)} g.`), h('p.muted', d.seismic.note)));
-    if (d.seabed) summary.append(h('div.card', { style: { marginTop: '14px' } }, h('h3', 'Seabed sediment'), d.seabed.cls
-      ? h('p', h('b', `${d.seabed.label}. `), d.seabed.basis === 'map' ? `Mapped at the site as “${d.seabed.described}” on the EMODnet Geology substrate map at 1:${Number(d.seabed.scale).toLocaleString('en')}${d.seabed.holder ? ` (${d.seabed.holder})` : ''}. `
-        : `${d.seabed.agree} of the ${d.seabed.n} nearest described bottom samples (${fmt(d.seabed.nearestKm, 2)}–${fmt(d.seabed.farthestKm, 2)} km away, surveyed ${d.seabed.years[0]}–${d.seabed.years[1]}) are of this class; nearest descriptions: ${d.seabed.described}. `,
-        d.seabed.d50 ? `Representative median grain size ${fmt(d.seabed.d50 * 1000, 2)} mm, used as the default for scour and sediment-transport analyses. ` : 'No grain size is set. ', d.seabed.means)
-      : h('p', 'No open seabed-sediment map or described sample covers this location (open coverage is European seas and United States waters). Enter the soil values from a site investigation or a regional geological map in the table above.'),
+    if (d.seabed) {
+      const sb = d.seabed, span = (x) => `${fmt(x.nearestKm, 2)}–${fmt(x.farthestKm, 2)} km away${x.years?.[0] <= x.years?.[1] ? `, sampled ${x.years[0]}–${x.years[1]}` : ''}`;
+      const basis = {
+        map: () => `Mapped at the site as “${sb.described}” on the EMODnet Geology substrate map at 1:${Number(sb.scale).toLocaleString('en')}${sb.holder ? ` (${sb.holder})` : ''}. `,
+        samples: () => `${sb.agree} of the ${sb.n} nearest described bottom samples (${fmt(sb.nearestKm, 2)}–${fmt(sb.farthestKm, 2)} km away, surveyed ${sb.years[0]}–${sb.years[1]}) are of this class; nearest descriptions: ${sb.described}. `,
+        grainsize: () => `${sb.agree} of the ${sb.n} nearest laboratory grain-size analyses in the ${sb.survey} (${span(sb)}) fall in this class; nearest results: ${sb.described}. These are point samples, so the answer is as local as their spacing. ${sb.carbonate >= 50 ? `Carbonate content is about ${fmt(sb.carbonate, 2)} %: treat the ground as a carbonate soil, whose grains crush and give low pile friction. ` : ''}`,
+        grid: () => `Regional indication only: the global seafloor lithology grid of Dutkiewicz and others (2015) gives “${sb.described}” at the ${sb.offsetKm ? `closest grid node with data, ${fmt(sb.offsetKm, 2)} km from the site` : 'nearest grid node'}. The grid has a spacing of ${sb.resolutionDeg}° (about ${fmt(sb.resolutionKm, 2)} km) and is an interpolation of about 14,500 widely spaced samples, so it shows the sediment province and not the ground at the site. No survey map or sample in the open sources covers this location. `,
+      }[sb.basis];
+      summary.append(h('div.card', { style: { marginTop: '14px' } }, h('h3', 'Seabed sediment'), sb.cls
+        ? h('p', h('b', `${sb.label}. `), basis ? basis() : '',
+          sb.basis === 'grid' && sb.shelf ? h('b', 'On a continental shelf such as here the grid is least reliable — shelf sediment changes over a few kilometres and is often coarser than the grid suggests — so no grain size is passed to the analyses: enter one from a survey or chart. ')
+            : sb.d50 ? `${sb.basis === 'grid' ? 'Nominal' : 'Representative'} median grain size ${fmt(sb.d50 * 1000, 2)} mm, used as the default for scour and sediment-transport analyses. ` : 'No grain size is set. ', sb.means)
+        : h('p', 'No open seabed-sediment map or sample covers this location, and the global lithology grid holds no value here (land, ice shelf or unmapped polar sea). Enter the soil values from a site investigation or a regional geological map in the table above.'),
       h('p.why', 'This describes the top few centimetres of the seabed. It indicates what kind of ground to expect and sets a grain size; it does not give strength, layering or depth to rock, and no strength value is derived from it. Shear strength, friction angle and unit weight must come from a geotechnical investigation (boreholes, cone penetration tests) before any foundation is sized.')));
+    }
     if (d.kept?.length) summary.append(h('div.banner', icon('info'), `Kept as you entered them, not replaced by this pull: ${d.kept.map((k) => (SITE_KEYS.find((r) => r[0] === k) || [k, k])[1]).join(', ')}.`));
     if (d.provenance) summary.append(h('details.fold', h('summary', 'Where each number comes from'), h('div', table([{ key: 'what', label: 'Quantity', left: true }, { key: 'source', label: 'Source', left: true }, { key: 'method', label: 'Reduction', left: true }, { key: 'when', label: 'Fetched', left: true }],
       Object.entries(d.provenance).map(([k, v]) => ({ what: k, source: v.source, method: v.method || '—', when: v.at ? new Date(v.at).toLocaleString() : '—' }))))));

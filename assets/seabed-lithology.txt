@@ -1,0 +1,32 @@
+seabed-lithology.bin — global seafloor surface lithology, 0.1 degree grid
+
+Source
+  Dutkiewicz, A., Müller, R. D., O'Callaghan, S. & Jónasson, H. (2015). Census of seafloor sediments in the
+  world's ocean. Geology 43(9), 795-798. https://doi.org/10.1130/G36883.1
+  Grid file seabed_lithology_v1.nc, EarthByte Group, University of Sydney:
+  https://www.earthbyte.org/webdav/ftp/papers/Dutkiewicz_etal_seafloor_lithology/
+  Archived as Dutkiewicz, A. & Müller, D. (2021), Seafloor sediments in the world's ocean, PANGAEA,
+  https://doi.org/10.1594/PANGAEA.932412
+
+Licence
+  Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0),
+  https://creativecommons.org/licenses/by-sa/4.0/ , as stated on the PANGAEA record.
+  seabed-lithology.bin is an adaptation of that grid and is distributed under the same licence. The licence
+  applies to this data file, not to the application code that reads it.
+
+Changes made
+  The class values are unchanged and nothing is resampled. The grid was re-encoded from netCDF to a run-length
+  format (north to south, west to east), the repeated column at +180 degrees was dropped, and the netCDF fill
+  value became class 0. Written by tools/seabed-grid.py, which documents the byte format; read by
+  src/data/seabedgrid.js.
+
+Classes
+  0 no data (land, ice shelves, unmapped Arctic)   1 gravel and coarser   2 sand   3 silt   4 clay
+  5 calcareous ooze   6 radiolarian ooze   7 diatom ooze   8 sponge spicules
+  9 mixed calcareous/siliceous ooze   10 shells and coral fragments   11 ash and volcanic sand/gravel
+  12 siliceous mud   13 fine-grained calcareous sediment
+
+Limits
+  The grid is a support-vector-machine interpolation of about 14,500 surface-sample descriptions, most of them
+  hundreds of kilometres apart. It shows the predominant sediment of a region, not the ground at a site, and is
+  least reliable on continental shelves. It describes the top of the seabed only.
