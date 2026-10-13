@@ -138,9 +138,9 @@ test('real Parasolid, SolidWorks (schemas 19008 and 20000): machined parts with 
   }
 });
 
-test('Parasolid: binary, truncated and damaged files are refused with the reason; nothing is guessed', async () => {
+test('Parasolid: truncated and damaged files are refused with the reason; nothing is guessed', async () => {
   const good = text('solidworks-plate.x_t');
-  await assert.rejects(importFile({ name: 'part.x_b', bytes: Uint8Array.from([0x50, 0x53, 0, 0, 0, 51, 58, 32, 84, 82]) }), /part\.x_b: this is a binary Parasolid transmit file \(\.x_b\), which is not read\. Save it as text \(\.x_t\) in the originating program, or export STEP\./);
+  await assert.rejects(importFile({ name: 'part.x_b', bytes: Uint8Array.from([0x50, 0x53, 0, 0, 0, 51, 58, 32, 84, 82]) }), /part\.x_b: the start of the data could not be read: the file ends inside the modeller version\./);
   assert.throws(() => parseParasolid({ name: 'n.x_t', text: 'solid cube\n' }), /n\.x_t: not a Parasolid text transmit file \(the "\*\*…" header ending in "\*\*END_OF_HEADER" is missing\)/);
   const cut = good.slice(0, Math.floor(good.length * 0.6));
   assert.throws(() => parseParasolid({ name: 't.x_t', text: cut }), /t\.x_t: (the file is truncated: the node stream ends after \d+ nodes without its terminator|the node stream could not be interpreted .*the file ends inside)/);

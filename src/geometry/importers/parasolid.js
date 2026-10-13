@@ -122,8 +122,10 @@ const BASE = {
   136: ['NURBS_CURVE', 'degree:n n_vertices:d vertex_dim:n n_knots:d knot_type:u periodic:l closed:l rational:l curve_form:u bspline_vertices:p knot_mult:p knots:p'],
   137: ['SP_CURVE', `${CURVE_HEAD} surface:p b_curve:p original:p tolerance_to_original:f`],
   141: ['GEOMETRIC_OWNER', 'owner:p next:p previous:p shared_geometry:p'],
-  163: ['HELIX_CU_FORM', 'axis_pt:v axis_dir:v point:v hand:c turns:i pitch:f tol:f'],
-  184: ['HELIX_SU_FORM', 'axis_pt:v axis_dir:v hand:c turns:i pitch:f gap:f tol:f'],
+  // the node-type table of the reference gives 163 to the curve form and 184 to the surface form; in files it is
+  // the other way round (163 hangs off SURFACE_DATA with the surface layout, 184 off CURVE_DATA with the curve one)
+  163: ['HELIX_SU_FORM', 'axis_pt:v axis_dir:v hand:c turns:i pitch:f gap:f tol:f'],
+  184: ['HELIX_CU_FORM', 'axis_pt:v axis_dir:v point:v hand:c turns:i pitch:f tol:f'],
 };
 
 const SURFACE_TYPES = new Set([50, 51, 52, 53, 54, 56, 59, 60, 67, 68, 120, 124]);
@@ -186,20 +188,10 @@ function candidates(schemaNumber) {
 
 class Stop extends Error {}
 
-/**
- * Decode a text transmit file into its nodes.
- * @returns {{ header: object, nodes: Map<number, object>, types: object, userField: number }} every node is
- *   `{ index, type, name, …fields }` with pointers left as indices
- */
-export function readXt(text, fname = 'x_t') {
-  const fail = (why) => new Error(`${fname}: ${why}`);
-  const mark = text.indexOf('**END_OF_HEADER');
-  if (!text.startsWith('**') || mark < 0) throw fail('not a Parasolid text transmit file (the "**…" header ending in "**END_OF_HEADER" is missing).');
-  const head = text.slice(0, mark).replace(/[\r\n]/g, '');
-  const key = (k) => { const m = new RegExp(`[;*]${k}=([^;]*);`).exec(head); return m ? m[1] : null; };
-  let nl = text.indexOf('\n', mark);
-  if (nl < 0) nl = text.length;
-  const s = text.slice(nl + 1).replace(/[\r\n]/g, '');
+const UNSET_INT = -32764, UNSET_REAL = -3.14158e13;
+
+/** Token source over the data of a text transmit file (line breaks removed). */
+function textSource(s) {
   let p = 0;
   const n = s.length;
   const where = () => `near character ${p} of the data ("${s.slice(Math.max(0, p - 12), p + 12)}")`;
@@ -228,18 +220,151 @@ export function readXt(text, fname = 'x_t') {
   const vec = (what) => { if (s[p] === '?') { p++; return null; } return [real(what), real(what), real(what)]; };
   const chr = (what) => { if (p >= n) throw end(what); return s[p++]; };
   const str = (what) => { const len = int(what); if (!(len >= 0) || p + len > n) throw new Stop(`a counted string was expected for ${what} ${where()}`); const v = s.slice(p, p + len); p += len; return v; };
+  return {
+    size: n, where, get pos() { return p; }, set pos(v) { p = v; }, get more() { return p < n; },
+    modeller: str, schemaName: str, typeCount: int, userFieldSize: int,
+    nodeType: int, pointer: int, count: int, short: int, posInt: int, length: int, userInt: int, name: str, chr, flag: chr,
+    value(type, what) {
+      switch (type) {
+        case 'd': case 'n': case 'u': case 'w': case 't': case 'p': return int(what);
+        case 'f': return real(what);
+        case 'c': return chr(what);
+        case 'l': { const c = chr(what); if (c !== 'T' && c !== 'F') throw new Stop(`a logical (T / F) was expected for ${what} ${where()}`); return c === 'T'; }
+        case 'v': case 'h': return vec(what);
+        case 'i': return [real(what), real(what)];
+        case 'b': return [real(what), real(what), real(what), real(what), real(what), real(what)];
+        default: throw new Stop(`field type "${type}" of ${what} is not known`);
+      }
+    },
+    // character arrays are written as text; "\9" stands for nine blanks
+    chars(cnt, what) {
+      let v = '';
+      while (v.length < cnt) { const c = chr(what); if (c === '\\' && s[p] === '9') { p++; v += '         '; } else if (c === '\\' && p < n) { const e = s[p++]; v += e === 'n' ? '\n' : e === 'r' ? '\r' : e === '0' ? '\0' : e; } else v += c; }
+      return v;
+    },
+  };
+}
 
-  // ---- flag sequence, versions, user-field size ----
-  if (s[p] !== 'T') throw fail(s[p] === 'B' || s.startsWith('PS') ? 'this is a binary Parasolid transmit file, which is not read. Save it as text (.x_t) or export STEP.' : 'the data after the header do not start with the text flag "T".');
-  p++;
+/**
+ * Token source over the data of a neutral-binary transmit file: big-endian, IEEE doubles, node types and shorts in
+ * 2 bytes, integers and the variable length in 4, characters and logicals in 1. A pointer index (and every
+ * "positive integer" of an embedded schema) is a 2-byte integer holding index + 1, or for indices from 32767 the
+ * pair −(index mod 32767 + 1), index div 32767. Unset values are the kernel's markers −32764 and −3.14158e13.
+ */
+function binarySource(b, start, le = false) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let p = start;
+  const n = b.length;
+  const where = () => `at byte ${p} of the file`;
+  const need = (k, what) => { if (p + k > n) throw new Stop(`the file ends inside ${what}`); };
+  const u8 = (what) => { need(1, what); return b[p++]; };
+  const i16 = (what) => { need(2, what); p += 2; return dv.getInt16(p - 2, le); };
+  const i32 = (what) => { need(4, what); p += 4; return dv.getInt32(p - 4, le); };
+  const f64 = (what) => { need(8, what); p += 8; const v = dv.getFloat64(p - 8, le); if (v === UNSET_REAL) return null; if (v !== v || v === Infinity || v === -Infinity) throw new Stop(`a number was expected for ${what} ${where()}`); return v; };
+  const pointer = (what) => {
+    let r = i16(what), q = 0;
+    if (r < 0) { q = i16(what); r = -r; if (q <= 0) throw new Stop(`an index was expected for ${what} ${where()}`); }
+    if (r === 0) throw new Stop(`an index was expected for ${what} ${where()}`);
+    return q * 32767 + r - 1;
+  };
+  const chars = (cnt, what) => { need(cnt, what); let v = ''; const e = p + cnt; while (p < e) { const q = Math.min(e, p + 4096); v += String.fromCharCode.apply(null, b.subarray(p, q)); p = q; } return v; };
+  const counted = (len, what) => { if (!(len >= 0 && len <= 4096)) throw new Stop(`a counted string was expected for ${what} ${where()}`); return chars(len, what); };
+  const int = (what) => { const v = i32(what); return v === UNSET_INT ? null : v; };
+  const reals = (k, what) => { const a = new Array(k); let unset = false; for (let i = 0; i < k; i++) { a[i] = f64(what); if (a[i] === null) unset = true; } return unset && k === 3 ? null : a; };
+  return {
+    size: n, where, get pos() { return p; }, set pos(v) { p = v; }, get more() { return p < n; },
+    modeller: (what) => counted(le ? i32(what) : i16(what), what), schemaName: (what) => counted(i32(what), what), typeCount: i16, userFieldSize: i32,
+    nodeType: i16, pointer, count: u8, short: i16, posInt: pointer, length: i32, userInt: i32, name: (what) => counted(u8(what), what),
+    chr: (what) => String.fromCharCode(u8(what)),
+    flag: (what) => { const v = u8(what); return v === 1 ? 'T' : v === 0 ? 'F' : String(v); },
+    value(type, what) {
+      switch (type) {
+        case 'd': case 't': return int(what);
+        case 'n': return i16(what);
+        case 'w': { need(2, what); p += 2; return dv.getUint16(p - 2, le); }
+        case 'u': return u8(what);
+        case 'p': return pointer(what);
+        case 'f': return f64(what);
+        case 'c': return String.fromCharCode(u8(what));
+        case 'l': { const c = u8(what); if (c > 1) throw new Stop(`a logical (0 / 1) was expected for ${what} ${where()}`); return c === 1; }
+        case 'v': case 'h': return reals(3, what);
+        case 'i': return reals(2, what);
+        case 'b': return reals(6, what);
+        default: throw new Stop(`field type "${type}" of ${what} is not known`);
+      }
+    },
+    chars,
+  };
+}
+
+/** `key=value;` pairs of the "**" header. */
+const headerKey = (head) => (k) => { const m = new RegExp(`[;*\\n]${k}=([^;]*);`).exec(head); return m ? m[1].replace(/[\r\n]/g, '') : null; };
+
+/**
+ * Decode a text transmit file into its nodes.
+ * @returns {{ header: object, nodes: Map<number, object>, types: object, userField: number }} every node is
+ *   `{ index, type, name, …fields }` with pointers left as indices
+ */
+export function readXt(text, fname = 'x_t') {
+  const fail = (why) => new Error(`${fname}: ${why}`);
+  const mark = text.indexOf('**END_OF_HEADER');
+  if (!text.startsWith('**') || mark < 0) throw fail('not a Parasolid text transmit file (the "**…" header ending in "**END_OF_HEADER" is missing).');
+  const head = text.slice(0, mark).replace(/[\r\n]/g, '');
+  let nl = text.indexOf('\n', mark);
+  if (nl < 0) nl = text.length;
+  const s = text.slice(nl + 1).replace(/[\r\n]/g, '');
+  if (s[0] !== 'T') throw fail(s[0] === 'B' || s.startsWith('PS') ? 'the data are in a binary encoding although the file was given as text; pass its bytes.' : 'the data after the header do not start with the text flag "T".');
+  const src = textSource(s);
+  src.pos = 1;
+  return readNodes(src, headerKey(head), fname);
+}
+
+/**
+ * Decode a binary transmit file (neutral binary, or bare binary of a little-endian machine) into its nodes; the result is that of readXt. The "**" header
+ * is optional: streams taken out of a container (SolidWorks, Solid Edge) start directly with the flag sequence.
+ */
+export function readXb(bytes, fname = 'x_b') {
+  const fail = (why) => new Error(`${fname}: ${why}`);
+  let start = 0, head = '';
+  if (bytes[0] === 0x2a && bytes[1] === 0x2a) {
+    const lim = Math.min(bytes.length, 65536);
+    let mark = -1;
+    const END = '**END_OF_HEADER';
+    for (let i = 0; i + END.length <= lim && mark < 0; i++) { let k = 0; while (k < END.length && bytes[i + k] === END.charCodeAt(k)) k++; if (k === END.length) mark = i; }
+    if (mark < 0) throw fail('not a Parasolid transmit file (the "**…" header does not end in "**END_OF_HEADER").');
+    head = String.fromCharCode.apply(null, bytes.subarray(0, mark));
+    start = mark;
+    while (start < bytes.length && bytes[start] !== 10) start++;
+    start++;
+  }
+  const at = (i) => bytes[start + i];
+  if (start >= bytes.length) throw fail('the file is truncated: it ends with its header, before any data.');
+  // bare binary: the flag "B", then the same stream in the number format of the writing machine. Files written on
+  // little-endian machines (every PC) are read: there the length of the modeller version is a 4-byte integer
+  // that is small, so its bytes read n, 0, 0, 0. Anything else is refused.
+  const bare = at(0) === 0x42;
+  if (bare && !(at(1) > 0 && at(2) === 0 && at(3) === 0 && at(4) === 0)) throw fail('this is a "bare binary" Parasolid file written in the number format of a machine that is not little-endian; only neutral binary (flag "PS"), little-endian bare binary and text files are read. Save the part again as Parasolid text (.x_t), or export STEP.');
+  if (!bare && !(at(0) === 0x50 && at(1) === 0x53 && at(2) === 0 && at(3) === 0)) throw fail(at(0) === 0x54 ? 'the data are in the text encoding; pass the file as text.' : 'not a Parasolid binary transmit file (the data do not start with the flag sequence "PS", 0, 0).');
+  const src = bare ? binarySource(bytes, start + 1, true) : binarySource(bytes, start + 4);
+  const r = readNodes(src, headerKey(head.replace(/\r/g, '')), fname);
+  r.header.format = r.header.format || 'binary';
+  r.encoding = bare ? 'bare binary (little-endian)' : 'neutral binary';
+  return r;
+}
+
+function readNodes(src, key, fname) {
+  const fail = (why) => new Error(`${fname}: ${why}`);
+  const where = src.where;
+
+  // ---- versions, user-field size ----
   let modeller, schema, userField, header;
   try {
-    modeller = str('the modeller version');
-    schema = str('the schema name');
+    modeller = src.modeller('the modeller version');
+    schema = src.schemaName('the schema name');
     const m = /^SCH_(\d+)_(\d+)(?:_(\d+))?$/.exec(schema);
-    if (!m) throw new Stop(`the schema name "${schema}" is not of the form SCH_<version>_<schema>`);
-    if (m[3]) int('the number of node types');
-    userField = int('the user-field size');
+    if (!m) throw new Stop(`the schema name "${schema.slice(0, 40)}" is not of the form SCH_<version>_<schema>`);
+    if (m[3]) src.typeCount('the number of node types');
+    userField = src.userFieldSize('the user-field size');
     header = { modeller: /version (\d+)/.test(modeller) ? Number(/version (\d+)/.exec(modeller)[1]) : null, schema, schemaNumber: Number(m[2]), baseSchema: m[3] ? Number(m[3]) : null, application: key('APPL'), date: key('DATE'), format: key('FORMAT'), partition: /partition/.test(modeller) };
   } catch (e) { if (e instanceof Stop) throw fail(`the start of the data could not be read: ${e.message}.`); throw e; }
   if (header.baseSchema !== null && header.baseSchema !== 13006) throw fail(`the file is written against the base schema ${header.baseSchema}; only 13006 is known to this reader.`);
@@ -256,27 +381,27 @@ export function readXt(text, fname = 'x_t') {
     return f;
   };
   const descriptor = () => {
-    const name = str('a field name');
-    const cls = int('a pointer class'), cnt = int('an element count');
-    const type = cls ? 'p' : str('a field type');
-    const xmt = cnt === 1 ? chr('a transmit flag') : 'T';
+    const name = src.name('a field name');
+    const cls = src.short('a pointer class'), cnt = src.posInt('an element count');
+    const type = cls ? 'p' : src.name('a field type');
+    const xmt = cnt === 1 ? src.flag('a transmit flag') : 'T';
     if (xmt !== 'T' && xmt !== 'F') throw new Stop(`the transmit flag of field "${name}" is "${xmt}" ${where()}`);
     return { name, type: type[0] || '?', n: cnt, skip: xmt === 'F' };
   };
   const readSchema = (type) => {
-    const count = int('the schema of a node type');
+    const count = src.count('the schema of a node type');
     const base = baseOf(type);
     if (count === 255) { if (!base) throw new Stop(`node type ${type} is declared equal to the base schema, which has no such type`); return base; }
     const out = [];
     if (!base) {
-      names.set(type, str('a node name'));
-      str('a node description');
+      names.set(type, src.name('a node name'));
+      src.name('a node description');
       for (let k = 0; k < count; k++) out.push(descriptor());
       return out;
     }
     let b = 0;
     for (;;) {
-      const op = chr('a schema edit');
+      const op = src.chr('a schema edit');
       if (op === 'Z') break;
       if (op === 'C') { if (b >= base.length) throw new Stop(`the schema edit of node type ${type} copies more fields than the base schema has`); out.push(base[b++]); } else if (op === 'D') b++;
       else if (op === 'I' || op === 'A') out.push(descriptor());
@@ -286,71 +411,54 @@ export function readXt(text, fname = 'x_t') {
     return out;
   };
 
-  const value = (type, what) => {
-    switch (type) {
-      case 'd': case 'n': case 'u': case 'w': case 't': case 'p': return int(what);
-      case 'f': return real(what);
-      case 'c': return chr(what);
-      case 'l': { const c = chr(what); if (c !== 'T' && c !== 'F') throw new Stop(`a logical (T / F) was expected for ${what} ${where()}`); return c === 'T'; }
-      case 'v': case 'h': return vec(what);
-      case 'i': return [real(what), real(what)];
-      case 'b': return [real(what), real(what), real(what), real(what), real(what), real(what)];
-      default: throw new Stop(`field type "${type}" of ${what} is not known`);
-    }
-  };
-
-  const start = p;
+  const start = src.pos, n = src.size;
   /** Read the node stream under one schema variant; throws Stop where it does not fit. */
   const run = (variant) => {
-    p = start;
+    src.pos = start;
     fieldsOf.clear(); names.clear();
     const nodes = new Map(), types = {};
     let done = false;
     try {
-        while (p < n) {
-          const type = int('a node type');
-          if (type === 1) { const z = int('the terminator'); if (z !== 0) throw new Stop(`the terminator is followed by ${z} instead of 0`); done = true; break; }
-          if (!(type > 1 && type < 100000)) throw new Stop(`${type} is not a node type ${where()}`);
-          let fields = fieldsOf.get(type);
-          if (!fields) {
-            fields = embedded ? readSchema(type) : legacy(type, variant);
-            if (!fields) throw new Stop(`node type ${type} is not in the schema of this reader and the file does not describe it`);
-            fieldsOf.set(type, fields);
-          }
-          const name = BASE[type] ? BASE[type][0] : names.get(type) || (type === 204 ? 'INTERSECTION_DATA' : `type ${type}`);
-          const variable = fields.some((f) => f.n === 1);
-          const len = variable ? int(`the length of a ${name} node`) : 0;
-          if (variable && !(len >= 0 && len <= n)) throw new Stop(`the variable length ${len} of a ${name} node is not plausible ${where()}`);
-          const index = int(`the index of a ${name} node`);
-          if (!(index > 0)) throw new Stop(`a ${name} node has the index ${index} ${where()}`);
-          if (nodes.has(index)) throw new Stop(`the index ${index} is used by two nodes (${nodes.get(index).name} and ${name})`);
-          const node = { index, type, name };
-          for (const f of fields) {
-            if (f.skip) continue;
-            const what = `${name}.${f.name}`;
+      while (src.more) {
+        const type = src.nodeType('a node type');
+        if (type === 1) { const z = src.pointer('the terminator'); if (z !== 0) throw new Stop(`the terminator is followed by ${z} instead of 0`); done = true; break; }
+        if (!(type > 1 && type < 100000)) throw new Stop(`${type} is not a node type ${where()}`);
+        let fields = fieldsOf.get(type);
+        if (!fields) {
+          fields = embedded ? readSchema(type) : legacy(type, variant);
+          if (!fields) throw new Stop(`node type ${type} is not in the schema of this reader and the file does not describe it`);
+          fieldsOf.set(type, fields);
+        }
+        const name = BASE[type] ? BASE[type][0] : names.get(type) || (type === 204 ? 'INTERSECTION_DATA' : `type ${type}`);
+        const variable = fields.some((f) => f.n === 1);
+        const len = variable ? src.length(`the length of a ${name} node`) : 0;
+        if (variable && !(len >= 0 && len <= n)) throw new Stop(`the variable length ${len} of a ${name} node is not plausible ${where()}`);
+        const index = src.pointer(`the index of a ${name} node`);
+        if (!(index > 0)) throw new Stop(`a ${name} node has the index ${index} ${where()}`);
+        if (nodes.has(index)) throw new Stop(`the index ${index} is used by two nodes (${nodes.get(index).name} and ${name})`);
+        const node = { index, type, name };
+        for (const f of fields) {
+          if (f.skip) continue;
+          const what = `${name}.${f.name}`;
           // fields called like the bookkeeping of this reader are stored under another name
-          const key = f.name === 'type' ? 'kind' : f.name === 'index' || f.name === 'name' ? `${f.name}_` : f.name;
-            if (f.n === 0) node[key] = value(f.type, what);
+          const k = f.name === 'type' ? 'kind' : f.name === 'index' || f.name === 'name' ? `${f.name}_` : f.name;
+          if (f.n === 0) node[k] = src.value(f.type, what);
+          else {
+            const cnt = f.n === 1 ? len : f.n;
+            if (f.type === 'c') node[k] = src.chars(cnt, what);
             else {
-              const cnt = f.n === 1 ? len : f.n;
-              if (f.type === 'c') {
-                // character arrays are written as text; "\9" stands for nine blanks
-                let v = '';
-                while (v.length < cnt) { const c = chr(what); if (c === '\\' && s[p] === '9') { p++; v += '         '; } else if (c === '\\' && p < n) { const e = s[p++]; v += e === 'n' ? '\n' : e === 'r' ? '\r' : e === '0' ? '\0' : e; } else v += c; }
-                node[key] = v;
-              } else {
-                const a = new Array(cnt);
-                for (let k = 0; k < cnt; k++) a[k] = value(f.type, what);
-                node[key] = a;
-              }
+              const a = new Array(cnt);
+              for (let i = 0; i < cnt; i++) a[i] = src.value(f.type, what);
+              node[k] = a;
             }
           }
-          // the user field follows every node (the reference speaks of the visible ones only; files written by NX
-          // with a user-field size of 1 have it after all of them)
-          for (let k = 0; k < userField; k++) int(`the user field of a ${name} node`);
-          nodes.set(index, node);
-          types[name] = (types[name] || 0) + 1;
         }
+        // the user field follows every node (the reference speaks of the visible ones only; files written by NX
+        // with a user-field size of 1 have it after all of them)
+        for (let i = 0; i < userField; i++) src.userInt(`the user field of a ${name} node`);
+        nodes.set(index, node);
+        types[name] = (types[name] || 0) + 1;
+      }
     } catch (e) {
       if (e instanceof Stop) e.count = nodes.size;
       throw e;
@@ -369,7 +477,7 @@ export function readXt(text, fname = 'x_t') {
   const { nodes, types, done } = res;
   if (!done) throw fail(`the file is truncated: the node stream ends after ${nodes.size} nodes without its terminator.`);
   if (!nodes.size) throw fail('the file holds a header but no nodes.');
-  return { header, nodes, types, userField, schema: fieldsOf, typeNames: names, layout: embedded ? 'described by the file' : res.variant.length ? res.variant.join(', ') : 'base schema' };
+  return { header, nodes, types, userField, schema: fieldsOf, typeNames: names, layout: embedded ? 'described by the file' : res.variant.length ? res.variant.join(', ') : 'base schema', end: src.pos };
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -401,8 +509,24 @@ function controlNet(values, count, dim, rational) {
   return { P, W, geo };
 }
 
+/** Whether the data of a transmit file (after its "**" header, if any) are in a binary encoding. */
+export function isBinaryXt(bytes) {
+  if (!bytes || bytes.length < 4) return false;
+  let p = 0;
+  if (bytes[0] === 0x2a && bytes[1] === 0x2a) {
+    // "**END_OF_HEADER…\n" is followed by "T" (text), "PS\0\0" (neutral binary) or "B" (bare binary)
+    const lim = Math.min(bytes.length, 65536);
+    for (p = 2; p + 15 < lim; p++) if (bytes[p] === 0x2a && bytes[p + 1] === 0x2a && bytes[p + 2] === 0x45 && bytes[p + 3] === 0x4e && bytes[p + 4] === 0x44 && bytes[p + 5] === 0x5f) break;
+    while (p < lim && bytes[p] !== 10) p++;
+    p++;
+    if (p >= bytes.length) return false;
+    if (bytes[p] === 0x42) return true;
+  }
+  return bytes[p] === 0x50 && bytes[p + 1] === 0x53 && bytes[p + 2] === 0 && bytes[p + 3] === 0;
+}
+
 /**
- * Parasolid XT (text).
+ * Parasolid XT (text and neutral binary).
  * @param {{ name?: string, text?: string, bytes?: Uint8Array }} input
  * @param {{ deflection?: number, angularStep?: number }} [opts] `deflection`: largest distance between a curved
  *   edge or surface and its facets [m] (default 1 % of the bounding-box diagonal of each body); `angularStep`:
@@ -410,10 +534,9 @@ function controlNet(values, count, dim, rational) {
  */
 export function parseParasolid(input, opts = {}) {
   const fname = input.name || 'x_t';
-  if (input.bytes && input.bytes.length > 4 && input.bytes[0] === 0x50 && input.bytes[1] === 0x53 && input.bytes[2] === 0 && input.bytes[3] === 0) throw new Error(`${fname}: this is a binary Parasolid transmit file (.x_b), which is not read. Save it as text (.x_t) in the originating program, or export STEP.`);
   if (opts.deflection !== undefined && !(opts.deflection > 0)) throw new RangeError('deflection: must be a positive length in metres.');
   if (opts.angularStep !== undefined && !(opts.angularStep > 0 && opts.angularStep <= 90)) throw new RangeError('angularStep: must be within 0…90 degrees.');
-  const xt = readXt(inputText(input), fname);
+  const xt = isBinaryXt(input.bytes) ? readXb(input.bytes, fname) : readXt(inputText(input), fname);
   const N = xt.nodes;
   const name = baseName(input.name);
   const W = new Warnings();
@@ -868,7 +991,7 @@ export function parseParasolid(input, opts = {}) {
   for (const k in faceSkips) skipped[`face: ${k}`] = faceSkips[k];
   return finish(models, warnings, {
     format: 'parasolid', units: { unit: 'm', scale: 1, basis: 'file' }, crs: null, elementTypes: hist, skipped,
-    schema: xt.header.schema, schemaLayout: xt.layout, modellerVersion: xt.header.modeller, application: xt.header.application, saved: xt.header.date,
+    encoding: xt.encoding || 'text', schema: xt.header.schema, schemaLayout: xt.layout, modellerVersion: xt.header.modeller, application: xt.header.application, saved: xt.header.date,
     bodies: bodies.length, instances: placements.length, solidBodies, closedBodies, orientedBodies,
     faces: facesRead, faceTotal, facesSkipped: nSkip, volumes, nodeTypes: xt.types,
     tessellation: { chord, angularStepDeg: opts.angularStep ?? 15 },

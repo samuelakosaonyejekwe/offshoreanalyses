@@ -13,7 +13,8 @@ import { resolveUnits, suggestUnits, geoKeysToCrs, parsePrj, crsLabel, geoProjec
 
 const DEFAULT_MAX_POINTS = 5000000;
 
-function cloudResult(name, coords, attrs, opts, o) {
+/** Common tail of the point-cloud readers (also used by e57.js): units, CRS, report. Scales `coords` in place. */
+export function cloudResult(name, coords, attrs, opts, o) {
   const warnings = o.warnings || [];
   const n = coords.length / 3;
   if (!n) throw new Error(`${o.fileName || name}: no points were found (${o.expected}).`);

@@ -188,7 +188,7 @@ test('application JSON: every model kind round-trips losslessly, typed arrays an
 });
 
 test('exportModels: file names, kind checks, format list', () => {
-  assert.deepEqual(EXPORTERS.map((e) => e.id), ['stl', 'obj', 'ply', 'vtk', 'csv', 'geojson', 'esri-ascii', 'json']);
+  assert.deepEqual(EXPORTERS.map((e) => e.id), ['stl', 'obj', 'ply', 'vtk', 'csv', 'geojson', 'esri-ascii', 'hst', 'json']);
   const e = exportModels('stl', cube(), { fileName: 'my hull/v2.step' });
   assert.equal(e.fileName, 'my hull_v2.stl');
   assert.equal(e.mime, 'model/stl');
@@ -197,6 +197,6 @@ test('exportModels: file names, kind checks, format list', () => {
   assert.equal(typeof exportModels('json', [cube(), FRAME]).data, 'string');
   assert.throws(() => exportModels('stl', FRAME), /STL \(binary\) export does not handle a "frame" model \(supported kinds: surface, grid\)/);
   assert.throws(() => exportModels('stl', [cube(), cube()]), /holds one model per file; 2 were given/);
-  assert.throws(() => exportModels('dwg', cube()), /unknown format "dwg" \(available: stl, obj, ply, vtk, csv, geojson, esri-ascii, json\)/);
+  assert.throws(() => exportModels('dwg', cube()), /unknown format "dwg" \(available: stl, obj, ply, vtk, csv, geojson, esri-ascii, hst, json\)/);
   close(surfaceArea(gridToSurface({ ...GRID, z: new Float32Array(6) })), 200, 1e-9);
 });

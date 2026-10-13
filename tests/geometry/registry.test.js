@@ -99,7 +99,12 @@ test('detection: magic bytes, content sniffing and extensions', () => {
   las[104] = 0x83;
   assert.equal(d('x.las', las), 'laz');
   assert.equal(d('x.x_t', '**ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz**\n'), 'parasolid');
-  assert.equal(d('x.sldprt', new Uint8Array(64)), 'native-cad');
+  assert.equal(d('x.sldprt', new Uint8Array(64)), 'solidworks');
+  assert.equal(d('x.par', new Uint8Array(64)), 'solid-edge');
+  assert.equal(d('x.skp', new Uint8Array(64)), 'native-cad');
+  assert.equal(d('x.prt', concat(enc('SPLMSSTR'), new Uint8Array(64))), 'nx');
+  assert.equal(d('x.prt', enc('#UGC:2 PART 1300 620 1 1 1 15 2500 2004200 00000ad8 \\\n')), 'creo');
+  assert.equal(d('x.bin', concat(enc('**ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz**\n**END_OF_HEADER***\nPS'), new Uint8Array(40))), 'parasolid');
   assert.equal(d('x.unknown', 'just some words\n'), null);
   assert.equal(detectFileSet(['case/constant/polyMesh/points', 'case/constant/polyMesh/faces', 'case/constant/polyMesh/owner']).id, 'openfoam');
   assert.equal(detectFileSet(['a/roads.shp', 'a/roads.dbf', 'a/roads.prj']).main, 'a/roads.shp');
@@ -198,10 +203,12 @@ test('importFile: gzip and zip containers, multi-file sets', async () => {
 
 test('importFile: convert-only formats say exactly what to export', async () => {
   const cases = [
-    ['scan.e57', 'ASTM-E57\0\0\0\0', /E57 scans are not read\. Export the cloud as LAS/],
-    ['part.sldprt', '\0\0\0\0binary', /Native CAD files are not read\..*export STEP/],
-    ['mesh.hst', 'HYDROSTAR\n', /Export the panel mesh as WAMIT GDF or NEMOH/],
-    ['flow.cas', '(0 "fluent")\n(2 3)\n', /Convert the mesh to VTK, SU2 or Gmsh/],
+    ['model.skp', '\0\0\0\0binary', /Native CAD files are not read\..*export STEP/],
+    ['part.prt', 'SPLMSSTR\0\0binary', /NX part files are not read\. In NX export Parasolid/],
+    ['part.prt', '#UGC:2 PART 1300 620\n', /Creo and Pro\/ENGINEER files are not read/],
+    ['part.CATPart', 'V5_CFV2\0\0binary', /CATIA files are not read\. In CATIA save the part as STEP/],
+    ['part.jt', 'Version 9.5 JT  DM 5.0\0\0', /JT files are not read\. Export STEP/],
+    ['house.rvt', '\0\0\0\0binary', /Revit files are not read\. In Revit export IFC/],
   ];
   for (const [name, text, re] of cases) await assert.rejects(importFile({ name, bytes: enc(text) }), (e) => e instanceof GeometryFormatError && e.reason === 'convert' && re.test(e.message), name);
 });

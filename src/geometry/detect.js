@@ -7,6 +7,7 @@
 
 import { extOf, decodeText } from './importers/common.js';
 import { isZip, zipEntries } from './zip.js';
+import { isCfb, cfbProgram } from './cfb.js';
 
 const HEAD_BYTES = 65536;
 
@@ -28,9 +29,9 @@ export const EXTENSION_MAP = Object.freeze({
   gpkg: 'geopackage', sqlite: 'geopackage',
   x_t: 'parasolid', x_b: 'parasolid', xmt_txt: 'parasolid', xmt_bin: 'parasolid', xt: 'parasolid',
   sat: 'acis', sab: 'acis-sab', asat: 'acis', asab: 'acis-sab', dwg: 'dwg', dgn: 'native-cad', brep: 'brep', brp: 'brep',
-  sldprt: 'native-cad', sldasm: 'native-cad', ipt: 'native-cad', iam: 'native-cad', prt: 'native-cad', asm: 'native-cad',
-  catpart: 'native-cad', catproduct: 'native-cad', '3dm': 'native-cad', jt: 'native-cad', rvt: 'native-cad', skp: 'native-cad',
-  fbx: 'native-cad', '3ds': 'native-cad', par: 'native-cad', psm: 'native-cad', f3d: 'native-cad', nwd: 'native-cad', rfa: 'native-cad',
+  sldprt: 'solidworks', sldasm: 'solidworks', par: 'solid-edge', psm: 'solid-edge', pwd: 'solid-edge', '3dm': 'rhino-3dm',
+  ipt: 'inventor', iam: 'inventor', prt: 'nx', asm: 'creo', catpart: 'catia', catproduct: 'catia', jt: 'jt', rvt: 'revit', rfa: 'revit',
+  skp: 'native-cad', fbx: 'native-cad', '3ds': 'native-cad', f3d: 'native-cad', nwd: 'native-cad',
   hst: 'hydrostar', cas: 'fluent', topojson: 'geojson',
 });
 
@@ -204,7 +205,7 @@ function sniffText(head, ext) {
   if (/^\s*(ncols|nrows)\s+\d+/im.test(lead.slice(0, 400)) && /cellsize|dx\s|xll/i.test(lead.slice(0, 600))) return ['esri-ascii', 'ESRI ASCII grid header'];
   if (/^NDIME\s*=/m.test(lead) || (/^NPOIN\s*=/m.test(t) && /^NELEM\s*=/m.test(t))) return ['su2', 'SU2 NDIME/NPOIN/NELEM keywords'];
   if (/^\s*FoamFile\b/m.test(lead) || lead.startsWith('/*--------------------------------*- C++ -*')) return ['openfoam', 'OpenFOAM file header'];
-  if (/^\(\s*[0-2]\s+["(]/.test(lead) || /^\(\s*10\s+\(/m.test(lead.slice(0, 600))) return ['fluent', 'Fluent mesh s-expressions'];
+  if (/^\(\s*[0-4]\s*["'(]/.test(lead) || /^\(\s*10\s+\(/m.test(lead.slice(0, 600)) || (/^\(\s*[01]\s+\S/.test(lead) && /^\s*\((?:2\s+[23]\s*\)|(?:10|12|13|[23]01[023])\s*\()/m.test(lead.slice(0, 4096)))) return ['fluent', 'Fluent mesh s-expressions'];
   if (/^\s{0,4}-1\s*\r?\n\s*\d{2,4}\s*\r?\n/.test(t.slice(0, 200)) && (ext === 'unv' || ext === '' || ext === 'dat' || ext === 'txt')) return ['unv', 'I-DEAS universal dataset delimiter'];
 
   // IGES: the flag letter in column 73 of the first records
@@ -226,6 +227,7 @@ function sniffText(head, ext) {
   if (ext === 'ptx') return ['ptx', 'extension .ptx'];
   if (ext === 'pts') return ['pts', 'extension .pts'];
   if (up.startsWith('HYDROSTAR') || ext === 'hst') return ['hydrostar', 'Hydrostar mesh'];
+  if (/^\s*COORDINATES(\s+TYPE\s+\d+)?\s*$/m.test(t) && /^\s*(PROJECT|USERS?|NBB?ODY|SYMMETRY(_BODY)?|NUMPANEL|ENDCOORDINATES)\b/m.test(t)) return ['hydrostar', 'HydroStar COORDINATES block and keywords'];
   if (sniffNemoh(t)) return ['nemoh', 'NEMOH mesh header "2 isym" and node rows'];
   if ((ext === 'dat' || ext === 'txt' || ext === '' || ext === 'csv' || ext === 'air' || ext === 'afl') && sniffAirfoil(t)) return ['airfoil', 'title line followed by x y pairs on a unit chord'];
   if ((ext === 'csv' || ext === 'txt' || ext === 'dat' || ext === 'tsv') && sniffPanelCsv(t)) return ['panel-csv', 'twelve coordinate columns per row'];
@@ -249,6 +251,12 @@ function sniffBinary(bytes, ext) {
   if (startsWith(bytes, SIG.las)) return [ext === 'laz' || (bytes.length > 104 && (bytes[104] & 0x80)) ? 'laz' : 'las', 'LASF signature'];
   if (startsWith(bytes, SIG.e57)) return ['e57', 'ASTM-E57 signature'];
   if (startsWith(bytes, SIG.sqlite)) return ['geopackage', 'SQLite database header'];
+  // Fluent files with binary sections open with text sections like the ASCII ones
+  if (bytes[0] === 0x28 && looksBinary(bytes.length > HEAD_BYTES ? bytes.subarray(0, HEAD_BYTES) : bytes)) {
+    let lead = '';
+    for (let i = 0, n = Math.min(bytes.length, 4096); i < n; i++) lead += String.fromCharCode(bytes[i] < 128 ? bytes[i] : 63);
+    if (/^\(\s*[0-4]\s*["'(]/.test(lead) || (/^\(\s*[01]\s+\S/.test(lead) && /^\s*\((?:2\s+[23]\s*\)|(?:10|12|13|[23]01[023])\s*\()/m.test(lead))) return ['fluent', 'Fluent mesh s-expressions (binary sections)'];
+  }
   if (startsWith(bytes, ascii('DSBB'))) return ['surfer-grd', 'Surfer 6 binary grid magic DSBB'];
   if (startsWith(bytes, ascii('DSRR'))) return ['surfer-grd', 'Surfer 7 binary grid magic DSRR'];
   if (startsWith(bytes, SIG.binDxf)) return ['dxf-binary', 'binary DXF sentinel'];
@@ -262,7 +270,20 @@ function sniffBinary(bytes, ext) {
     const head = decodeText(bytes.subarray(0, Math.min(bytes.length, 4096)));
     if (/<VTKFile\b/.test(head)) return ['vtu', 'root element VTKFile'];
   }
-  if (startsWith(bytes, ascii('PS\u0000\u0000'))) return ['parasolid', 'Parasolid binary transmit header'];
+  if (startsWith(bytes, ascii('PS\u0000\u0000')) || startsWith(bytes, ascii('**ABCDEFGHIJKLMNOPQRSTUVWXYZ'))) return ['parasolid', 'Parasolid transmit-file header'];
+  if (isCfb(bytes)) {
+    // compound (OLE2) files: told apart by their stream names
+    const prog = cfbProgram(bytes);
+    if (prog) return [prog, `compound file with the streams of a ${{ solidworks: 'SolidWorks', 'solid-edge': 'Solid Edge', inventor: 'Inventor', revit: 'Revit' }[prog]} document`];
+  }
+  // SolidWorks 2015 and later: 00 00 00 04 at byte 4 and the first named record within the first bytes
+  if (bytes.length > 64 && bytes[4] === 0 && bytes[5] === 0 && bytes[6] === 0 && bytes[7] === 4) {
+    for (let i = 8; i < 60; i++) if (bytes[i] === 0x14 && bytes[i + 1] === 0 && bytes[i + 2] === 6 && bytes[i + 3] === 0 && bytes[i + 4] === 8 && bytes[i + 5] === 0) return ['solidworks', 'SolidWorks record stream'];
+  }
+  if (startsWith(bytes, ascii('3D Geometry File Format '))) return ['rhino-3dm', 'openNURBS archive header'];
+  if (startsWith(bytes, ascii('SPLMSSTR'))) return ['nx', 'Siemens NX part container'];
+  if (startsWith(bytes, ascii('#UGC:'))) return ['creo', 'Creo / Pro/ENGINEER file header'];
+  if (startsWith(bytes, ascii('V5_CFV2'))) return ['catia', 'CATIA V5 file header'];
   if (bytes.length >= 84) {
     const n = bytes[80] | (bytes[81] << 8) | (bytes[82] << 16) | (bytes[83] * 16777216);
     if (84 + 50 * n === bytes.length) return ['stl', 'binary STL: length matches the triangle count'];

@@ -13,6 +13,7 @@
 //   csv         points, polyline, frame, grid, section        string
 //   geojson     points, polyline, frame, section              string
 //   esri-ascii  grid                                          string
+//   hst         surface, grid (HydroStar panel mesh)          string
 //   json        all kinds (lossless application format)       string
 
 import { base64Encode, ELEM } from './importers/common.js';
@@ -267,6 +268,26 @@ export function exportEsriAscii(grid, opts = {}) {
   return L.join('\n') + '\n';
 }
 
+/**
+ * HydroStar hull mesh (.hst): one body, no symmetry, node table and PANEL TYPE 0. The panels are the `quads` of
+ * the model when it carries them (panel importers and the panel mesher do), otherwise its triangles, written as
+ * quadrilaterals with the last node repeated. Coordinates are written in exponent form with 13 digits, which
+ * keeps node rows apart from panel rows for readers that tell them by their look.
+ */
+export function exportHst(model, opts = {}) {
+  const s = asSurface(model, 'HydroStar');
+  const c = worldCoords(s);
+  const q = s.quads && s.quads.length ? s.quads : null;
+  const np = q ? q.length / 4 : s.indices.length / 3;
+  const L = [`PROJECT ${String(opts.title || model.name || 'geometry').replace(/\s+/g, '_').slice(0, 72)}`, 'NBBODY 1', 'SYMMETRY_BODY 1 0', `NUMPANEL 1 1 ${np}`, 'COORDINATES'];
+  for (let i = 0; i < c.length; i += 3) L.push(`${i / 3 + 1} ${c[i].toExponential(12)} ${c[i + 1].toExponential(12)} ${c[i + 2].toExponential(12)}`);
+  L.push('ENDCOORDINATES', 'PANEL TYPE 0');
+  if (q) for (let i = 0; i < q.length; i += 4) L.push(`${q[i] + 1} ${q[i + 1] + 1} ${q[i + 2] + 1} ${q[i + 3] + 1}`);
+  else { const t = s.indices; for (let i = 0; i < t.length; i += 3) L.push(`${t[i] + 1} ${t[i + 1] + 1} ${t[i + 2] + 1} ${t[i + 2] + 1}`); }
+  L.push('ENDPANEL', 'ENDFILE');
+  return L.join('\n') + '\n';
+}
+
 function pack(v) {
   if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
     // NaN cannot be written in JSON, so typed arrays always travel as base64 of their little-endian bytes
@@ -292,6 +313,7 @@ export const EXPORTERS = Object.freeze([
   { id: 'csv', name: 'CSV table', extension: 'csv', mime: 'text/csv', kinds: ['points', 'polyline', 'frame', 'grid', 'section'], multi: false, write: (m) => exportCsv(m) },
   { id: 'geojson', name: 'GeoJSON', extension: 'geojson', mime: 'application/geo+json', kinds: ['points', 'polyline', 'frame', 'section'], multi: true, write: (m, o) => exportGeoJson(m, o) },
   { id: 'esri-ascii', name: 'ESRI ASCII grid', extension: 'asc', mime: 'text/plain', kinds: ['grid'], multi: false, write: (m, o) => exportEsriAscii(m, o) },
+  { id: 'hst', name: 'HydroStar mesh (.hst)', extension: 'hst', mime: 'text/plain', kinds: ['surface', 'grid'], multi: false, write: (m, o) => exportHst(m, o) },
   { id: 'json', name: 'Application geometry JSON', extension: 'json', mime: 'application/json', kinds: ['surface', 'volume', 'frame', 'polyline', 'grid', 'points', 'section'], multi: true, write: (m, o) => exportJson(m, o) },
 ]);
 

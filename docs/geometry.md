@@ -40,7 +40,7 @@ member CSVs); a ZIP of the same files works too.
   STEP and IGES carry a `nativeSubset`: that part is read without the adapter, the adapter is called only when
   the file contains exact B-rep geometry, and if the adapter is missing or fails on the file, whatever the
   built-in reader found is returned with a warning.
-* `convert` — never read (E57, Fluent, HydroStar, native CAD files).
+* `convert` — never read (NX, CATIA, Creo, JT, Revit and other native CAD files; each entry says what was tried).
   `importFile` throws `GeometryFormatError('convert')` with the text of `convert`.
 
 Options understood by `importFile` itself: `format` (registry id, skips detection — archives are still opened),
@@ -88,7 +88,7 @@ with each format in §5.
 | `crs` | `'EPSG:xxxx'` or `'geographic'` when the file does not say (or says it wrongly). |
 | `projection`, `origin`, `utmZone` | How degrees become metres: `'local'` (default; tangent plane about `origin: { lon, lat }` or the data centre), `'utm'`, `'none'`. Give every import of a project the same `origin` so that the models line up. |
 | `maxCells` | Rasters larger than this are block-averaged (default 4 000 000). |
-| `maxPoints` | LAS clouds larger than this are thinned by stride (default 5 000 000). |
+| `maxPoints` | LAS and E57 clouds larger than this are thinned by stride (default 5 000 000). |
 | `mapping`, `schema`, `sectionUnits`, `kinds` | Tables, JSON and XML: see §4. |
 
 Format-specific: `variable` (NetCDF), `expandSymmetry` (GDF, NEMOH), `dxfLines` (`'auto' | 'frame' | 'section'`),
@@ -208,7 +208,7 @@ The Suites column lists the suites whose specification names the format ("—": 
 | `exodus-hdf5` | Exodus II on NetCDF-4 | .e .exo .ex2 .g | adapter:hdf5 | frame, surface, volume | all |
 | `med` | MED (SALOME) | .med .rmed | adapter:hdf5 | frame, surface, volume | all |
 | `cgns` | CGNS | .cgns | adapter:hdf5 | surface, volume | 3 7 8 11 13 15 16 |
-| `fluent` | Fluent mesh / case | .msh .cas | convert | — | 7 |
+| `fluent` | Fluent mesh / case, ASCII and binary (`.msh.h5` / `.cas.h5` through `adapter:hdf5`) | .msh .cas | native | surface, frame | 7 |
 | `esri-ascii` | ESRI ASCII grid | .asc .agr | native | grid | 3 4 5 7–10 12 13 15 |
 | `surfer-grd` | Surfer grid DSAA / DSBB / DSRR | .grd | native | grid | — |
 | `geotiff` | GeoTIFF | .tif .tiff | native | grid | 3–16 |
@@ -227,7 +227,7 @@ The Suites column lists the suites whose specification names the format ("—": 
 | `laz` | LAZ | .laz | adapter:laz | points | all |
 | `pts`, `ptx` | Leica PTS / PTX | .pts .ptx | native | points | 1 2 4 5 7 8 11 14 15 16 |
 | `xyzrgb` | XYZ + colour / intensity / normals | .xyzrgb .xyzn .txt | native | points | 1 2 4 5 7 8 11 14 15 16 |
-| `e57` | ASTM E57 | .e57 | convert | — | all |
+| `e57` | ASTM E57 | .e57 | native | points | all |
 | `dxf` | AutoCAD DXF, ASCII (with embedded ACIS solids) | .dxf | native | frame, surface, polyline, section, points | all |
 | `dxf-binary` | AutoCAD binary DXF (R12 and R13+ group-code widths) | .dxf | native | frame, surface, polyline, section, points | — |
 | `dwg` | AutoCAD DWG (library downloaded on request, not included) | .dwg | adapter:dwg | frame, surface, polyline, section, points | all |
@@ -238,15 +238,24 @@ The Suites column lists the suites whose specification names the format ("—": 
 | `step` | STEP AP203 / AP214 / AP242 | .step .stp | adapter:occt + subset | surface, polyline, points | all |
 | `iges` | IGES | .igs .iges | adapter:occt + subset | frame, polyline, surface, points, section | all |
 | `brep` | OpenCascade BREP | .brep .brp | adapter:occt | surface | — |
-| `parasolid` | Parasolid XT, text (.x_b binary is refused) | .x_t .x_b | native | surface, frame | all |
+| `parasolid` | Parasolid XT, text and binary | .x_t .x_b | native | surface, frame | all |
 | `acis` | ACIS SAT (text) | .sat .asat | native | surface, frame | all |
 | `acis-sab` | ACIS SAB (binary) | .sab .asab | native | surface, frame | — |
-| `native-cad` | SolidWorks, Inventor, CATIA, NX, Creo, Rhino, Revit, JT, FBX, SketchUp, DGN … | many | convert | — | 2 9 11 |
+| `solidworks` | SolidWorks part (Parasolid bodies of the file) | .sldprt | native | surface, frame | 2 9 11 |
+| `solid-edge` | Solid Edge part (Parasolid bodies of the file) | .par .psm .pwd | native | surface, frame | — |
+| `inventor` | Autodesk Inventor part up to 2025 (ACIS bodies of the file) | .ipt | native | surface, frame | 2 9 11 |
+| `rhino-3dm` | Rhino 3DM (openNURBS) | .3dm | native | surface, polyline, points | 2 9 11 |
+| `nx` | Siemens NX part | .prt | convert | — | 2 9 11 |
+| `catia` | CATIA V5 / 3DEXPERIENCE | .CATPart .CATProduct | convert | — | 2 9 11 |
+| `creo` | PTC Creo / Pro/ENGINEER | .prt .asm | convert | — | 2 9 11 |
+| `jt` | JT | .jt | convert | — | 2 9 11 |
+| `revit` | Autodesk Revit | .rvt .rfa | convert | — | 2 9 11 |
+| `native-cad` | SketchUp, FBX, 3DS, Fusion 360, Navisworks, DGN | many | convert | — | 2 9 11 |
 | `svg` | SVG vector profile | .svg | native | section, polyline | 12 13 14 |
 | `airfoil` | Airfoil coordinates, Selig / Lednicer | .dat | native | section | 16 |
 | `gdf` | WAMIT GDF, low-order | .gdf | native | surface | 11 16 |
 | `nemoh` | NEMOH mesh | .dat .nemoh | native | surface | 11 16 |
-| `hydrostar` | HydroStar mesh | .hst | convert | — | 11 |
+| `hydrostar` | HydroStar mesh | .hst | native | surface | 11 |
 
 The table is a summary; `FORMATS[i].notes` in the registry is the text shown to users and a test
 (`tests/geometry/registry.test.js`) checks that every native entry loads, every adapter entry says what to do
@@ -430,7 +439,7 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
   `meta` and limits are those of SAT; `meta.encoding` states the integer width. The tag values and the header
   layout follow the description of the format in the ezdxf project (`ezdxf/acis/sab.py`, MIT licence) and, for
   the string, vector and 64-bit variants, the notes in InventorLoader; the decoder is this application's own.
-* Parasolid XT (`parasolid.js`) — text transmit files. After the `**…` header the file is one stream (line breaks
+* Parasolid XT (`parasolid.js`) — text and binary transmit files. After the `**…` header the file is one stream (line breaks
   mean nothing): `T`, modeller version and schema name as counted strings, the user-field size, then nodes
   `<type> [<variable length>] <index> <fields…> [<user field>]` and the terminator `1 0`. Numbers end with a
   blank, characters and logicals do not, `?` is an unset value.
@@ -465,11 +474,59 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
     … after n nodes"); a pointer of the wrong kind in the topology of a body leaves that body out, with a
     warning that says nothing of it is shown. Faces on surfaces that are not read are left out and counted per
     type.
-  * Not read: binary transmit files (`.x_b`, refused with the advice to save as text); BLENDED_EDGE (rolling-ball
+  * Binary: the same stream with the flag sequence `PS 0 0` (neutral binary: big-endian, IEEE doubles) in place
+    of `T`. Node types and shorts take 2 bytes, integers and the variable length 4, characters and logicals 1,
+    the length of the modeller version 2 and of the schema name 4; a pointer index — and every count of an
+    embedded schema description — is a 2-byte integer holding index + 1, or for indices from 32767 the pair
+    −(index mod 32767 + 1), index div 32767; unset values are the numbers −32764 and −3.14158e13. The schema
+    handling, the trial of layouts for files that do not describe their schema and everything downstream are
+    shared with the text form (`readXt` / `readXb` give the same node map). "Bare binary" (flag `B`: the number
+    format of the writing machine, with a 4-byte length of the modeller version) is read when it is
+    little-endian and refused otherwise. The text header is optional: the streams inside SolidWorks and Solid
+    Edge files have none. `meta.encoding` says which form was read.
+  * One correction to the reference, from files: the node types of the helical forms are the other way
+    round (163 hangs off SURFACE_DATA with the surface layout, 184 off CURVE_DATA with the curve layout).
+  * Not read: bare binary of big-endian machines; BLENDED_EDGE (rolling-ball
     blends, which Parasolid keeps as a definition — most fillets), OFFSET_SURF, SPUN_SURF, foreign (PE)
     geometry, SWEPT_SURF over other curves; periodic B-curves and B-surfaces whose knots are not stored in
     the unwrapped form (number of knots = vertices + degree + 1) — refused as inconsistent; attributes and groups.
-* **Checks on real files** (ACIS, DXF solids, Parasolid, DWG). The fixtures of `tests/geometry/acis.test.js` are
+* CAD containers (`cadcontainers.js`, `cfb.js`) — part files that wrap a kernel stream this application reads.
+  Nothing but that stream is interpreted: no features, sketches, colours or materials, and assemblies (which
+  hold references to part files) are refused with that explanation.
+  * `cfb.js` reads compound (OLE2) files: FAT, DIFAT, directory tree, mini stream; version 3 and 4; every chain
+    bounded. Checked stream by stream (size and MD5) against `olefile` on SolidWorks files.
+  * SolidWorks `.sldprt`: up to 2014 a compound file; from 2015 a run of records
+    `14 00 06 00 08 00`, 4 bytes, CRC-32, compressed size, size, name length, name (each byte with its halves
+    swapped), raw deflate data — records that do not inflate to the announced size are filler. In both, the
+    stream `Contents/Config-n-Partition` holds, after a 16-byte marker, pieces of `size, compressed size, zlib
+    data` (the first up to 1 MiB, then 4 KiB) that join to a neutral-binary Parasolid partition; a second block
+    holds its deltas (not read). `opts.configuration` chooses n; `meta.container`, `meta.kernelStream`,
+    `meta.configurations` report what was used. A part made of imported geometry has an empty partition and
+    one unknitted body per import feature in `Config-n-FeatureBodies/LocalBodies`; it is refused with that
+    explanation, because which of those bodies make up the model is not known. Bodies hidden in SolidWorks are
+    in the partition and are read (warning on every multi-body part).
+  * Solid Edge `.par` / `.psm` / `.pwd`: compound file, stream `PARASOLID/STREAMn.P_B` — a neutral-binary
+    partition with its text header, uncompressed. Several streams give their models side by side.
+  * Inventor `.ipt`: compound file; `RSeStorage/M<id>` names the segment `RSeStorage/B<id>`. The segment named
+    `…BRepSegment` (16-byte identifier, `04`, compression `01` = zlib) contains a binary ACIS stream
+    (`ASM BinaryFile…`), found by its signature and read by `sab.js`. Compression `02` is Zstandard (Inventor
+    2026), which is not decoded: such files are refused with the advice to save as SAT or STEP.
+* Rhino 3DM (`rhino3dm.js`) — the openNURBS chunk tree (32-bit chunk lengths before archive version 50, 64-bit
+  from it), tables, object records by class identifier, zlib-compressed buffers. Meshes as stored; B-reps from
+  the meshes stored with their faces, and faces without one triangulated between their trim loops through
+  `brep.js`; extrusions, curves, points, block instances. Options `hidden`, `curves`, `renderMeshes`,
+  `deflection`, `angularStep`; `meta.skipped` counts the classes left out, `meta.tessellation` the faces
+  triangulated here and those whose facets were bounded.
+* E57 (`e57.js`) — 48-byte header, 1024-byte pages with CRC-32C, XML description of the scans, compressed
+  vectors decoded packet by packet (bit-packed integers and scaled integers of any width up to 64 bits, floats);
+  cartesian or spherical coordinates, invalid-state flags, pose, intensity, colour; scans merged; thinning as
+  for LAS. `meta.scans` lists what each scan held, `meta.ignoredFields` the fields not used.
+* Fluent (`fluent.js`) — the parenthesised sections of legacy `.msh` / `.cas` files read from bytes: nodes
+  (10), faces (13) and zone names (39 / 45), ASCII or binary (20xx single, 30xx double precision; 32- or 64-bit
+  integers found from where the end marker falls). Output is the boundary: faces with one adjacent cell, wound
+  outwards, grouped by zone; cells (12) are counted only; other sections are counted in `meta.skipped`.
+  `.msh.h5` / `.cas.h5` are recognised by the `hdf5` adapter and give the same result.
+* **Checks on real files** (ACIS, DXF solids, Parasolid, DWG, CAD containers, E57, Fluent, HydroStar, 3DM). The fixtures of `tests/geometry/acis.test.js` are
   written by hand so that areas and volumes are known in closed form; in addition the readers were run on files
   written by CAD systems, collected from public repositories. A few small ones whose licence allows it are in
   `tests/geometry/fixtures/real/` (sources and licences in its README) and are read by the test suite; the
@@ -481,6 +538,14 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
   | DXF drawings with ACIS entities | 158 of 189 drawings collected, R14 – R2018 (`AC1014` … `AC1032`) | AutoCAD, BricsCAD and other ODA-based programs, Fusion 360 exports | 447 of 467 solid / region / surface entities read — 288 from SAT text, 159 from SAB; the other 20 carry no ACIS data in the drawing. All 105 3DSOLID bodies closed; 333 regions and 9 surfaces (open by nature); 3601 of 3601 faces read |
   | SAB | the 159 entities above (no free-standing `.sab` file was found) | AutoCAD, ODA; save versions 21800 – 22300, 32-bit integers | as above. No body was available in both forms, so SAT and SAB could not be compared on the same body as written by a CAD system; the test suite re-encodes the records of real SAT files as SAB and checks that the same geometry comes out. `ASM BinaryFile8` (64-bit) was never met and is covered by that test only |
   | Parasolid text | 125, Parasolid 9.0 – 37.0 (schemas 9003 … 36001) | NX / Unigraphics (38), SolidWorks (43), IronCAD (13), Simmetrix test parts (12), Onshape (6), MicroStation (3), Solid Edge, Autodesk and others | 112 read; 11 refused because the node stream could not be interpreted (10 of the 21 files of Parasolid 9 – 11, which use node types or layouts outside the published schema; one Parasolid 33 file saved without a schema description that uses a newer node type); 2 hold a body without geometry. 145 bodies in 178 placements, 169 of them solids, 146 closed; 5201 of 5409 faces read |
+  | Parasolid binary | 115 `.x_b` files | Solid Edge (113, Parasolid 36.0, neutral binary), SolidWorks 2009 (1, schema 19008), one file in little-endian bare binary (Parasolid 35.1 saved as 28.1) | all read. Solid Edge set: 113 solids, 87 closed, 13 229 of 13 654 faces. The bare-binary file: an assembly of 23 bodies, 15 closed, 1 136 of 1 141 faces. A 55-byte signature stub with the extension is refused as no transmit file |
+  | SolidWorks parts | 75 `.sldprt` from 20 repositories (64 record files of 2015 and later, 11 compound files; Parasolid 20 – 36) | SolidWorks | 62 read: 105 bodies, all solids, 84 closed, 15 776 of 16 272 faces. 13 hold no bodies in their partition: 10 parts of imported geometry (bodies kept per import feature — refused with that explanation), 3 empty parts |
+  | Solid Edge parts | 113 `.par` (one model set, one release) | Solid Edge, Parasolid 36.0 | all read; faces and volume of every part identical to its `.x_b` export |
+  | Inventor parts | 219 `.ipt` from 9 repositories | Inventor 2013 (201), 2014, 2021, 2024, 2025 (10), 2026 (8) | 208 read: 967 bodies (756 of them the sheets of one imported surface model), 191 closed, 11 370 of 11 403 faces. 8 files of Inventor 2026 refused (Zstandard); 3 parts hold sketches or parameters only |
+  | E57 | 69 (2.4 GB; float, double, integer and 10 – 32 bit scaled-integer coordinates, 4 spherical-only, 16 with 2 – 19 scans) | E57 reference implementation (InteliSum LD3 Studio; Leica ScanStation 2 and Riegl VZ-1000 scans), Trimble RealWorks 8.1, Leica Cyclone REGISTER 360, CloudCompare, libE57Format 2.0 – 3.4, pye57, LAStools las2e57 | 55 give a cloud, 104 million points in all. 14 are refused in words: 2 with a wrong page checksum, 2 truncated, 8 without scans or points, 1 without a prototype, 1 mixed (one scan read, one reported) |
+  | Fluent `.msh` / `.cas` | 78 (46 ASCII, 29 binary; 43 3-D, 32 2-D) and 9 `.msh.h5` / `.cas.h5` | Fluent 6.1 – 24.2, ANSYS Meshing, TGrid, Gambit, ICEM CFD, CUBIT, OpenFOAM foamMeshToFluent, FEconv | 75 read: 3.2 M nodes, 502 755 boundary faces in 393 zones, 8.8 M interior faces counted. 3 refused as intended (a Gmsh file, a file in another format, a mesh of interior faces only). All 9 HDF5 files read |
+  | HydroStar `.hst` | 4 | one hull of the HydroStar tool chain (2082 panels, quarter body, node numbers from 0); three meshes written by meshmagick 3.4 | all read |
+  | Rhino 3DM | 233; archive versions 1 (26), 2 (33), 3 (34), 4 (18), 50 (39), 60 (32), 70 (19), 80 (32) | Rhinoceros 2.0 – 8 (151), openNURBS toolkit examples (33), rhino3dm on macOS / Android and MoI 3.0 (19), a FreeCAD workbench using rhino3dm (3); the 26 version 1 files by Rhino 1 | 207 decoded, 26 version 1 archives refused; 195 give models, 7 hold no objects, 5 hold only SubD or text. 2495 meshes, 1084 B-reps (6064 of 7836 faces with a stored mesh, all read; all 1867 faces without one triangulated here), 73 extrusions, 5440 curves, 402 points and clouds |
   | DWG (in Chromium, library from its CDN) | 48, R11 and R2000 – R2018 | LibreDWG test collection | 42 give models; 6 hold nothing this reader keeps |
 
   Where an independent value exists, the volume of the closed bodies was compared with it, at a chord error of
@@ -494,6 +559,12 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
   | the same parts: SAT against Parasolid, where both come out closed | 6 | below 0.06 % (four of them identical to five digits) |
   | DWG against the DXF of the same drawing (`2000/entities-3d` of the LibreDWG collection) | 1 | identical models, entity counts and bounding box |
   | fixtures with known dimensions (box, rod, sphere, block with spherical cavity, bars) | 9 | exact for planar bodies; converging from the inscribed side for curved ones (see the tests) |
+  | Solid Edge `.x_b` files against the STEP export of the same part, read by the `occt` adapter (chord error 0.02 mm, 4°) | 54 closed bodies of the 72 parts compared | median 0.02 %, 53 within 0.1 %, one at 1.0 % |
+  | Solid Edge `.par` against the `.x_b` of the same part | 113 | none: same faces, same volume |
+  | SolidWorks parts against the Parasolid text export of the same name in the same repository | 10 | 7 of the same revision: below 0.0001 %; 3 are another revision of the part (different number of faces). One of these three exists also as `.x_b` and equals that exactly |
+  | SolidWorks parts against the STEP export of the same name (chord error 0.05 % of the diagonal, 4°) | 7 | 6 single-body parts: 0.00004 % – 0.07 %; one multi-body part has 20 bodies in the file and 12 in the STEP export (hidden bodies are stored and read) |
+  | Inventor parts against the SAT export of the same name in the same repository (Inventor 2013) | 37, 35 of them closed | same number of faces in all; volumes equal to ten digits (the SAT file is the text form of the same data) |
+  | Inventor part against its STEP export (Inventor 2025) | 1 | 0.04 %, same bounding box (a second pair turned out to be two different parts) |
 
   What was not read, and why:
 
@@ -508,6 +579,48 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
     SPUN_SURF, 4 with boundaries that crossed or collapsed. These account for the 23 solids that did not close.
     829 edges followed the chart of an intersection curve.
   * DXF: nothing of the ACIS data present. Hatches, text and dimensions are not ACIS data and are not read.
+  * Parasolid binary, SolidWorks, Solid Edge: what the Parasolid reader does not read in text files either —
+    649 faces on BLENDED_EDGE surfaces in the two sets together, 29 on OFFSET_SURF, the rest boundaries that
+    crossed or B-surfaces refused as inconsistent. Parts with many spline faces take long to tessellate (one
+    Inventor part of 26 faces took minutes on a loaded machine).
+  * Inventor: 33 faces — 24 procedural spline surfaces without a stored B-spline, the rest boundaries that
+    crossed at the facet size used.
+
+  The other formats, each against an independent reading of the same files:
+
+  * **E57** against pye57 (libE57Format) on the 54 files it reads, poses applied, no thinning: records and
+    valid points per scan identical in all; coordinates of 2.2 million sampled points identical once the
+    reference is rounded to the single precision of the model (one sample differs by one unit in the last
+    place); largest absolute difference 0.12 mm in a cloud several kilometres across, which is that rounding;
+    intensity identical; colour identical except in two files with 0 – 1 float colours, which pye57 returns as
+    written and this reader scales to 0 – 255. One file with 16-bit colour that pye57 cannot read agrees with
+    the `e57` Python package. Not met in the collection and covered by built files only: integer fields wider
+    than 32 bits, and files written by Faro SCENE or Z+F LaserControl.
+  * **Fluent** against a separate reading in Python (numpy for the legacy files, h5py for HDF5): node, face and
+    per-zone boundary-face counts equal in 74 of 75 legacy files (the other has hanging nodes, whose parent
+    faces the reader leaves out) and in all 9 HDF5 files; zone areas within 1.1e-6, and within 0.4 % on curved
+    polygonal walls of HDF5 files (projected against triangulated area). meshio's `ansys` reader can read 30 of
+    the files; 27 agree zone by zone and the 3 others differ in how faces are grouped, not in the faces. The
+    boundary of all 43 3-D meshes encloses a positive volume. One case that exists as text, binary and HDF5
+    gives the same counts, area and volume in all three. Not met in any file: 64-bit integer sections.
+  * **HydroStar**: no public specification and one hull from the HydroStar tool chain could be found; Capytaine
+    refuses it (node numbers from 0) and meshmagick misreads its numbered panel rows, so it was compared with a
+    separate reading by node number in Python: 2082 panels, area equal within 1e-8. The three meshmagick-written
+    meshes read by this reader, Capytaine 3.0 and meshmagick give the same panel counts, areas and volumes
+    (within 2e-8). Files written by `exportHst` from all four are read by Capytaine and meshmagick with panel
+    counts equal and areas within 1e-13.
+  * **Rhino 3DM** against openNURBS itself (the rhino3dm Python binding, 8.35), object by object: in the 207
+    files of archive versions 2 – 8 every one of 9919 objects is decoded to the same class, layer, name and
+    visibility, except that rhino3dm lists the 30 lights of the light table among the objects, names 3 clipping
+    planes "Surface", and puts 8 objects of one file that point to a layer without a record on layer 0. Meshes
+    and the meshes stored with B-rep faces agree in vertex and face counts, bounding box and area (largest
+    relative difference in area 2e-7, from single-precision vertices); one mesh written through rhino3dm
+    declares 59 800 faces that point past its vertex list, which both readers leave out. For 15 files whose
+    B-reps Rhino had meshed fully, the triangulation made here from surfaces and trims was compared with
+    Rhino's meshes: the area differs by −1.0 % … +0.14 % in 13 of them, by +4.7 % in one whose facets hit the
+    default bound (−0.03 % with the bound lifted), and in one file 2 of 36 faces were refused because their
+    boundary loops touch at the facet size. Large freeform faces are slow to triangulate (up to 81 s for one
+    file on a loaded machine). No Grasshopper-written file was identified in the collection.
   After importing a file from a source not listed, compare volume and bounding box with the values the CAD
   system reports and check that the body is closed (`inspect`, or `meta.closedBodies`); what the readers leave
   out is always named in `warnings`.
@@ -527,7 +640,13 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
   `meta.kernelEntities` counts what needs the kernel.
 * SVG — paths (all commands, arcs included), basic shapes, nested transforms, layers from named groups.
 * Airfoils — Selig and Lednicer layouts detected from the data; `meta.airfoil` gives thickness and camber.
-* GDF / NEMOH — panels kept as `quads`; symmetry expanded with reversed winding in mirror images.
+* GDF / NEMOH / HydroStar — panels kept as `quads`; symmetry expanded with reversed winding in mirror images.
+  HydroStar `.hst`: keyword lines around `COORDINATES … ENDCOORDINATES` (rows `id x y z` or `x y z`) and
+  `PANEL TYPE 0` (node numbers) or `TYPE 1` (panel number first) `… ENDPANEL`; panels name nodes by their
+  numbers, which need not start at 1; `SYMMETRY` / `SYMMETRY_BODY body n` with 1 = half body (mirror y = 0),
+  2 = quarter body (mirror y = 0 and x = 0); `NUMPANEL body first last` separates the bodies of a multi-body
+  file (`meta.bodies`, one group per body and mirror image). Keywords that are not geometry are listed in a
+  warning and `meta.keywordsSkipped`. The format has no public specification.
 
 ## 6. Exporters (`exporters.js`)
 
@@ -540,6 +659,7 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
 | `csv` | `exportCsv(model) -> string` | points, polyline, frame, grid, section | frames as `[nodes]` + `[members]`, read back by the table importer |
 | `geojson` | `exportGeoJson(models, { crs, origin }) -> string` | points, polyline, frame, section | with `origin` → WGS 84 longitude / latitude (RFC 7946); otherwise projected with a named `crs` member |
 | `esri-ascii` | `exportEsriAscii(grid, { nodata }) -> string` | grid | `cellsize`, or `dx` / `dy` for non-square cells |
+| `hst` | `exportHst(model, { title }) -> string` | surface, grid | HydroStar mesh: one body, no symmetry, `PANEL TYPE 0`; the `quads` of a panel model, otherwise its triangles with the last node repeated; read back by Capytaine and meshmagick |
 | `json` | `exportJson(models, { crs, source }) -> string` | all | application format: `{ format: 'offshore-analyses-geometry', version: 1, units: 'm', models }`, typed arrays as `{ $typed, base64 }` (little-endian bytes); lossless, NaN included |
 
 `exportModels(id, models, { fileName }) -> { data, fileName, mime }` checks kinds and builds the file name;
@@ -548,27 +668,29 @@ become `sets`. `meta.materials` lists elastic constants where the deck has them.
 ## 7. Detection (`detect.js`)
 
 Order: container magic (gzip, ZIP) → binary signatures (GLB, HDF5, NetCDF, TIFF, LAS, E57, SQLite, Surfer,
-shapefile, binary DXF, ACIS SAB, DWG, Parasolid binary, binary STL by exact length) → content sniffing of the first 64 kB (Part 21 schema →
+shapefile, binary DXF, ACIS SAB, DWG, Parasolid text header or binary flag, Fluent sections ahead of binary data, compound files by their stream names (SolidWorks, Solid Edge, Inventor, Revit), SolidWorks record files, openNURBS, NX, Creo and CATIA headers, binary STL by exact length) → content sniffing of the first 64 kB (Part 21 schema →
 `ifc` / `cis2` / `step`; XML root element; JSON markers; keyword lines of the solver decks; IGES column 73;
-DXF group codes; the four-integer SAT header followed by entity records; the `**…` header of a Parasolid transmit file; airfoil, NEMOH, panel and coloured-point row patterns) → file extension. Extensions that are
+DXF group codes; the four-integer SAT header followed by entity records; the `**…` header of a Parasolid transmit file; HydroStar `COORDINATES` blocks; airfoil, NEMOH, panel and coloured-point row patterns) → file extension. Extensions that are
 ambiguous in practice (`.dat`, `.txt`, `.xml`, `.json`, `.msh`, `.grd`, `.asc`, `.stp`, `.nc`) are decided by
 content. `detectFileSet(names)` recognises polyMesh directories, shapefile sets, 3MF packages and glTF with
 side-cars. `meta.detected.reason` records why a format was chosen.
 
 ## 8. Not supported
 
-* Exact B-rep without the `occt` adapter (STEP solids, IGES trimmed surfaces); native CAD files with or without
-  it.
+* Exact B-rep without the `occt` adapter (STEP solids, IGES trimmed surfaces).
+* Native CAD files other than SolidWorks, Solid Edge and Inventor parts and Rhino 3DM: NX, CATIA, Creo, JT,
+  Revit, Fusion 360, SketchUp, FBX, 3DS, Navisworks, DGN. Of the formats that are read: SolidWorks parts made of
+  imported geometry, Inventor 2026 files (Zstandard), all assemblies, and everything but the bodies.
 * DWG without the user's consent to download the LibreDWG library, without a network connection on first use,
   or outside a browser — save as DXF instead.
 * ACIS SAT / SAB and Parasolid: faces whose surface is kept only as a procedure (helical sweeps, rolling-ball
-  blends, offsets, spun surfaces), which are left out and counted; Parasolid binary files (`.x_b`); Parasolid
+  blends, offsets, spun surfaces), which are left out and counted; Parasolid bare-binary files of big-endian machines; Parasolid
   text files of releases 9 – 11 that use node types or layouts not in the published schema.
 * DXF hatches, text, dimensions; solids in a DXF or DWG drawing whose ACIS data the drawing does not carry.
 * IFC geometry other than linear-element axes and alignments without the `web-ifc` adapter; ifcXML.
 * HDF5-based files without the `hdf5` adapter: NetCDF-4, MED, CGNS, Exodus on NetCDF-4; ADF-based CGNS always.
-* LAZ without the `laz` adapter; E57; GeoPackage without the `sqlite` adapter.
-* Binary Gmsh and MSH 4.0; Fluent meshes; OpenFOAM cells (boundary patches are read) and binary polyMesh;
+* LAZ without the `laz` adapter; E57 images and extension codecs; GeoPackage without the `sqlite` adapter.
+* Binary Gmsh and MSH 4.0; Fluent cells (the boundary is read), big-endian Fluent files and data files; OpenFOAM cells (boundary patches are read) and binary polyMesh;
   ANSYS `EBLOCK` without the SOLID key; UNV datasets 15 / 781.
 * GeoTIFF with JPEG / LERC / ZSTD compression or a rotated transform; TopoJSON; VTK XML image / structured /
   parallel files; Draco / meshopt-compressed glTF.

@@ -21,12 +21,14 @@ https://raw.githack.com/samuelakosaonyejekwe/offshoreanalyses/main/index.html
   the regional sediment province, labelled as such). Values you enter from measurements override them and survive a new pull.
 * **Checked against instruments.** The modelled waves, wind, sea temperature and sea level at a site can be
   compared with what the nearest buoy and tide gauge measured over the last weeks.
-* **Your geometry and data.** 69 CAD, mesh, structural, centreline, bathymetry, point-cloud and tabular formats
-  are recognised (53 read natively, 12 through an adapter loaded on first use, 4 that must be exported to a
-  neutral format first); geometry is checked, repaired, refined or coarsened, and viewed in 3-D. ACIS (SAT, SAB,
-  and solids inside DXF) and Parasolid text are read natively and were checked on several hundred real files
-  (`docs/geometry.md`). DWG is read through LibreDWG, which is not part of this app: the browser downloads it only
-  when a user agrees, and one switch turns it off (`docs/vendor.md`).
+* **Your geometry and data.** 78 CAD, mesh, structural, centreline, bathymetry, point-cloud and tabular formats
+  are recognised: 60 read natively, 12 through an adapter loaded on first use, and 6 that must be exported to a
+  neutral format first (NX, CATIA, Creo, JT, Revit and a few others — the app says why for each). Geometry is
+  checked, repaired, refined or coarsened, and viewed in 3-D. Native readers include ACIS (SAT, SAB, solids
+  inside DXF), Parasolid text and binary, SolidWorks, Solid Edge and Inventor part files, Rhino 3DM, Fluent
+  meshes, E57 point clouds and HydroStar hulls, each checked on real files against an independent reader
+  (`docs/geometry.md`). DWG is read through LibreDWG, which is not part of this app: the browser downloads it
+  only when a user agrees, and one switch turns it off (`docs/vendor.md`).
 * **Every result explains itself.** Each number, check, chart and table carries a plain-language explanation;
   each run ends with engineering and economic recommendations, their basis, and the sustainability consequence.
 * **Studies on every module.** Sensitivity ranking, parameter sweeps, uncertainty propagation, discretisation

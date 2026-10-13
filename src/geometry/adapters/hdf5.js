@@ -7,6 +7,7 @@
 //   root label "Root Node of HDF5 File",
 //     a CGNSLibraryVersion or CGNSBase_t node  CGNS on HDF5                        → frame / surface / volume
 //   datasets coordx | coord and connect<n>     Exodus II on NetCDF-4               → frame / surface / volume
+//   group /meshes/<n> with nodes and faces     Fluent mesh / case (.msh.h5, .cas.h5) → surface (2-D: frame)
 //   a variable with cf_role = mesh_topology    UGRID 2-D mesh on NetCDF-4          → surface
 //   a 2-D variable on x/y or lon/lat axes      CF grid (GEBCO, ETOPO, EMODnet …)   → grid (points when uneven)
 //   anything else                              generic: `opts.datasets` names what to read; without it the
@@ -38,6 +39,14 @@
 // element or vertex lists / ranges become element or node sets. Zones are placed side by side: nodes on zone
 // interfaces are not merged. NGON_n / NFACE_n polyhedral sections are reported, not read.
 //
+// Fluent (common fluids format, written by Fluent 2020 R1 and later by default). The file holds the tables of
+// the legacy .msh / .cas format: /meshes/1/nodes/coords/<k> (n × dimension reals, first node number in the
+// minId attribute), /meshes/1/faces/nodes/<k>/nnodes and …/nodes (node count per face, node numbers),
+// /meshes/1/faces/c0/<k> and …/c1/<k> (adjacent cells, each over its own minId – maxId range of face numbers;
+// faces outside every c1 range have no second cell) and faces/zoneTopology (id, zoneType, minId, maxId and
+// the names as one ";"-separated string). As for the legacy files (importers/fluent.js, which builds the
+// result) only the boundary faces are returned, grouped by face zone; the first mesh of the file is read.
+//
 // The runtime is 4.2 MB (the WebAssembly binary is embedded in its JavaScript module) and is loaded on first
 // use only, relative to this module. The bytes of the file are mounted in the library's in-memory file system
 // without being copied; the library then reads the parts it needs into its own memory.
@@ -47,9 +56,10 @@ import { parsePrj, epsgInfo, normaliseUnit } from '../units.js';
 import { finishGrid, decimationFactor } from '../importers/grids.js';
 import { feResult } from '../importers/fe.js';
 import { Features } from '../importers/vector.js';
+import { faceZone, addFace, fluentBoundary } from '../importers/fluent.js';
 
 export const id = 'hdf5';
-export const title = 'HDF5 containers: NetCDF-4 grids and UGRID meshes, MED, CGNS, Exodus II';
+export const title = 'HDF5 containers: NetCDF-4 grids and UGRID meshes, MED, CGNS, Exodus II, Fluent';
 export const formats = ['hdf5', 'netcdf4', 'med', 'cgns', 'exodus-hdf5'];
 export const extensions = ['h5', 'hdf5', 'he5', 'nc', 'nc4', 'med', 'rmed', 'cgns', 'e', 'exo', 'ex2', 'exii', 'g'];
 export const library = { name: 'h5wasm', version: '0.10.3', licence: 'NIST software licence; HDF5 library BSD-3-Clause' };
@@ -797,6 +807,76 @@ function cgns(ctx) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
+// Fluent common fluids format
+// ---------------------------------------------------------------------------------------------------------
+
+function fluentCff(ctx) {
+  const { file, opts, fname, warnings } = ctx;
+  const meshes = child(file, 'meshes');
+  const names = keysOf(meshes).filter((k) => isGroup(child(meshes, k)));
+  const mesh = child(meshes, names[0]);
+  if (names.length > 1) warnings.push(`The file holds ${names.length} meshes; the first ("${names[0]}") was read.`);
+  const at = (g, ...path) => { let o = g; for (const k of path) o = isGroup(o) ? child(o, k) : null; return o; };
+  const sets = (g) => keysOf(g).map((k) => child(g, k)).filter(isDataset);
+  const first = (o) => { const v = attrsOf(o).minId; return Number.isFinite(v) && v >= 1 ? v : 1; };
+  const topo = (g) => {
+    const col = (k) => { const d = at(g, k); return isDataset(d) ? numbers(d) : []; };
+    const nm = at(g, 'name');
+    return { id: col('id'), type: col('zoneType'), min: col('minId'), max: col('maxId'), shape: col('cellType'), names: isDataset(nm) ? textOf(nm).split(';') : [] };
+  };
+  const ma = attrsOf(mesh);
+
+  const coordSets = sets(at(mesh, 'nodes', 'coords'));
+  if (!coordSets.length) throw new Error(`${fname}: the Fluent mesh "${names[0]}" has no node coordinates (meshes/${names[0]}/nodes/coords).`);
+  let nNodes = 0, nodesRead = 0, coordDim = 0;
+  const parts = coordSets.map((d) => { const shape = d.shape || []; const n = shape[0] || 0, nd = shape[1] || 1, f = first(d); nNodes = Math.max(nNodes, f + n - 1); return { d, n, nd, f }; });
+  const coords = new Float64Array(nNodes * 3).fill(NaN);
+  for (const { d, n, nd, f } of parts) {
+    if (nd !== 2 && nd !== 3) throw new Error(`${fname}: the node coordinates of the Fluent mesh have ${nd} component(s) per node; expected 2 or 3.`);
+    const v = numbers(d);
+    for (let i = 0, o = (f - 1) * 3; i < n; i++, o += 3) { coords[o] = v[i * nd]; coords[o + 1] = v[i * nd + 1]; coords[o + 2] = nd === 3 ? v[i * nd + 2] : 0; }
+    nodesRead += n; coordDim = Math.max(coordDim, nd);
+  }
+
+  // the two adjacent cells by face number
+  const faces = at(mesh, 'faces');
+  const sections = keysOf(at(faces, 'nodes')).map((k) => at(faces, 'nodes', k)).filter((g) => isDataset(at(g, 'nnodes')) && isDataset(at(g, 'nodes')));
+  if (!sections.length) throw new Error(`${fname}: the Fluent mesh "${names[0]}" has no faces (meshes/${names[0]}/faces/nodes).`);
+  let nFaces = 0;
+  for (const g of sections) nFaces = Math.max(nFaces, first(g) + (at(g, 'nnodes').shape || [0])[0] - 1);
+  const cell = [new Float64Array(nFaces + 1), new Float64Array(nFaces + 1)];
+  ['c0', 'c1'].forEach((k, side) => { for (const d of sets(at(faces, k))) { const v = numbers(d), f = first(d); for (let i = 0; i < v.length && f + i <= nFaces; i++) cell[side][f + i] = v[i]; } });
+
+  const ft = topo(at(faces, 'zoneTopology'));
+  const zoneNames = new Map();
+  const order = Array.from(ft.id, (_, i) => i).sort((a, b) => ft.min[a] - ft.min[b]);
+  const faceZones = order.map((i) => { zoneNames.set(ft.id[i], { name: (ft.names[i] || '').trim() || `zone ${ft.id[i]}` }); return faceZone(ft.id[i], ft.type[i] ?? 0); });
+  const stray = faceZone(0, 0);
+  const ids = new Float64Array(4096);
+  let zi = 0, bad = 0;
+  for (const g of sections) {
+    const nn = numbers(at(g, 'nnodes')), nodes = numbers(at(g, 'nodes'));
+    let o = 0;
+    for (let i = 0, f = first(g); i < nn.length; i++, f++) {
+      const k = nn[i];
+      if (!(k >= 0) || k > ids.length || o + k > nodes.length) throw new Error(`${fname}: the face table of the Fluent mesh is inconsistent at face ${f} (${k} nodes, ${nodes.length - o} node numbers left). The file is damaged.`);
+      for (let j = 0; j < k; j++) ids[j] = nodes[o + j];
+      o += k;
+      // zones cover ascending ranges of face numbers
+      if (zi >= order.length || f < ft.min[order[zi]] || f > ft.max[order[zi]]) { zi = order.findIndex((z) => f >= ft.min[z] && f <= ft.max[z]); if (zi < 0) { zi = order.length; bad++; } }
+      addFace(zi < order.length ? faceZones[zi] : stray, ids, k, cell[0][f], cell[1][f], !!opts.twoSided);
+    }
+  }
+  if (bad) { faceZones.push(stray); warnings.push(`${bad} face(s) lie outside every face zone of the file; those on the boundary are returned as "zone 0".`); }
+  const ct = topo(at(mesh, 'cells', 'zoneTopology'));
+  const cellZones = Array.from(ct.id, (zid, i) => { zoneNames.set(zid, { name: (ct.names[i] || '').trim() || `zone ${zid}` }); return { id: zid, count: Math.max(0, ct.max[i] - ct.min[i] + 1), typeCode: ct.type[i] ?? 1, shapeCode: ct.shape[i] ?? 0 }; });
+  const text = (k) => { const d = at(file, 'settings', k); return isDataset(d) ? textOf(d) : null; };
+  return fluentBoundary({ coords, nNodes, nodesRead, faceZones, zoneNames, cellZones, dim: ma.dimension === 2 || ma.dimension === 3 ? ma.dimension : coordDim, declNodes: ma.nodeCount || 0, declFaces: ma.faceCount || 0, nCells: ma.cellCount || cellZones.reduce((s, c) => s + c.count, 0) || null, notes: warnings }, { name: fname.replace(/\.h5$/i, '') }, opts, {
+    flavour: 'fluent', encoding: 'hdf5', writer: text('Origin'), version: text('Version'), mesh: names[0], meshes: names, tree: ctx.tree,
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------
 // Generic HDF5: datasets named by the caller
 // ---------------------------------------------------------------------------------------------------------
 
@@ -882,7 +962,7 @@ function generic(ctx) {
 
 /**
  * Decide the convention of an open file from its object tree.
- * @returns {'med'|'cgns'|'exodus'|null} null: NetCDF-style variables decide (UGRID, CF grid or generic)
+ * @returns {'med'|'cgns'|'exodus'|'fluent'|null} null: NetCDF-style variables decide (UGRID, CF grid or generic)
  */
 function meshFlavour(file, rootAtts) {
   const keys = keysOf(file);
@@ -890,11 +970,13 @@ function meshFlavour(file, rootAtts) {
   if (rootAtts.label === 'Root Node of HDF5 File' || keys.includes('CGNSLibraryVersion')) return 'cgns';
   for (const k of keys.slice(0, 32)) { const o = child(file, k); if (isGroup(o) && attrsOf(o).label === 'CGNSBase_t') return 'cgns'; }
   if ((keys.includes('coordx') || keys.includes('coord')) && keys.some((k) => /^connect\d+$/.test(k))) return 'exodus';
+  if (keys.includes('meshes')) { const ms = child(file, 'meshes'); if (isGroup(ms) && keysOf(ms).some((k) => { const m = child(ms, k); return isGroup(m) && isGroup(child(m, 'faces')) && isGroup(child(m, 'nodes')); })) return 'fluent'; }
   return null;
 }
 
 /**
- * Import an HDF5 file: NetCDF-4 CF grid or UGRID mesh, MED, CGNS, Exodus II, or datasets named by the caller.
+ * Import an HDF5 file: NetCDF-4 CF grid or UGRID mesh, MED, CGNS, Exodus II, Fluent mesh / case, or datasets
+ * named by the caller.
  * @param {{ name?: string, bytes?: Uint8Array }} input file content
  * @param {object} [opts] options of the grid, vector and mesh importers (`units`, `scale`, `crs`, `vertical`,
  *   `zUnits`, `projection`, `origin`) and
@@ -904,7 +986,7 @@ function meshFlavour(file, rootAtts) {
  * @param {object} [opts.datasets] generic HDF5: `{ grid, x?, y?, x0?, y0?, dx?, dy?, nodata? }`,
  *   `{ points }`, `{ x, y, z }` or `{ positions, elements: { tri3: path, … }, indexBase? }` (dataset paths)
  * @returns {Promise<{ models: object[], warnings: string[], meta: object }>} meta.flavour is one of
- *   'netcdf4-cf-grid', 'netcdf4-ugrid', 'exodus-netcdf4', 'med', 'cgns', 'generic'; meta.tree is
+ *   'netcdf4-cf-grid', 'netcdf4-ugrid', 'exodus-netcdf4', 'med', 'cgns', 'fluent', 'generic'; meta.tree is
  *   `{ entries: [{ path, type, shape?, dtype? }], truncated }`
  */
 export async function parse(input, opts = {}) {
@@ -945,6 +1027,7 @@ export async function parse(input, opts = {}) {
     if (flavour === 'med') return run('MED mesh', () => med(ctx));
     if (flavour === 'cgns') return run('CGNS file', () => cgns(ctx));
     if (flavour === 'exodus') return run('Exodus mesh', () => exodus(ctx));
+    if (flavour === 'fluent') return run('Fluent mesh', () => fluentCff(ctx));
     return run('file', () => {
       const vars = collectVariables(file, tree);
       const topo = vars.find((v) => v.atts.cf_role === 'mesh_topology' && v.atts.face_node_connectivity);
