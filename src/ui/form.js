@@ -1,9 +1,25 @@
 // Input form generated from a module's declared inputs: grouped fields with units, role tags (IC/BC…),
 // live validation, project-bus links, editable tables and series, material pickers and geometry pickers.
 import { h, clear, icon, fmt, toast } from './dom.js';
-import { validate, hidden, ROLE_LABEL } from '../core/studies.js';
+import { validate, hidden, fromSI, ROLE_LABEL } from '../core/studies.js';
 import { materialsIn, material } from '../library/materials.js';
 import { getProject, loadGeometry } from '../core/store.js';
+
+/**
+ * Inputs of a module that carry a value of the project's screening soil profile: bound to a project value that
+ * was published by the profile and still equal to it. Found from the values themselves, so the flag survives a
+ * reload and a saved input set.
+ * @returns {{ key: string, label: string, bind: string }[]}
+ */
+export function screeningInputs(mod, values) {
+  const bus = getProject().bus || {};
+  return (mod.inputs || []).filter((inp) => {
+    const b = inp.bind && bus[inp.bind];
+    if (!b || b.from !== 'screening') return false;
+    const v = fromSI(b.value, inp.unit);
+    return Number.isFinite(values[inp.key]) && Math.abs(values[inp.key] - v) <= 1e-9 * Math.max(1, Math.abs(v));
+  }).map((inp) => ({ key: inp.key, label: inp.label, bind: inp.bind }));
+}
 
 const ROLE_SHORT = { ic: 'IC', bc: 'BC', criteria: 'limit', control: 'solver' };
 
@@ -127,12 +143,15 @@ export function buildForm(mod, initial, { onChange, onLinkClick } = {}) {
 
   const mark = () => {
     state.errors = validate(mod, state.values);
+    const screening = new Set(screeningInputs(mod, state.values).map((s) => s.key));
     for (const [key, f] of fieldEls) {
       const err = state.errors[key];
       f.wrap.classList.toggle('bad', !!err);
       f.wrap.classList.toggle('linked', !!state.linked[key]);
+      f.wrap.classList.toggle('screening', screening.has(key));
       const inp = f.inp;
-      f.hint.textContent = err || (state.linked[key] ? `Linked to project value ${state.linked[key]} — edit to override.` : (inp.help || rangeHint(inp)));
+      f.hint.textContent = err || (screening.has(key) ? `Screening value — no site investigation yet (project value ${inp.bind}). Replace it with site data.`
+        : state.linked[key] ? `Linked to project value ${state.linked[key]} — edit to override.` : (inp.help || rangeHint(inp)));
     }
   };
   const changed = (key, structural) => { if (structural) draw(); else mark(); onChange?.(key, state); };

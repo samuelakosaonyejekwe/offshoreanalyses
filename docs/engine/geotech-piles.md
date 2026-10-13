@@ -145,6 +145,23 @@ above the head. `[H; M] = [[KHH, KHM], [KHM, KMM]]·[y; theta]` with `KHM < 0`.
 | `cptToLayers` | `({ z m[], qc Pa[], fs Pa[], u2 Pa[], a, Nkt, gammaW, minThickness m, sandThresholdIc = 2.6, clayThresholdIc = 2.95, eps50 }) → { layers (for createProfile), points }` | Ic-threshold layering |
 | `sptCorrection` | `({ N, energyRatioPct, CB, CS, CR, sigmaV0Eff Pa, CNmax = 1.7 }) → { N60, CN, N160 }` | Skempton (1986); Liao & Whitman (1986) |
 
+## siteinvestigation.js
+
+From site-investigation records to the soil values the suites share. Reading and reduction only: the correlations
+are those of `cpt.js`.
+
+| Export | Signature → result (units) | Reference |
+| --- | --- | --- |
+| `parseCptTable` | `(text, { depth, qc, fs, u2 } fallback units) → { z m[], qc Pa[], fs Pa[], u2 Pa[]｜null, qcIsQt, format, units, skipped, warnings[] }`; reads GEF files (`#COLUMNINFO` quantity numbers 1/11 depth, 2 cone resistance, 3 local friction, 6 pore pressure u2; `#COLUMNVOID`), the `SCPT` group of AGS 3/4 files (`SCPT_DPTH`, `SCPT_RES`, `SCPT_FRES`, `SCPT_PWP2`), and delimited text (comma, semicolon, tab, blanks) with named columns — or none, taken as depth, qc, fs, u2. Units in the header win over the fallback. Rows without depth > 0, cone resistance > 0 or a sleeve reading are skipped and counted; rows are sorted and repeated depths dropped | file formats: GEF-CPT-Report (CUR/Deltares); AGS data format |
+| `PRESSURE_UNITS`, `LENGTH_UNITS` | factors to Pa (`Pa`, `kPa`, `MPa`, `bar`, `kgf/cm²`, `tsf`, `psi`) and to m (`m`, `cm`, `mm`, `ft`) | — |
+| `fitStrengthLine` | `(z m[], su Pa[]) → { su0 Pa, suGrad Pa/m, n, r2, throughOrigin }`; least squares; a negative mudline value is replaced by the best line through the origin, a negative slope by the mean | — |
+| `cptDesignValues` | `({ z, qc, fs, u2, qcIsQt, a = 0.8, Nkt = 15, gammaW = 10052, phiMethod, drMethod }) → { su0, suGrad, suRange (Nkt 10 and 20), suFit, phiDeg, phiRange [min, median, max], Dr, gammaSub, gammaSubClay, gammaSubSand, share { clay, silt, sand }, depth, layers, points }`: strength line through su = (qt − σv0)/Nkt of every clay or silt reading (at least 3); φ′ = lower quartile of the sand readings (at least 3), each limited to 20–45°; γ′ of the soil that makes up most of the sounding | Lunne, Robertson & Powell (1997); Robertson (2009); Kulhawy & Mayne (1990); Jamiolkowski et al. (2003); Robertson & Cabal (2010) |
+| `boreholeDesignValues` | `(layers [{ top, bottom m, soil 'clay'｜'sand', suTop, suBottom Pa, phiDeg, gammaSub N/m³ }]) → { su0, suGrad, suFit, phiDeg, gammaSub, share, depth }`: strength line through the clay layers sampled every 0.25 m; lowest sand friction angle; thickness-weighted γ′ of the main soil | — |
+
+Notes: the lower quartile as the characteristic friction angle and the least-squares strength line are reductions
+chosen for screening a single sounding; a design profile is a cautious estimate over all soundings of a site and
+is the geotechnical engineer's to draw. Median grain size is not derived from a cone test.
+
 ## Not implemented, and items to confirm against the printed sources
 
 * Reese, Cox & Koop (1975) stiff clay with free water (coefficients As, Ac exist only as figures). Stiff clay uses

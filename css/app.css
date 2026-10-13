@@ -310,3 +310,14 @@ table.t input:focus { outline: 2px solid var(--focus); border-radius: 3px; }
 .kpis { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
 table.t input[inputmode="text"], table.t select { min-width: 150px; }
 table.t select { border: 0; background: transparent; color: var(--ink); font: inherit; }
+
+/* seabed and soil card; inputs fed by the screening soil profile */
+.field.screening .inp { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, var(--surface)); }
+.field.screening .hint { color: var(--warning-ink); font-weight: 600; }
+.banner.screening { border: 1px solid var(--warning); }
+.soilgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 12px; margin: 8px 0; }
+.soilgrid label { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--ink-2); }
+.soilgrid input, .soilgrid select, textarea.soiltext { border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; background: var(--surface); color: var(--ink); font: inherit; min-width: 0; }
+textarea.soiltext { width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: .78rem; }
+ul.plain { margin: 6px 0; padding-left: 18px; font-size: .86rem; line-height: 1.45; }
+ul.plain li { margin: 3px 0; overflow-wrap: anywhere; }

@@ -1,20 +1,26 @@
-// Reader for the bundled global seafloor-lithology grid (assets/seabed-lithology.bin, written by
-// tools/seabed-grid.py from Dutkiewicz et al. 2015, CC BY-SA 4.0). Pure functions on a byte buffer, so the same
-// code runs in the browser and under Node.
+// Reader for the two bundled 0.1° seabed grids written by tools/seabed-grid.py: assets/seabed-sediment.bin (the
+// Shom worldwide seabed sediment map, Open Licence 2.0) and assets/seabed-deepsea.bin (Diesing 2020 deep-sea
+// sediment types, CC BY 4.0). Pure functions on a byte buffer, so the same code runs in the browser and under Node.
 
-/** Lithologies of the source grid by code, each mapped to a key of SEABED_CLASSES in site.js. */
+/**
+ * Classes of the sediment grid: groups of the legend of the Shom map. `code` is the legend code that stands for
+ * the group (decoded by shomClass in seabed.js, which also gives the grain-size band of the legend definition).
+ */
 export const SEABED_GRID_CLASSES = {
-  1: { name: 'Gravel and coarser', cls: 'gravel' }, 2: { name: 'Sand', cls: 'sand' }, 3: { name: 'Silt', cls: 'silt' }, 4: { name: 'Clay', cls: 'clay' },
-  5: { name: 'Calcareous ooze', cls: 'calcOoze' }, 6: { name: 'Radiolarian ooze', cls: 'silOoze' }, 7: { name: 'Diatom ooze', cls: 'silOoze' },
-  8: { name: 'Sponge spicules', cls: 'silOoze' }, 9: { name: 'Mixed calcareous/siliceous ooze', cls: 'mixedOoze' }, 10: { name: 'Shells and coral fragments', cls: 'biogenic' },
-  11: { name: 'Ash and volcanic sand/gravel', cls: 'volcanic' }, 12: { name: 'Siliceous mud', cls: 'silMud' }, 13: { name: 'Fine-grained calcareous sediment', cls: 'calcMud' },
+  1: { code: 'NFRoche' }, 2: { code: 'NFC' }, 3: { code: 'NFG' }, 4: { code: 'NFGS' }, 5: { code: 'NFSG' }, 6: { code: 'NFS' }, 7: { code: 'NFSV' },
+  8: { code: 'NFSF' }, 9: { code: 'NFSFV' }, 10: { code: 'NFVS' }, 11: { code: 'NFV' }, 12: { code: 'NFSi' }, 13: { code: 'NFA' },
+};
+/** Classes of the deep-sea grid (what the sediment is made of), each mapped to a key of SEABED_CLASSES. */
+export const DEEPSEA_GRID_CLASSES = {
+  1: { name: 'Calcareous sediment', cls: 'calcOoze' }, 2: { name: 'Clay', cls: 'clay' }, 3: { name: 'Diatom ooze', cls: 'silOoze' },
+  4: { name: 'Lithogenous sediment', cls: 'lithogenous' }, 5: { name: 'Radiolarian ooze', cls: 'silOoze' },
 };
 
 const bytesOf = (buf) => (buf instanceof Uint8Array ? buf : new Uint8Array(buf));
 /** Grid size from the 8-byte header ("SBL1", nx, ny). */
 export function seabedGridSize(buf) {
   const b = bytesOf(buf);
-  if (b.length < 8 || String.fromCharCode(b[0], b[1], b[2], b[3]) !== 'SBL1') throw new Error('Not a seabed lithology grid');
+  if (b.length < 8 || String.fromCharCode(b[0], b[1], b[2], b[3]) !== 'SBL1') throw new Error('Not a seabed grid file');
   return { nx: b[4] | b[5] << 8, ny: b[6] | b[7] << 8 };
 }
 
@@ -42,16 +48,16 @@ export function decodeSeabedGrid(buf) {
     if (n === 16) { let shift = 0, v; do { v = b[p++]; n += (v & 127) * 2 ** shift; shift += 7; } while (v & 128); }
     cells.fill(code, at, at + n); at += n;
   }
-  if (at !== cells.length) throw new Error('Seabed lithology grid is truncated');
+  if (at !== cells.length) throw new Error('Seabed grid file is truncated');
   return { nx, ny, cells };
 }
 
 /**
- * Lithology at a point: the nearest grid node, or — where that node holds no data, as it does along coasts drawn
+ * Class at a point: the nearest grid node, or — where that node holds no data, as it does along coasts drawn
  * coarser than the real shoreline — the closest node with data within `reach` nodes. Null on land and wherever
  * the source has no value. `offsetKm` is the distance from the point to the node that answered.
  */
-export function seabedGridAt(buf, lat, lon, { reach = 2 } = {}) {
+export function seabedGridAt(buf, lat, lon, { reach = 2, classes = SEABED_GRID_CLASSES } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90) return null;
   const { nx, ny } = seabedGridSize(buf), step = 360 / nx, R = Math.PI / 180;
   const x = (((lon + 180) % 360) + 360) % 360 / step, y = (90 - lat) / step;
@@ -65,5 +71,5 @@ export function seabedGridAt(buf, lat, lon, { reach = 2 } = {}) {
   cand.sort((a, b) => a.index - b.index);
   const codes = seabedGridCodes(buf, cand.map((c) => c.index));
   const hit = cand.map((c, k) => ({ ...c, code: codes[k] })).filter((c) => c.code > 0).sort((a, b) => b.direct - a.direct || a.km - b.km)[0];
-  return hit ? { code: hit.code, ...SEABED_GRID_CLASSES[hit.code], lat: hit.lat, lon: hit.lon, offsetKm: hit.km, shifted: !hit.direct, stepDeg: step } : null;
+  return hit ? { code: hit.code, ...classes[hit.code], lat: hit.lat, lon: hit.lon, offsetKm: hit.km, shifted: !hit.direct, stepDeg: step } : null;
 }

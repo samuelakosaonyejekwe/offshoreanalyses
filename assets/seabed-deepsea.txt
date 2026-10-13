@@ -1,0 +1,25 @@
+seabed-deepsea.bin — deep-sea sediment types sampled on a 0.1 degree grid
+
+Source
+  Diesing, Markus (2020): Deep-sea sediments of the global ocean mapped with Random Forest machine learning
+  algorithm [dataset]. PANGAEA, https://doi.org/10.1594/PANGAEA.911692
+  File lithology_classes.tif (10 km cells, Wagner IV equal-area projection) from
+  https://store.pangaea.de/Publications/DiesingM_2020/Deep-sea_sediments_5_classes.zip, downloaded 2026-10-13.
+  Described in: Diesing, M. (2020). Deep-sea sediments of the global ocean. Earth System Science Data 12,
+  3367-3381, https://doi.org/10.5194/essd-12-3367-2020
+
+Licence
+  The PANGAEA record gives the licence as https://creativecommons.org/licenses/by/4.0/ (Creative Commons
+  Attribution 4.0 International). It has no share-alike condition.
+
+Changes made
+  Each node of a 0.1 degree grid takes the class of the source cell it falls in (Wagner IV forward projection of
+  the node); nothing is interpolated. Cells without a prediction (land, and seas shallower than about 500 m)
+  are class 0. Written by tools/seabed-grid.py; read by src/data/seabedgrid.js.
+
+Classes (as in the source; the order was confirmed against its probability grids)
+  0 no data   1 calcareous sediment   2 clay   3 diatom ooze   4 lithogenous sediment   5 radiolarian ooze
+
+Limits
+  A statistical prediction from sample descriptions and environmental variables: it shows the predominant
+  sediment type of a region of the deep sea, not the ground at a site. It describes the top of the seabed only.

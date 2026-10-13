@@ -3,6 +3,9 @@
 import * as C from './connectors.js';
 import { fitGumbel, returnValue, scatterDiagram } from '../engine/reliability/extreme.js';
 import { getProject, publish, save, emit } from '../core/store.js';
+import { SHELF_DEPTH, SEABED_CLASSES, classifySeabed, gradeSeabedSamples, reduceSeabedSamples, shomClass } from './seabed.js';
+import { hydroSorting, combineSeabedEvidence, seabedConfidence } from './seabedevidence.js';
+import { SCREENING_KEYS } from './soilscreening.js';
 
 const clean = (a) => a.filter((v) => typeof v === 'number' && Number.isFinite(v));
 const mean = (a) => a.reduce((s, v) => s + v, 0) / (a.length || 1);
@@ -78,83 +81,34 @@ function seismicScreen(fc, lat, lon) {
   return { n: feats.length, years: yrs, maxMag: maxOf(mags), maxSitePga: pga[0], pga475, note: 'Screening estimate from the historical catalogue with a single attenuation relation (with fewer than 10 events: 1.5 × the largest historical site acceleration) — not a probabilistic seismic hazard assessment. Use a site-specific PSHA or the national hazard map for design.' };
 }
 
-/** Water depth (m) taken as the edge of the continental shelf: shallower, the global lithology grid sets no grain size. */
-export const SHELF_DEPTH = 200;
+export { SHELF_DEPTH, SEABED_CLASSES, classifySeabed, classifyGrainSize, gradeSeabedSamples, reduceSeabedSamples } from './seabed.js';
+
 /**
- * Seabed-surface classes with a representative median grain size (Wentworth scale mid-points) and what each
- * usually means for foundations, scour and burial. Grain size is a property of the class; strength is not —
- * no strength is ever derived from a surface description.
+ * Where the open sources hold no survey map or sample: the class of the worldwide sediment map (read at the site,
+ * or from the bundled grid), the sediment type of the deep-sea grid, and — on a shelf — the comparison with the
+ * hydrodynamic setting that decides whether a grain size may be passed on. Pure, so it can be tested.
+ * @param {{ depth: number, live?: { code: string, sheet: number|null }|null, grid?: { sediment: object|null, deepsea: object|null }|null, hydro?: object|null }} o
+ * @returns {null|object} the `data.seabed` record without provenance; null when no source has a value
  */
-export const SEABED_CLASSES = {
-  rock: { label: 'Rock or boulders', d50: null, means: 'Driven piles may refuse and trenching is slow: expect drilled or rock-socketed foundations and surface-laid, protected cables or pipelines.' },
-  gravel: { label: 'Gravel or coarse-grained sediment', d50: 8e-3, means: 'Free-draining and resistant to scour; hard on ploughs and jetting tools, and suction installation may not seal.' },
-  mixed: { label: 'Mixed sediment', d50: 1e-3, means: 'Variable over short distances: expect both granular and cohesive behaviour and plan the site investigation to map the boundaries.' },
-  sand: { label: 'Sand', d50: 2.5e-4, means: 'Drained behaviour and good bearing, but mobile under waves and current: scour protection and burial depth need attention.' },
-  muddySand: { label: 'Muddy sand', d50: 1.2e-4, means: 'Mostly granular with fines: partly drained response, moderate scour potential.' },
-  sandyMud: { label: 'Sandy mud', d50: 4e-5, means: 'Mostly cohesive: undrained strength governs and consolidation settlement should be expected.' },
-  mud: { label: 'Mud (silt and clay)', d50: 1.5e-5, means: 'Soft cohesive seabed: low bearing capacity near the surface, large embedment of pipelines and mudmats, favourable for suction and drag anchors.' },
-  biogenic: { label: 'Shell, coral or other biogenic material', d50: 2e-3, means: 'Carbonate material crushes under load: pile shaft friction can be far below that of silica sand, and coral is usually an environmental constraint.' },
-  // classes below occur only in the global lithology grid (continental margins and the deep sea)
-  silt: { label: 'Silt', d50: 2e-5, means: 'Fine, low-plasticity sediment between drained and undrained behaviour: easily eroded and jetted, sensitive to cyclic loading, and slow to regain strength after disturbance around anchors and trenches.' },
-  clay: { label: 'Clay (terrigenous or deep-sea pelagic clay)', d50: 2e-6, means: 'Very soft, highly plastic clay at the mudline with strength rising slowly with depth: suited to suction, drag-embedment and plate anchors; expect deep pipeline and mudmat embedment, long consolidation times and low axial pipe-soil resistance.' },
-  calcOoze: { label: 'Calcareous ooze', d50: 2e-5, means: 'Soft carbonate sediment of hollow microfossil shells: the grains crush under load, so pile shaft friction and anchor capacity can be far below those of a silica soil of the same grading, and it is compressible and often lightly cemented in layers — design with carbonate-specific methods and laboratory tests.' },
-  silOoze: { label: 'Siliceous ooze (diatoms, radiolarians or sponge spicules)', d50: 3e-5, means: 'Very porous, light sediment of fragile opal skeletons: unit weight is exceptionally low and water content high, the grains crush, and index-test correlations for ordinary clays do not apply — anchors and mudmats need site-specific strength testing.' },
-  mixedOoze: { label: 'Mixed calcareous and siliceous ooze', d50: 2e-5, means: 'Soft biogenic sediment with crushable carbonate and opal grains: low unit weight, high compressibility and low pile or anchor friction; treat as a carbonate soil until tests show otherwise.' },
-  volcanic: { label: 'Volcanic ash, sand or gravel', d50: 5e-4, means: 'Angular, vesicular grains that crush and may be altered to clay: friction angles look high in the laboratory but pile and anchor friction is unreliable, the ground is abrasive to trenching tools, and the area is likely to be seismically active.' },
-  silMud: { label: 'Siliceous mud', d50: 1e-5, means: 'Soft cohesive mud rich in opal microfossils: lower unit weight and higher water content than ordinary clay of the same strength, large embedment of pipelines and mudmats, favourable for suction and drag anchors once the strength profile is measured.' },
-  calcMud: { label: 'Fine-grained calcareous sediment', d50: 1e-5, means: 'Carbonate mud or marl: soft and compressible near the surface, with crushable grains and patchy cementation — pile friction is low and variable, and hard cemented layers can stop ploughs and suction-anchor skirts.' },
-};
-const SEABED_WORDS = [
-  ['rock', /\b(rock|rk|r|rky|boulders?|blds?|bo|bedrock|ledge|lava|hard)\b/], ['biogenic', /\b(coral|co|crl|shells?|sh|oysters?|oys|maerl|sponge|weed|grass|kelp)\b/],
-  ['gravel', /\b(gravel|gravelly|g|grv|pebbles?|p|cobbles?|cb|stones?|st|shingle|coarse-grained)\b/], ['mixed', /\bmixed\b/],
-  ['sand', /\b(sand|sandy|sd|s)\b/], ['mud', /\b(mud|muddy|md|m|clay|cy|cl|silt|si|ooze|oz|marl|mrl)\b/],
-];
-/** Class of one seabed description: a Folk class name ("muddy Sand"), chart abbreviations ("SD,BRN,CRS") or plain words. */
-export function classifySeabed(text) {
-  const t = String(text || '').toLowerCase().replace(/[;/]/g, ',').trim();
-  if (!t || /no data|unknown/.test(t)) return null;
-  // Folk names: the noun (last word) is the main fraction, an adjective before it the secondary one
-  if (/\bmud to muddy sand\b/.test(t)) return 'sandyMud';
-  if (/\b(sandy|gravelly sandy) mud\b/.test(t)) return 'sandyMud';
-  if (/\b(muddy|gravelly muddy) sand\b/.test(t)) return 'muddySand';
-  if (/\b(sandy|muddy sandy|muddy) gravel\b/.test(t)) return 'gravel';
-  if (/\bgravelly sand\b/.test(t)) return 'sand';
-  if (/\bgravelly mud\b/.test(t)) return 'sandyMud';
-  // otherwise the first recognised term of the description is the main constituent (chart convention)
-  for (const part of t.split(',').map((x) => x.trim()).filter(Boolean)) {
-    for (const [k, re] of SEABED_WORDS) if (re.test(part)) return k;
+export function worldSeabed({ depth, live = null, grid = null, hydro = null }) {
+  const node = grid?.sediment || null, deep = depth >= 500 ? grid?.deepsea || null : null;
+  const sc = shomClass(live?.code) || (node && shomClass(node.code));
+  if (!sc && !deep) return null;
+  const fromLive = !!shomClass(live?.code), shelf = depth < SHELF_DEPTH;
+  // in deep water the composition (carbonate, opal) matters more to engineering than the grain-size name of a
+  // fine sediment, so the deep-sea type names the class wherever the map shows mud, silt or clay
+  const fine = !sc || ['mud', 'sandyMud', 'silt', 'clay'].includes(sc.cls);
+  const cls = deep && fine && deep.cls !== 'lithogenous' ? deep.cls : sc ? sc.cls : deep.cls;
+  const c = SEABED_CLASSES[cls];
+  const sb = { cls, ...c, basis: sc ? (fromLive ? 'worldmap' : 'grid') : 'deepsea', described: sc?.name || null, definition: sc?.definition || null, sheet: fromLive ? live.sheet : null, composition: deep?.name || null, shelf, hydro,
+    resolutionKm: !fromLive && node ? node.stepDeg * 111.2 : null, offsetKm: !fromLive && node?.shifted ? node.offsetKm : 0, d50Class: c.d50 };
+  if (shelf) {
+    // on a shelf sediment changes over a few kilometres: the mapped class needs the hydrodynamics to agree
+    sb.evidence = combineSeabedEvidence({ cls, d50: c.d50, d50Range: c.d50Range, hydro });
+    sb.d50 = sb.evidence.verdict === 'agree' ? sb.evidence.d50 : null;
+    if (sb.evidence.range) sb.d50Range = sb.evidence.range;
   }
-  return null;
-}
-/** Class of a laboratory grain-size analysis: gravel, sand and mud fractions (any common scale), or failing those a Folk code such as "(g)mS". */
-export function classifyGrainSize({ gravel, sand, mud, folk } = {}) {
-  const g = Math.max(0, gravel || 0), s = Math.max(0, sand || 0), m = Math.max(0, mud || 0);
-  if (g + s + m > 0) {
-    if (g / (g + s + m) >= 0.3 || s + m === 0) return 'gravel';
-    const r = s / (s + m);
-    return r >= 0.9 ? 'sand' : r >= 0.5 ? 'muddySand' : r >= 0.1 ? 'sandyMud' : 'mud';
-  }
-  // Folk code: the capital is the main fraction, lower-case letters the modifiers, brackets "slightly"
-  const code = /^((?:\(?[gms]\)?)*)([GSMZC])$/.exec(String(folk || '').trim());
-  if (!code) return null;
-  const mod = code[1].replace(/\([gms]\)/g, '');
-  return code[2] === 'G' ? 'gravel' : code[2] === 'S' ? (mod.includes('m') ? 'muddySand' : 'sand') : /[sg]/.test(mod) ? 'sandyMud' : 'mud';
-}
-/** Grain-size analyses in the shape reduceSeabedSamples expects: a class and a one-line description each. */
-export function gradeSeabedSamples(samples) {
-  const pc = (v) => `${Math.round(v || 0)} %`;
-  return samples.map((sm) => ({ ...sm, cls: classifyGrainSize(sm), text: sm.sand != null || sm.mud != null || sm.gravel != null ? `gravel ${pc(sm.gravel)}, sand ${pc(sm.sand)}, mud ${pc(sm.mud)}` : `Folk class ${sm.folk}` }));
-}
-/** Reduce nearby described samples to a class: the commonest class among the nearest few, with distances. */
-export function reduceSeabedSamples(samples, lat, lon, { maxKm = 15, take = 7 } = {}) {
-  const R = Math.PI / 180;
-  const near = samples.map((sm) => ({ ...sm, cls: sm.cls || classifySeabed(sm.text), km: 6371 * Math.hypot((sm.lon - lon) * R * Math.cos(lat * R), (sm.lat - lat) * R) }))
-    .filter((sm) => sm.cls && sm.km <= maxKm).sort((a, b) => a.km - b.km).slice(0, take);
-  if (!near.length) return null;
-  const votes = {};
-  for (const sm of near) votes[sm.cls] = (votes[sm.cls] || 0) + 1 / (1 + sm.km);
-  const cls = Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0];
-  return { cls, n: near.length, nearestKm: near[0].km, farthestKm: near[near.length - 1].km, agree: near.filter((sm) => sm.cls === cls).length, years: [Math.min(...near.map((sm) => sm.year || 9999)), Math.max(...near.map((sm) => sm.year || 0))], samples: near };
+  return sb;
 }
 
 /**
@@ -189,7 +143,14 @@ export async function pullSite(lat, lon, { years = 20, onProgress, force = false
   });
   await step('Wave hindcast', 0.15, async () => {
     const r = await C.marineHindcast(lat, lon, { years, force, onProgress: (f, m) => onProgress?.(0.15 + 0.3 * f, m) });
-    const hs = r.data.wave_height, tp = r.data.wave_peak_period, t = r.data.time;
+    const hs = r.data.wave_height, t = r.data.time;
+    // the long hindcast often carries the mean period only: the peak period is then taken as 1.15 × mean
+    // (between 1.11 for a JONSWAP sea with γ = 3.3 and 1.17 for a Pierson–Moskowitz sea, energy period basis)
+    const tpRaw = r.data.wave_peak_period || [], tm = r.data.wave_period || [];
+    const nPeak = tpRaw.filter((p) => typeof p === 'number' && p > 0).length, nMean = tm.filter((p) => typeof p === 'number' && p > 0).length;
+    const nHs = hs.filter((v) => typeof v === 'number').length;   // the record may start years after the requested period
+    const tpFrom = nPeak >= 0.5 * nHs ? 'peak' : nMean >= 0.5 * nHs ? 'mean' : 'none';
+    const tp = tpFrom === 'peak' ? tpRaw : tpFrom === 'mean' ? tm.map((p) => (typeof p === 'number' && p > 0 ? 1.15 * p : null)) : hs.map(() => null);
     const ex = extremes(t, hs, 'Hs');
     if (!ex) throw new Error('No wave data at this location (too far inland?)');
     // associated peak period: Tp = a·√Hs fitted to the storms above the 99th percentile
@@ -204,9 +165,9 @@ export async function pullSite(lat, lon, { years = 20, onProgress, force = false
     // monthly climate
     const monthly = Array.from({ length: 12 }, () => []);
     t.forEach((s, i) => { if (Number.isFinite(hs[i])) monthly[Number(s.slice(5, 7)) - 1].push(hs[i]); });
-    data.waves = { years: r.years, n: hsOk.length, mean: mean(hsOk), p50: quant(hsOk, 0.5), p90: quant(hsOk, 0.9), p99: thr, max: maxOf(hsOk), tpMean: mean(tpOk), tpFactor: a, extremes: ex, scatter,
+    data.waves = { years: r.years, n: hsOk.length, mean: mean(hsOk), p50: quant(hsOk, 0.5), p90: quant(hsOk, 0.9), p99: thr, max: maxOf(hsOk), tpMean: tpOk.length ? mean(tpOk) : null, tpFactor: a, tpFrom, extremes: ex, scatter,
       monthlyMean: monthly.map(mean), monthlyP90: monthly.map((m) => quant(m, 0.9)), exceed: [0.5, 1, 1.5, 2, 2.5, 3, 4, 5].map((h) => ({ hs: h, frac: hsOk.filter((v) => v > h).length / hsOk.length })) };
-    data.provenance.waves = { source: `Open-Meteo Marine hindcast (${r.grid}), ${r.years} years hourly`, at: r.at, method: `${ex.method}; Tp = ${a.toFixed(2)}·√Hs from storms above the 99th percentile; Hmax = 1.86·Hs (Rayleigh, ~1000 waves). Global reanalysis wave models are known to under-predict storm peaks, typically by 10–20 %: confirm extremes against a site-specific hindcast or measurements` };
+    data.provenance.waves = { source: `Open-Meteo Marine hindcast (${r.grid}), ${r.years} years hourly`, at: r.at, method: `${ex.method}; ${tpFrom === 'none' ? `Tp = ${a.toFixed(2)}·√Hs, a generic storm-sea relation, because the hindcast carries no wave period here — replace with measured periods, especially where swell dominates` : `Tp = ${a.toFixed(2)}·√Hs fitted to the storms above the 99th percentile${tpFrom === 'mean' ? ' (peak period taken as 1.15 × the hindcast mean period)' : ''}`}; Hmax = 1.86·Hs (Rayleigh, ~1000 waves). Global reanalysis wave models are known to under-predict storm peaks, typically by 10–20 %: confirm extremes against a site-specific hindcast or measurements` };
   });
   await step('Wind hindcast', 0.48, async () => {
     const r = await C.windHindcast(lat, lon, { years, force, onProgress: (f, m) => onProgress?.(0.48 + 0.3 * f, m) });
@@ -260,35 +221,44 @@ export async function pullSite(lat, lon, { years = 20, onProgress, force = false
   });
   if (bus['site.depth'] != null) await step('Seabed sediment', 0.9, async () => {
     // best first: mapped substrate (European seas), described samples (United States), measured grain size from a
-    // national survey (Australia, Canada); where none of them covers the site, the bundled global lithology grid
-    const got = await Promise.allSettled([C.seabedSubstrate(lat, lon, { force }), C.seabedSamples(lat, lon, { force }), C.seabedRegional(lat, lon, { force })]);
+    // national survey (Australia, Canada); where none of them covers the site, the worldwide sediment map
+    const got = await Promise.allSettled([C.seabedSubstrate(lat, lon, { force }), C.seabedSamples(lat, lon, { force }), C.seabedRegional(lat, lon, { force }), C.seabedWorldMap(lat, lon, { force })]);
     const map = got[0].status === 'fulfilled' ? got[0].value.data : null;
     const red = got[1].status === 'fulfilled' ? reduceSeabedSamples(got[1].value.data, lat, lon) : null;
     const reg = got[2].status === 'fulfilled' && got[2].value ? got[2].value.data : null;
     const lab = reg ? reduceSeabedSamples(gradeSeabedSamples(reg.samples), lat, lon) : null;
     const mapCls = map && classifySeabed(map.original && classifySeabed(map.original) ? map.original : map.text);
+    // which grains the waves and currents of the site move: shown with every source, decisive only for the world map.
+    // Shelf depths only: the surface current says nothing about the bed of the deep sea
+    const hydro = bus['site.depth'] >= SHELF_DEPTH ? null : hydroSorting({ depth: bus['site.depth'], waves: data.waves && { p90: data.waves.p90, tpFactor: data.waves.tpFactor, hs1: bus['site.Hs1'], tp1: bus['site.Tp1'] }, current: data.current });
+    const SURFACE = 'Surface sediment only.', MID = 'median grain size is the measured typical value of the class (see the card for its range and source)';
     if (mapCls) {
-      data.seabed = { cls: mapCls, ...SEABED_CLASSES[mapCls], basis: 'map', described: map.original || map.text, scale: map.scale, holder: [map.holder, map.country].filter(Boolean).join(', ') };
-      data.provenance.seabed = { source: `EMODnet Geology seabed substrate map, 1:${Number(map.scale).toLocaleString('en')}${map.holder ? ` (${map.holder})` : ''}`, at: got[0].value.at, method: 'Folk class of the mapped polygon at the site; median grain size is the mid-point of the class. Surface sediment only.' };
+      data.seabed = { cls: mapCls, ...SEABED_CLASSES[mapCls], basis: 'map', described: map.original || map.text, scale: map.scale, holder: [map.holder, map.country].filter(Boolean).join(', '), hydro };
+      data.provenance.seabed = { source: `EMODnet Geology seabed substrate map, 1:${Number(map.scale).toLocaleString('en')}${map.holder ? ` (${map.holder})` : ''}`, at: got[0].value.at, method: `Folk class of the mapped polygon at the site; ${MID}. ${SURFACE}` };
     } else if (red) {
-      data.seabed = { cls: red.cls, ...SEABED_CLASSES[red.cls], basis: 'samples', n: red.n, agree: red.agree, nearestKm: red.nearestKm, farthestKm: red.farthestKm, years: red.years, described: red.samples.slice(0, 3).map((x) => x.text).join(' · ') };
-      data.provenance.seabed = { source: `NOAA NOS seabed samples (${red.n} within ${red.farthestKm.toFixed(1)} km, surveyed ${red.years[0]}–${red.years[1]})`, at: got[1].value.at, method: 'Commonest class among the nearest described bottom samples, weighted by distance; median grain size is the mid-point of the class. Surface sediment only.' };
+      data.seabed = { cls: red.cls, ...SEABED_CLASSES[red.cls], basis: 'samples', n: red.n, agree: red.agree, nearestKm: red.nearestKm, farthestKm: red.farthestKm, years: red.years, described: red.samples.slice(0, 3).map((x) => x.text).join(' · '), hydro };
+      data.provenance.seabed = { source: `NOAA NOS seabed samples (${red.n} within ${red.farthestKm.toFixed(1)} km, surveyed ${red.years[0]}–${red.years[1]})`, at: got[1].value.at, method: `Commonest class among the nearest described bottom samples, weighted by distance; ${MID}. ${SURFACE}` };
     } else if (lab) {
-      const carb = lab.samples.map((x) => x.carbonate).filter((v) => v != null);
-      data.seabed = { cls: lab.cls, ...SEABED_CLASSES[lab.cls], basis: 'grainsize', survey: C.source(reg.provider).name, n: lab.n, agree: lab.agree, nearestKm: lab.nearestKm, farthestKm: lab.farthestKm, years: lab.years, carbonate: carb.length ? quant(carb, 0.5) : null, described: lab.samples.slice(0, 3).map((x) => x.text).join(' · ') };
-      data.provenance.seabed = { source: `${C.source(reg.provider).name} (${C.source(reg.provider).provider}; ${lab.n} analysed samples within ${lab.farthestKm.toFixed(1)} km)`, at: got[2].value.at, method: 'Class from the measured gravel, sand and mud fractions (Folk scheme; gravel from 30 %, then the sand-to-mud ratio) of the nearest surface samples, commonest class weighted by distance; median grain size is the mid-point of the class. Point samples, resolution set by their spacing. Surface sediment only.' };
+      const carb = lab.samples.map((x) => x.carbonate).filter((v) => v != null), c = SEABED_CLASSES[lab.cls];
+      data.seabed = { cls: lab.cls, ...c, basis: 'grainsize', survey: C.source(reg.provider).name, n: lab.n, agree: lab.agree, nearestKm: lab.nearestKm, farthestKm: lab.farthestKm, years: lab.years, carbonate: carb.length ? quant(carb, 0.5) : null, described: lab.samples.slice(0, 3).map((x) => x.text).join(' · '), hydro,
+        d50: lab.d50 ?? c.d50, d50Range: lab.d50 ? lab.d50Range : c.d50Range, d50Measured: lab.d50 ? lab.nSized : 0 };
+      data.provenance.seabed = { source: `${C.source(reg.provider).name} (${C.source(reg.provider).provider}; ${lab.n} analysed samples within ${lab.farthestKm.toFixed(1)} km)`, at: got[2].value.at,
+        method: `Class from the measured gravel, sand and mud fractions (Folk scheme; gravel from 30 %, then the sand-to-mud ratio) of the nearest surface samples, commonest class weighted by distance; ${lab.d50 ? `median grain size is the median of the mean grain size measured on ${lab.nSized} of those samples` : MID}. Point samples, resolution set by their spacing. ${SURFACE}` };
     } else {
+      const live = got[3].status === 'fulfilled' ? got[3].value.data : null;
       const grid = (await C.seabedGrid(lat, lon)).data;
       const failed = got.filter((g) => g.status === 'rejected');
       if (failed.length) data.issues.push(`Seabed sediment: ${failed.length} of the live sources did not answer (${failed[0].reason.message}); the result below does not include them.`);
-      if (!grid) { data.seabed = { cls: null, basis: 'none' }; return; }
-      const km = grid.stepDeg * 111.2, shelf = bus['site.depth'] < SHELF_DEPTH;
-      data.seabed = { cls: grid.cls, ...SEABED_CLASSES[grid.cls], basis: 'grid', described: grid.name, resolutionDeg: grid.stepDeg, resolutionKm: km, offsetKm: grid.shifted ? grid.offsetKm : 0, shelf };
-      data.provenance.seabed = { source: `Global seafloor lithology grid, ${grid.stepDeg}° (about ${km.toFixed(0)} km) — Dutkiewicz, Müller, O’Callaghan & Jónasson 2015, Geology 43(9), doi:10.1130/G36883.1; CC BY-SA 4.0, bundled with the app`,
-        method: `Lithology “${grid.name}” at the ${grid.shifted ? `closest grid node with data (${grid.offsetKm.toFixed(0)} km from the site)` : 'nearest grid node'}. The grid is a machine-learning interpolation of about 14,500 widely spaced sample descriptions: it indicates the regional sediment province only and is least reliable on continental shelves, where sediment changes over short distances. Median grain size is a nominal value for the class${shelf ? ` and is not passed to the analyses in less than ${SHELF_DEPTH} m of water` : ''}. Surface sediment only.` };
-      // on the shelf the interpolated class is too uncertain to drive scour and sediment-transport defaults
-      if (shelf) return;
+      const sb = worldSeabed({ depth: bus['site.depth'], live, grid, hydro });
+      if (!sb) { data.seabed = { cls: null, basis: 'none', hydro }; data.seabed.confidence = seabedConfidence(data.seabed).key; return; }
+      data.seabed = sb;
+      const SHOM = 'Shom, 2026. Worldwide seabed sediment map, 1:500 000, doi:10.17183/HOM_GEOL_SEDIM_MONDIALE (Open Licence 2.0)', DEEP = 'Diesing 2020, Deep-sea sediments of the global ocean, PANGAEA, doi:10.1594/PANGAEA.911692 (CC BY 4.0), bundled 0.1° grid';
+      data.provenance.seabed = { source: [sb.described && `${SHOM}${sb.basis === 'grid' ? ', bundled 0.1° grid' : ''}`, sb.composition && DEEP].filter(Boolean).join('; '), at: sb.basis === 'worldmap' ? got[3].value.at : null,
+        method: `${sb.described ? `Map class “${sb.described}” (${sb.definition}) ${sb.basis === 'worldmap' ? `of the polygon at the site${sb.sheet != null ? `, source map no. ${sb.sheet} of the compilation` : ''}` : `at the ${sb.offsetKm ? `closest grid node with data, ${sb.offsetKm.toFixed(0)} km away` : 'nearest grid node'} (the map service did not answer)`}. ` : ''}${sb.composition ? `Deep-sea sediment type “${sb.composition}” at the nearest node of a 10 km machine-learning prediction. ` : ''}The map is a compilation of published sediment maps generalised to 1:500 000 and of a 1972 world map in the deep sea: it shows the sediment province, not the ground at the site. ${sb.shelf
+          ? `In less than ${SHELF_DEPTH} m of water a grain size is passed to the analyses only when the hydrodynamic check agrees with the map: ${sb.evidence.verdict === 'agree' ? 'it does' : sb.evidence.verdict === 'conflict' ? 'it contradicts the map, so none is passed' : 'it cannot decide here, so none is passed'}. ${sb.evidence.why} ${hydro ? hydro.text : ''}`
+          : 'Median grain size is the measured typical value of the class.'} ${SURFACE}` };
     }
+    data.seabed.confidence = seabedConfidence(data.seabed).key;
     if (data.seabed.d50) bus['site.d50'] = data.seabed.d50;
   });
   await step('Solar resource', 0.93, async () => {
@@ -306,6 +276,9 @@ export async function pullSite(lat, lon, { years = 20, onProgress, force = false
   onProgress?.(1, 'Done');
 
   const p = getProject();
+  // a screening soil profile was chosen for one site and one kind of seabed: it does not survive a change of either
+  const before = p.site.data?.seabed?.cls, moved = p.site.lat != null && (Math.abs(p.site.lat - lat) > 0.01 || Math.abs(p.site.lon - lon) > 0.01);
+  if (moved || (before && before !== data.seabed?.cls)) for (const k of SCREENING_KEYS) if (p.bus[k]?.from === 'screening') { delete p.bus[k]; data.screeningDropped = true; }
   p.site = { ...p.site, lat, lon, name: p.site.name || data.place?.name || `${lat.toFixed(3)}, ${lon.toFixed(3)}`, pulled: data.pulledAt, data };
   save();
   // values the user entered by hand (measurements, site investigation) outrank any pulled estimate

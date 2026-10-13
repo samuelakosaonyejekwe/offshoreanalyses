@@ -1,6 +1,6 @@
 // Analysis module page: inputs → results, plus the studies every module gets for free through the contract.
 import { h, clear, fmt, icon, toast, download, tabs, table, debounce } from '../dom.js';
-import { buildForm } from '../form.js';
+import { buildForm, screeningInputs } from '../form.js';
 import { renderResult, runRecord, adviceList } from '../results.js';
 import { renderPlot } from '../plot.js';
 import { task } from '../../core/runner.js';
@@ -41,11 +41,14 @@ export async function moduleView(root, id) {
     try {
       const result = await task('run', mod.id, values, {}, (f, m) => { status.textContent = `Computing… ${Math.round(100 * f)} %${m ? ` — ${m}` : ''}`; });
       lastMs = performance.now() - t0; lastResult = result; lastValues = values;
-      clear(out).append(assurance(mod, values), renderResult(mod, values, result, { elapsed: lastMs }), practiceFeed(mod));
+      // a result computed on the screening soil profile must never pass for a design result
+      const scr = screeningInputs(mod, values);
+      clear(out).append(...[scr.length ? h('div.banner.warn.screening', icon('warn'), h('div', h('b', 'Screening result — not a design result. '), `This run used the screening soil profile for ${scr.map((s) => s.label).join(', ')}: screening values, no site investigation yet. Every number below changes when measured soil data replace them (`, h('a', { href: '#/site' }, 'Project & site data'), ').')) : null,
+        assurance(mod, values), renderResult(mod, values, result, { elapsed: lastMs }), practiceFeed(mod)].filter(Boolean));
       status.textContent = '';
       const s = summarise(result);
       setInputs(mod.id, stripGeometry(values));
-      recordRun(mod.id, { status: s.status, maxUC: s.maxUC, governing: s.governing, kpis: (result.kpis || []).map((k) => ({ key: k.key, label: k.label, value: k.value, unit: k.unit })), quantities: result.quantities || null, advice: result.advice || [] });
+      recordRun(mod.id, { status: s.status, maxUC: s.maxUC, governing: s.governing, kpis: (result.kpis || []).map((k) => ({ key: k.key, label: k.label, value: k.value, unit: k.unit })), quantities: result.quantities || null, advice: result.advice || [], screening: scr.map((s) => s.bind) });
       if (result.publish) publish(result.publish, mod.id);
     } catch (err) {
       clear(out).append(h('div.banner.fail', icon('warn'), h('div', h('b', 'This case could not be computed. '), err.message)));
@@ -67,7 +70,7 @@ export async function moduleView(root, id) {
         status)),
     h('div', out,
       h('div.row', { style: { marginTop: '14px' } },
-        h('button.btn.small', { type: 'button', onclick: () => (lastResult ? download(`${mod.id}.json`, JSON.stringify(runRecord(mod, lastValues, lastResult), null, 1), 'application/json') : toast('Run the analysis first.')) }, icon('download'), 'Run record (JSON)'),
+        h('button.btn.small', { type: 'button', onclick: () => (lastResult ? download(`${mod.id}.json`, JSON.stringify({ ...runRecord(mod, lastValues, lastResult), screeningInputs: screeningInputs(mod, lastValues) }, null, 1), 'application/json') : toast('Run the analysis first.')) }, icon('download'), 'Run record (JSON)'),
         h('button.btn.small', { type: 'button', onclick: () => window.print() }, 'Print / save as PDF'))));
 
   // ---------- Explore: sensitivity + sweeps ----------

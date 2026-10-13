@@ -2,7 +2,7 @@
 // (all listed services send CORS headers), so freshness never depends on any server of ours.
 // Responses are cached in IndexedDB with a time-to-live and reused when the device is offline.
 import { idb, emit } from '../core/store.js';
-import { seabedGridAt } from './seabedgrid.js';
+import { seabedGridAt, DEEPSEA_GRID_CLASSES } from './seabedgrid.js';
 
 const HOUR = 3600e3, DAY = 24 * HOUR;
 
@@ -54,7 +54,9 @@ export const SOURCES = [
   { id: 'seabedsamples', name: 'NOAA NOS seabed samples', provider: 'NOAA National Centers for Environmental Information', home: 'https://www.ncei.noaa.gov/maps/bathymetry/', gives: 'About 240,000 described bottom samples from hydrographic surveys (United States waters) — screening of seabed type', ttl: 180 * DAY, licence: 'Public domain', suites: [4, 5, 7, 8, 12, 15] },
   { id: 'ausseabed', name: 'AusSeabed Marine Sediments database', provider: 'Geoscience Australia', home: 'https://www.ausseabed.gov.au', gives: 'About 77,000 laboratory analyses of seabed samples (gravel, sand and mud fractions, Folk class, carbonate content) around Australia and off East Antarctica — screening of seabed type', ttl: 180 * DAY, licence: 'CC BY 4.0', suites: [4, 5, 7, 8, 12, 15] },
   { id: 'gscgrain', name: 'GSC seabed grain-size analyses', provider: 'Natural Resources Canada, Geological Survey of Canada', home: 'https://open.canada.ca/data/en/dataset/093e437e-ee35-fd32-7da0-807848ec5d64', gives: 'Laboratory grain-size analyses (gravel, sand, silt and clay fractions) of seabed samples from Canadian Pacific, Arctic and Atlantic waters — screening of seabed type', ttl: 180 * DAY, licence: 'Open Government Licence – Canada', suites: [4, 5, 7, 8, 12, 15] },
-  { id: 'seabedgrid', name: 'Global seafloor lithology grid', provider: 'Dutkiewicz, Müller, O’Callaghan & Jónasson (2015), EarthByte Group, University of Sydney — bundled with the app', home: 'https://doi.org/10.1130/G36883.1', gives: 'Predominant surface sediment type anywhere in the ocean on a 0.1° grid interpolated from about 14,500 samples — regional indication only, used where no survey map or sample exists; works offline', ttl: 365 * DAY, licence: 'CC BY-SA 4.0', suites: [4, 5, 7, 8, 12, 15] },
+  { id: 'shomsed', name: 'Shom worldwide seabed sediment map', provider: 'Shom (French naval hydrographic and oceanographic service)', home: 'https://dx.doi.org/10.17183/HOM_GEOL_SEDIM_MONDIALE', gives: 'Mapped seabed sediment (rock, pebbles, gravel, sand, fine sand, mud, silt, clay and their mixtures) between 72° S and 72° N at 1:500 000, compiled from published sediment maps — used where no survey map or sample covers the site', ttl: 365 * DAY, licence: 'Open Licence 2.0 (Etalab)', suites: [4, 5, 7, 8, 12, 15] },
+  { id: 'seabedgrid', name: 'Shom worldwide seabed sediment map, 0.1° grid', provider: 'Shom, 2026. Carte sédimentaire mondiale, doi:10.17183/HOM_GEOL_SEDIM_MONDIALE — sampled on a 0.1° grid and bundled with the app', home: 'https://dx.doi.org/10.17183/HOM_GEOL_SEDIM_MONDIALE', gives: 'The same map sampled every 0.1° (about 11 km), used when the map service does not answer or the device is offline', ttl: 365 * DAY, licence: 'Open Licence 2.0 (Etalab)', suites: [4, 5, 7, 8, 12, 15] },
+  { id: 'deepsea', name: 'Deep-sea sediments of the global ocean', provider: 'Diesing (2020), Geological Survey of Norway, PANGAEA doi:10.1594/PANGAEA.911692 — sampled on a 0.1° grid and bundled with the app', home: 'https://doi.org/10.1594/PANGAEA.911692', gives: 'What the deep-sea floor is made of below about 500 m of water (calcareous sediment, clay, diatom ooze, radiolarian ooze, land-derived sediment), predicted from samples at 10 km resolution — regional indication; works offline', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [4, 5, 7, 8, 12, 15] },
   { id: 'elevation', name: 'Open-Meteo Elevation', provider: 'Open-Meteo (Copernicus GLO-90 DEM)', home: 'https://open-meteo.com/en/docs/elevation-api', gives: 'Land elevation for landfalls, quays and coastal works', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [5, 6, 7, 13] },
   { id: 'quakes', name: 'USGS Earthquake Catalog', provider: 'U.S. Geological Survey', home: 'https://earthquake.usgs.gov/fdsnws/event/1/', gives: 'Global earthquake catalogue (real time) for seismicity screening', ttl: 6 * HOUR, licence: 'Public domain', suites: [1, 2, 3, 5, 6, 7] },
   { id: 'tidegauge', name: 'NOAA CO-OPS tide gauges', provider: 'NOAA Center for Operational Oceanographic Products and Services', home: 'https://tidesandcurrents.noaa.gov', gives: 'Measured hourly water levels at about 300 gauges (United States coasts and territories) — used to check the modelled sea level against field measurements', ttl: 6 * HOUR, licence: 'Public domain', suites: [5, 6, 7, 15] },
@@ -63,6 +65,7 @@ export const SOURCES = [
   { id: 'power', name: 'NASA POWER', provider: 'NASA Langley Research Center', home: 'https://power.larc.nasa.gov/', gives: 'Solar irradiance and meteorological climatology for floating solar and hybrid systems', ttl: 30 * DAY, licence: 'Public domain', suites: [16] },
   { id: 'soilgrids', name: 'ISRIC SoilGrids', provider: 'ISRIC World Soil Information', home: 'https://soilgrids.org', gives: 'Onshore soil texture at landfalls and port sites (clay / sand / silt fractions, bulk density)', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [5, 6, 7, 13] },
   { id: 'place', name: 'OpenStreetMap Nominatim', provider: 'OpenStreetMap contributors', home: 'https://nominatim.org', gives: 'Place names, country and nearest coast context', ttl: 365 * DAY, licence: 'ODbL', suites: [17] },
+  { id: 'marineregions', name: 'Marine Regions gazetteer', provider: 'Flanders Marine Institute (VLIZ)', home: 'https://www.marineregions.org', gives: 'Names of the sea, gulf, strait or bank a point lies in — used to search published seabed studies of the area', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [] },
   { id: 'geocode', name: 'Open-Meteo Geocoding', provider: 'Open-Meteo (GeoNames)', home: 'https://open-meteo.com/en/docs/geocoding-api', gives: 'Search any place name → coordinates', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [] },
   { id: 'fx', name: 'Frankfurter', provider: 'European Central Bank reference rates', home: 'https://frankfurter.dev', gives: 'Daily currency exchange rates', ttl: 12 * HOUR, licence: 'Open', suites: [17] },
   { id: 'worldbank', name: 'World Bank Open Data', provider: 'World Bank', home: 'https://data.worldbank.org', gives: 'Inflation, lending interest rate, GDP deflator and electricity indicators by country', ttl: 7 * DAY, licence: 'CC BY 4.0', suites: [17] },
@@ -71,7 +74,7 @@ export const SOURCES = [
   { id: 'carbon', name: 'Carbon Intensity API', provider: 'National Grid ESO', home: 'https://carbonintensity.org.uk', gives: 'Live grid carbon intensity (Great Britain) for avoided-emission estimates', ttl: HOUR, licence: 'CC BY 4.0', suites: [16, 17] },
   { id: 'turbines', name: 'NREL turbine-models', provider: 'National Renewable Energy Laboratory (GitHub)', home: 'https://github.com/NREL/turbine-models', gives: 'Published power and thrust curves of reference offshore wind turbines', ttl: 30 * DAY, licence: 'BSD-3-Clause', suites: [3, 16] },
   { id: 'literature', name: 'OpenAlex', provider: 'OurResearch', home: 'https://openalex.org', gives: 'Newest peer-reviewed publications on any analysis topic, with open-access links', ttl: DAY, licence: 'CC0', suites: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
-  { id: 'crossref', name: 'Crossref', provider: 'Crossref', home: 'https://www.crossref.org', gives: 'DOI metadata for standards-related literature and reports', ttl: DAY, licence: 'Open', suites: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
+  { id: 'crossref', name: 'Crossref', provider: 'Crossref', home: 'https://www.crossref.org', gives: 'DOI metadata for standards-related literature and reports; fallback for the search of published seabed studies', ttl: DAY, licence: 'Open', suites: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] },
   { id: 'wiki', name: 'Wikipedia', provider: 'Wikimedia Foundation', home: 'https://en.wikipedia.org', gives: 'Plain-language definitions for the built-in glossary', ttl: 30 * DAY, licence: 'CC BY-SA 4.0', suites: [] },
 ];
 export const source = (id) => SOURCES.find((s) => s.id === id);
@@ -92,13 +95,13 @@ export const marineNow = (lat, lon, o) => cached(`marine:now:${r4(lat)},${r4(lon
 /** Hourly wave hindcast, fetched in 5-year blocks so a slow link never loses the whole request. */
 export async function marineHindcast(lat, lon, { years = 20, onProgress, force } = {}) {
   const endYear = new Date().getUTCFullYear() - 1;
-  const out = { time: [], wave_height: [], wave_peak_period: [], wave_direction: [] };
+  const out = { time: [], wave_height: [], wave_peak_period: [], wave_period: [], wave_direction: [] };
   const blocks = [];
   for (let y = endYear - years + 1; y <= endYear; y += 5) blocks.push([y, Math.min(endYear, y + 4)]);
   let at = 0, stale = false, i = 0;
   for (const [a, b] of blocks) {
-    const res = await cached(`marine:hind:${r4(lat)},${r4(lon)}:${a}-${b}`, 365 * DAY, () =>
-      getJson(`${MARINE}?${q({ latitude: lat, longitude: lon, start_date: `${a}-01-01`, end_date: `${b}-12-31`, hourly: 'wave_height,wave_peak_period,wave_direction', timezone: 'GMT', cell_selection: 'sea' })}`, { timeout: 90000 }), { force });
+    const res = await cached(`marine:hind2:${r4(lat)},${r4(lon)}:${a}-${b}`, 365 * DAY, () =>
+      getJson(`${MARINE}?${q({ latitude: lat, longitude: lon, start_date: `${a}-01-01`, end_date: `${b}-12-31`, hourly: 'wave_height,wave_peak_period,wave_period,wave_direction', timezone: 'GMT', cell_selection: 'sea' })}`, { timeout: 90000 }), { force });
     const hh = res.data.hourly || {};
     for (const k of Object.keys(out)) if (hh[k]) out[k].push(...hh[k]);
     at = Math.max(at, res.at); stale ||= res.stale;
@@ -175,7 +178,8 @@ export const emodnetDepth = (lat, lon, o) => cached(`emodnet:${r4(lat)},${r4(lon
 // Open sources with usable point queries, best first: the EMODnet Geology substrate map (European seas, polygons
 // classed on the Folk scheme), the bottom samples described during NOAA hydrographic surveys (United States
 // waters), laboratory grain-size analyses of the Australian and Canadian surveys, and — everywhere else — the
-// bundled global lithology grid. All describe the seabed SURFACE only.
+// Shom worldwide seabed sediment map, read at the site from its map service with a bundled 0.1° copy as the
+// fallback. All describe the seabed SURFACE only.
 const SUBSTRATE = 'https://drive.emodnet-geology.eu/geoserver/gtk/wms';
 export const seabedSubstrate = (lat, lon, o) => cached(`substrate:${r4(lat)},${r4(lon)}`, 180 * DAY, async () => {
   const e = 0.0005; // about 50 m: a wider box makes the server return neighbouring polygons too
@@ -203,20 +207,22 @@ export const seabedSamples = (lat, lon, { halfDeg = 0.25, force } = {}) => cache
 // Box of about ±17 km around the point: wide enough for the 15 km search radius at any latitude
 const sampleBox = (lat, lon) => { const dLat = 0.15, dLon = Math.min(2, dLat / Math.max(0.05, Math.cos(lat * Math.PI / 180))); return { s: lat - dLat, n: lat + dLat, w: lon - dLon, e: lon + dLon }; };
 const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+// measured mean grain size in metres, or null when missing or outside clay-to-cobble sizes
+const sizeOk = (d) => (d > 1e-7 && d < 0.064 ? d : null);
 
 // Geoscience Australia: one record per analysis, so the records of a sample are merged before use.
 const AUSSEABED = 'https://warehouse.ausseabed.gov.au/geoserver/wfs';
 export const seabedAusseabed = (lat, lon, o) => cached(`ausseabed:${r4(lat)},${r4(lon)}`, 180 * DAY, async () => {
   const b = sampleBox(lat, lon);
   const j = await getJson(`${AUSSEABED}?${q({ service: 'WFS', version: '2.0.0', request: 'GetFeature', typeNames: 'ausseabed:Seabed_Sediments_Collection', outputFormat: 'application/json', count: 3000,
-    propertyName: 'SAMPLE_ID,ACQUIRE_DATE,TOP_DEPTH_M,MUD_PERCENT,SAND_PERCENT,GRAVEL_PERCENT,CARBONATE_PERCENT,FOLK_CLASS,SAMPLE_LOCATION', bbox: `${b.s},${b.w},${b.n},${b.e},urn:ogc:def:crs:EPSG::4326` })}`, { timeout: 45000 });
+    propertyName: 'SAMPLE_ID,ACQUIRE_DATE,TOP_DEPTH_M,MUD_PERCENT,SAND_PERCENT,GRAVEL_PERCENT,CARBONATE_PERCENT,FOLK_CLASS,MEAN_GRAIN_SIZE,SAMPLE_LOCATION', bbox: `${b.s},${b.w},${b.n},${b.e},urn:ogc:def:crs:EPSG::4326` })}`, { timeout: 45000 });
   const bySample = new Map();
   for (const f of j.features || []) {
     const p = f.properties || {}, c = f.geometry?.coordinates;
     if (!c || (num(p.TOP_DEPTH_M) ?? 0) > 0.1) continue; // sub-samples from down a core are not the seabed surface
     const key = `${p.SAMPLE_ID}|${c[0]}|${c[1]}`;
     const sm = bySample.get(key) || bySample.set(key, { lat: c[1], lon: c[0], year: p.ACQUIRE_DATE ? Number(String(p.ACQUIRE_DATE).slice(0, 4)) : null }).get(key);
-    for (const [k, v] of [['gravel', num(p.GRAVEL_PERCENT)], ['sand', num(p.SAND_PERCENT)], ['mud', num(p.MUD_PERCENT)], ['carbonate', num(p.CARBONATE_PERCENT)], ['folk', p.FOLK_CLASS || null]]) if (v != null && sm[k] == null) sm[k] = v;
+    for (const [k, v] of [['gravel', num(p.GRAVEL_PERCENT)], ['sand', num(p.SAND_PERCENT)], ['mud', num(p.MUD_PERCENT)], ['carbonate', num(p.CARBONATE_PERCENT)], ['folk', p.FOLK_CLASS || null], ['meanSize', sizeOk(num(p.MEAN_GRAIN_SIZE) * 1e-6)]]) if (v != null && sm[k] == null) sm[k] = v;
   }
   return { provider: 'ausseabed', samples: [...bySample.values()].filter((sm) => sm.folk || sm.sand != null || sm.mud != null || sm.gravel != null) };
 }, o);
@@ -232,7 +238,8 @@ export const seabedCanada = (lat, lon, o) => cached(`gscgrain:${r4(lat)},${r4(lo
     const a = r.attributes || {}, code = String(a['Expedition code'] || '');
     if ((num(a['Subsample top (cm)']) ?? 0) > 10) continue; // deeper sub-samples of a core
     const sm = { lat: num(a['Station latitude']), lon: num(a['Station longitude']), year: /^(19|20)\d{5}/.test(code) ? Number(code.slice(0, 4)) : /^\d\d/.test(code) ? 1900 + Number(code.slice(0, 2)) : null,
-      gravel: num(a['Percent gravel']), sand: num(a['Percent sand']), mud: num(a['Percent mud']) ?? ((num(a['Percent silt']) ?? 0) + (num(a['Percent clay']) ?? 0)) };
+      gravel: num(a['Percent gravel']), sand: num(a['Percent sand']), mud: num(a['Percent mud']) ?? ((num(a['Percent silt']) ?? 0) + (num(a['Percent clay']) ?? 0)),
+      meanSize: num(a.Mean) == null ? null : sizeOk(1e-3 * 2 ** -num(a.Mean)) }; // mean reported in phi units
     if (sm.lat != null && sm.lon != null && (sm.gravel ?? 0) + (sm.sand ?? 0) + (sm.mud ?? 0) > 0) samples.push(sm);
   }
   return { provider: 'gscgrain', samples };
@@ -242,14 +249,27 @@ export const seabedCanada = (lat, lon, o) => cached(`gscgrain:${r4(lat)},${r4(lo
 export const seabedRegional = (lat, lon, o) => (lat < -5 && (lon > 85 || lat < -55) ? seabedAusseabed(lat, lon, o)
   : lat > 40 && lon > -142 && lon < -45 ? seabedCanada(lat, lon, o) : Promise.resolve(null));
 
-// Bundled global lithology grid: read once, on the first site that no live source covers.
-let seabedGridBytes = null;
+// Shom worldwide seabed sediment map: the polygon at the site, as its legend code and the number of the source
+// map it was compiled from. One small request; null where the map has no polygon (land, polar seas).
+const SHOM_SEDIMENT = 'https://services.data.shom.fr/INSPIRE/wms/v';
+export const seabedWorldMap = (lat, lon, o) => cached(`shomsed:${r4(lat)},${r4(lon)}`, 365 * DAY, async () => {
+  const e = 0.0005;
+  const j = await getJson(`${SHOM_SEDIMENT}?${q({ service: 'WMS', version: '1.1.1', request: 'GetFeatureInfo', layers: 'SEDIM_MONDIALE_BDD_4326_WMSV', query_layers: 'SEDIM_MONDIALE_BDD_4326_WMSV', info_format: 'application/json',
+    propertyName: 'typelem,numero', srs: 'EPSG:4326', bbox: `${lon - e},${lat - e},${lon + e},${lat + e}`, width: 3, height: 3, x: 1, y: 1, feature_count: 1 })}`, { timeout: 25000 });
+  const p = j.features?.[0]?.properties;
+  return p?.typelem ? { code: String(p.typelem).trim(), sheet: p.numero ?? null } : null;
+}, o);
+
+// Bundled 0.1° grids (the Shom map and the deep-sea sediment types): read once, on the first site that needs them.
+const gridBytes = {};
+const bundled = (name) => (gridBytes[name] ||= fetch(new URL(`../../assets/${name}.bin`, import.meta.url)).then(async (r) => {
+  if (!r.ok) throw new Error(`The bundled seabed grid ${name} could not be read (${r.status})`);
+  return new Uint8Array(await r.arrayBuffer());
+}).catch((e) => { delete gridBytes[name]; throw e; }));
+/** Nodes of the bundled grids nearest the point: `sediment` (Shom legend group) and `deepsea` (sediment type), each null where empty. */
 export async function seabedGrid(lat, lon) {
-  seabedGridBytes ||= fetch(new URL('../../assets/seabed-lithology.bin', import.meta.url)).then(async (r) => {
-    if (!r.ok) throw new Error(`The bundled seabed lithology grid could not be read (${r.status})`);
-    return new Uint8Array(await r.arrayBuffer());
-  }).catch((e) => { seabedGridBytes = null; throw e; });
-  return { data: seabedGridAt(await seabedGridBytes, lat, lon), at: null, stale: false, source: 'bundled' };
+  const [sed, deep] = await Promise.all([bundled('seabed-sediment'), bundled('seabed-deepsea')]);
+  return { data: { sediment: seabedGridAt(sed, lat, lon), deepsea: seabedGridAt(deep, lat, lon, { reach: 1, classes: DEEPSEA_GRID_CLASSES }) }, at: null, stale: false, source: 'bundled' };
 }
 
 export const landElevation = (lat, lon, o) => cached(`elevation:${r4(lat)},${r4(lon)}`, 365 * DAY, () =>
@@ -393,6 +413,47 @@ export const literature = (query, { n = 8, force } = {}) => cached(`literature:$
   return (j.results || []).map((w) => ({ title: w.title, year: w.publication_year, date: w.publication_date, doi: w.doi, cited: w.cited_by_count, venue: w.primary_location?.source?.display_name || '', oa: w.open_access?.oa_url || null, authors: (w.authorships || []).slice(0, 3).map((a) => a.author?.display_name).filter(Boolean).join(', ') + ((w.authorships || []).length > 3 ? ' et al.' : '') }));
 }, { force });
 
+/**
+ * Published seabed and geotechnical studies for a sea area, most cited first. OpenAlex is asked for works whose
+ * title or abstract hold the area name together with seabed terms (most cited and newest, without duplicates);
+ * when it does not answer — its free daily allowance is shared by everyone behind one network address —
+ * Crossref is asked instead and only works with the area name and a sediment or soil term in the title are kept.
+ * @returns {Promise<{ data: { via: string, items: object[] } }>}
+ */
+export const seabedStudies = (area, { n = 6, force } = {}) => cached(`literature:seabed:${area.toLowerCase()}:${n}`, 7 * DAY, async () => {
+  const names = (list, of) => list.slice(0, 3).map(of).filter(Boolean).join(', ') + (list.length > 3 ? ' et al.' : '');
+  try {
+    const search = `"${area}" (seabed OR seafloor OR "surface sediments" OR "grain size" OR geotechnical OR "cone penetration")`;
+    const ask = (sort) => getJson(`https://api.openalex.org/works?${q({ filter: `title_and_abstract.search:${search}`, 'per-page': n, sort, select: 'id,title,publication_year,doi,cited_by_count,primary_location,open_access,authorships' })}`);
+    const [top, recent] = await Promise.all([ask('cited_by_count:desc'), ask('publication_date:desc')]);
+    const seen = new Set(), items = [];
+    for (const w of [...(top.results || []), ...(recent.results || [])]) {
+      if (!w.title || seen.has(w.id)) continue; seen.add(w.id);
+      items.push({ title: w.title, year: w.publication_year, doi: w.doi, cited: w.cited_by_count, venue: w.primary_location?.source?.display_name || '', oa: w.open_access?.oa_url || null, authors: names(w.authorships || [], (x) => x.author?.display_name) });
+    }
+    return { via: 'OpenAlex (area name with seabed terms in the title or abstract; most cited, then newest)', items };
+  } catch {
+    const j = await getJson(`https://api.crossref.org/works?${q({ 'query.title': `${area} seabed sediments geotechnical`, filter: 'type:journal-article', rows: 40, select: 'DOI,title,author,issued,container-title,is-referenced-by-count' })}`);
+    const items = (j.message?.items || []).map((w) => ({ title: (w.title || [''])[0], year: w.issued?.['date-parts']?.[0]?.[0] ?? null, doi: w.DOI ? `https://doi.org/${w.DOI}` : null, cited: w['is-referenced-by-count'] || 0, venue: (w['container-title'] || [''])[0], oa: null, authors: names(w.author || [], (x) => [x.given, x.family].filter(Boolean).join(' ')) }))
+      .filter((w) => w.title.toLowerCase().includes(area.toLowerCase()) && /sediment|seabed|sea ?floor|geotechn|soil|grain|clay|sand|mud/i.test(w.title)).sort((x, y) => y.cited - x.cited).slice(0, 2 * n);
+    return { via: 'Crossref (area name and a sediment or soil term in the title; most cited first) — OpenAlex did not answer', items };
+  }
+}, { force });
+
+/**
+ * Names of the sea areas a point lies in (Marine Regions gazetteer): the names geologists and hydrographers use,
+ * which a land-based place search does not give.
+ */
+export const seaAreas = (lat, lon) => cached(`marineregions:${r4(lat)},${r4(lon)}`, 365 * DAY, async () => {
+  const j = await getJson(`https://www.marineregions.org/rest/getGazetteerRecordsByLatLong.json/${lat}/${lon}/?typeID=&offset=0`, { timeout: 25000 });
+  // the sea area of the hydrographic charts first (the name most papers use), then the more local features
+  const rank = ['IHO Sea Area', 'Gulf', 'Sea', 'Bay', 'Strait', 'Bight', 'Basin', 'Delta', 'Fan', 'Bank', 'Channel', 'Sound'];
+  const english = (nm) => (/\b(sea|gulf|bay|strait|bight|basin|delta|fan|bank|channel|sound)\b/i.test(nm) ? 0 : 1);
+  const seen = new Set();
+  return (Array.isArray(j) ? j : []).filter((r) => rank.includes(r.placeType) && r.preferredGazetteerName && !/ocean/i.test(r.preferredGazetteerName))
+    .sort((x, y) => english(x.preferredGazetteerName) - english(y.preferredGazetteerName) || rank.indexOf(x.placeType) - rank.indexOf(y.placeType)).map((r) => r.preferredGazetteerName).filter((nm) => !seen.has(nm.toLowerCase()) && seen.add(nm.toLowerCase())).slice(0, 5);
+});
+
 export const mostCited = (query, { n = 6 } = {}) => cached(`literature:top:${query.toLowerCase()}:${n}`, 7 * DAY, async () => {
   const j = await getJson(`https://api.openalex.org/works?${q({ search: query, 'per-page': n, sort: 'cited_by_count:desc', select: 'title,publication_year,doi,cited_by_count,primary_location,open_access' })}`);
   return (j.results || []).map((w) => ({ title: w.title, year: w.publication_year, doi: w.doi, cited: w.cited_by_count, venue: w.primary_location?.source?.display_name || '', oa: w.open_access?.oa_url || null }));
@@ -405,7 +466,7 @@ export const glossary = (term) => cached(`wiki:${term.toLowerCase()}`, 30 * DAY,
 export async function health() {
   const probes = {
     marine: () => marineNow(57, 2, { force: true }), bathy: () => depthAt(57, 2, { force: true }), quakes: () => earthquakes(36, 140, { radiusKm: 100, minMag: 6, force: true }), substrate: () => seabedSubstrate(54, 3, { force: true }), seabedsamples: () => seabedSamples(31.8, -80.65, { halfDeg: 0.1, force: true }),
-    ausseabed: () => seabedAusseabed(-20, 116, { force: true }), gscgrain: () => seabedCanada(44, -60, { force: true }), seabedgrid: () => seabedGrid(4.2, 6.5),
+    ausseabed: () => seabedAusseabed(-20, 116, { force: true }), gscgrain: () => seabedCanada(44, -60, { force: true }), shomsed: () => seabedWorldMap(4.2, 6.5, { force: true }), seabedgrid: () => seabedGrid(4.2, 6.5), deepsea: () => seabedGrid(30, -160),
     fx: () => fxRates('USD', { force: true }), worldbank: () => worldBank('GB', WB_INDICATORS.inflation, { force: true }), commodities: () => commodity('brent', { force: true }),
     literature: () => literature('offshore structure', { n: 1, force: true }), forecast: () => weatherForecast(57, 2, { force: true }), carbon: () => gridCarbon({ force: true }),
     turbines: () => turbineList({ force: true }), treasury: () => treasuryRates({ force: true }), power: () => solarClimatology(4, 6, { force: true }),

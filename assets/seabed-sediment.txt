@@ -1,0 +1,39 @@
+seabed-sediment.bin — worldwide seabed sediment map sampled on a 0.1 degree grid
+
+Source
+  Shom, 2026. Carte sédimentaire mondiale / Worldwide seabed sediment map, scale 1:500 000.
+  https://dx.doi.org/10.17183/HOM_GEOL_SEDIM_MONDIALE
+  Shapefile CarteSedimMonde_2026.shp from the package SEDIM_MONDIALE.7z linked from the metadata record
+  HOM_GEOL_SEDIM_MONDIALE (https://services.data.shom.fr/geonetwork/INSPIRE?service=CSW&version=2.0.2&request=GetRecordById&Id=HOM_GEOL_SEDIM_MONDIALE.xml),
+  metadata dated 2026-03-18, downloaded 2026-10-13.
+
+Licence
+  The metadata record states: "Licence Ouverte version 2.0 / Open Licence version 2.0" and
+  "Data may be freely used providing that the source is mentioned as follows "Shom, 2026. Worldwide seabed
+  sediment map, https://dx.doi.org/10.17183/HOM_GEOL_SEDIM_MONDIALE"" and "Do not use for navigation."
+  Licence text: https://www.etalab.gouv.fr/licence-ouverte-open-licence/
+  The licence allows reuse and adaptation with attribution; it has no share-alike condition.
+
+Changes made
+  The 55,923 polygons of the map were sampled at the nodes of a 0.1 degree grid (the polygon that contains a
+  node gives its class), and the 30 legend classes found in the file were merged into 13 groups. Written by
+  tools/seabed-grid.py, which documents the byte format; read by src/data/seabedgrid.js. The app reads the map
+  itself, polygon by polygon, from the Shom map service when it is online; this grid is the offline fallback.
+
+Classes (legend codes of the map in brackets)
+  0 no data (land, seas beyond 72 degrees of latitude)
+  1 rock (NFRoche)                        2 pebbles (NFC, NFCG, NFCS, NFCV)      3 gravel (NFG, NFGC)
+  4 sandy or muddy gravel (NFGS, NFGSV, NFGVS, NFGV)                             5 gravelly sand (NFSG, NFSGV, NFSC)
+  6 sand (NFS)                            7 muddy sand (NFSV, NFSVG, NFSSi)       8 fine sand (NFSF, NFSFG, NFSFC)
+  9 muddy fine sand (NFSFV, NFSFSi)      10 sandy mud (NFVS, NFVSF, NFVG, NFVC, NFVSG)
+  11 mud (NFV)                           12 silt (NFSi, NFSiA)                   13 clay (NFA, NFASi)
+
+Definitions in the metadata record (grain size)
+  pebbles: at least half of the particles above 20 mm; gravel: 2 to 20 mm; sand: 0.5 to 2 mm; fine sand: 0.05 to
+  0.5 mm; silt: 0.01 to 0.05 mm; clay: finer than 0.01 mm; mud: 20 % or more finer than 0.05 mm; "muddy": 5 to 20 %
+  finer than 0.05 mm; "gravelly": 15 to 50 % gravel.
+
+Limits
+  The map is a compilation: a 1972 UNESCO world map of the ocean floor digitised in 1995, improved with published
+  sediment maps generalised to 1:500 000. It shows the sediment province, not the ground at a site, and its
+  detail varies from region to region. It describes the top of the seabed only. Not for navigation.
