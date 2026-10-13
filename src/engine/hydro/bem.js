@@ -32,8 +32,10 @@
 // triangle); Newman, Marine Hydrodynamics (1977) §4.13 (added mass), §6.18 (frequency limits).
 //
 // NOT a radiation/diffraction solver: there is no frequency dependence, no wave damping and no wave excitation.
-// For A(omega), B(omega) and exciting forces export the hull to NEMOH, Capytaine or WAMIT (src/interop/nemoh.js)
-// and read the results back into the container of hydrodb.js.
+// radiation.js has the frequency-dependent radiation problem (free-surface Green function) for quadrilateral
+// panel sets and uses the closed-form panel integrals of this file; for a general hull, A(omega), B(omega) and
+// exciting forces can also be had by exporting it to NEMOH, Capytaine or WAMIT (src/interop/nemoh.js) and reading
+// the results back into the container of hydrodb.js.
 
 const MAX_PANELS = 6000;
 
@@ -124,7 +126,7 @@ export function wettedPanels(surface, { tol } = {}) {
 }
 
 /** Per-panel edge data used by the closed-form integrals. */
-function panelGeometry(pan) {
+export function panelGeometry(pan) {
   const { n, vertices: V, normals: N } = pan;
   const T = new Float64Array(9 * n); const M = new Float64Array(9 * n); const L = new Float64Array(3 * n); const diam = new Float64Array(n);
   for (let p = 0; p < n; p++) {
@@ -150,7 +152,7 @@ function panelGeometry(pan) {
  * out[0] = potential, out[1..3] = gradient, out[4] = signed solid angle (negative when the field point is on the
  * side the normal points to; minus the normal-dipole integral). `self` takes the principal value on the panel.
  */
-function panelIntegral(pan, geo, j, px, py, pz, self, out) {
+export function panelIntegral(pan, geo, j, px, py, pz, self, out) {
   const V = pan.vertices; const N = pan.normals; const M = geo.M; const L = geo.L;
   const q = 9 * j;
   const ax = V[q] - px; const ay = V[q + 1] - py; const az = V[q + 2] - pz;

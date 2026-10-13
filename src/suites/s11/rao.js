@@ -24,7 +24,7 @@ export default {
   covers: [4],
   fidelity: 'reduced-order',
   standards: ['DNV-RP-C205 (2019) §7.1–7.3', 'ISO 19904-1 (2019) §9', 'ITTC Recommended Procedure 7.5-02-07-03.1 (floating offshore platform experiments)', 'WAMIT v7 User Manual (numeric output conventions)'],
-  models: ['Linear frequency-domain equation of motion [−ω²(M + A) + iωB + C + K]ξ = F', 'Imported added mass, radiation damping and excitation (WAMIT-style JSON or CSV)', 'Long-wave Froude–Krylov and Morison excitation on slender members', 'Closed-form box-barge heave, pitch and roll (Jensen, Mansour & Olsen 2004)', 'Haskind / symmetry consistency checks of imported coefficients', 'Rigid-body point kinematics (displacement, velocity, acceleration)'],
+  models: ['Linear frequency-domain equation of motion [−ω²(M + A) + iωB + C + K]ξ = F', 'Imported added mass, radiation damping and excitation (WAMIT-style JSON or CSV)', 'Long-wave Froude–Krylov and Morison excitation on slender members', 'Box-barge heave, pitch and roll from a three-dimensional panel solution with the free-surface Green function (frequency-dependent added mass, wave damping and Haskind excitation)', 'Haskind / symmetry consistency checks of imported coefficients', 'Rigid-body point kinematics (displacement, velocity, acceleration)'],
   limits: `${LIMIT_HYDRO} Imported coefficients are used as given, interpolated linearly in frequency and heading, about the database origin, which must be the waterline point above the keel origin; viscous damping is then the user fraction of critical added on the diagonal. RAOs are per unit wave amplitude without drag unless a sea state is supplied for the linearisation. ${LIMIT_CFD}`,
   searchTerms: 'response amplitude operator RAO floating platform WAMIT import',
   inputs: [

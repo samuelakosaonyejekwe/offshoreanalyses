@@ -259,319 +259,951 @@
   },
   {
    "id": "barge-rao-heave",
-   "title": "Barge heave RAO in head seas: closed-form box model against Capytaine",
-   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 180 }) — src/engine/hydro/floater.js",
+   "title": "Barge 20 × 8 × 2 m, heave RAO in head seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 180, GMt: 1.667, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
    "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
    "quantity": "heave amplitude per unit wave amplitude, barge 20 × 8 × 2 m draught",
    "unit": "m/m",
    "cases": [
     {
      "label": "T = 4 s",
-     "builtIn": 0.1948327293377773,
-     "reference": 0.2501050958699276,
-     "relDiff": -0.22099656282451696
+     "builtIn": 0.24067820193426834,
+     "reference": 0.25010509685462834,
+     "relDiff": -0.03769173455045305
     },
     {
      "label": "T = 5 s",
-     "builtIn": 0.587142603920263,
-     "reference": 0.8479583611076665,
-     "relDiff": -0.3075808543791072
+     "builtIn": 0.8448466814039494,
+     "reference": 0.8479583372008562,
+     "relDiff": -0.0036695857100462774
     },
     {
      "label": "T = 6 s",
-     "builtIn": 0.7882494715717677,
-     "reference": 0.9335903277937113,
-     "relDiff": -0.15567947941943386
+     "builtIn": 0.9356261026103696,
+     "reference": 0.9335903302329986,
+     "relDiff": 0.002180584257832754
     },
     {
      "label": "T = 7 s",
-     "builtIn": 0.8869623892638607,
-     "reference": 0.9573740787113713,
-     "relDiff": -0.07354668463792638
+     "builtIn": 0.9597275861606185,
+     "reference": 0.9573740786350412,
+     "relDiff": 0.0024582945977947844
     },
     {
      "label": "T = 8 s",
-     "builtIn": 0.9363292263322174,
-     "reference": 0.9712674614269019,
-     "relDiff": -0.035971796114075826
+     "builtIn": 0.9729547464769817,
+     "reference": 0.9712674613251407,
+     "relDiff": 0.0017371992978523938
     },
     {
      "label": "T = 10 s",
-     "builtIn": 0.9762359774440964,
-     "reference": 0.9863215263986851,
-     "relDiff": -0.010225417051794087
+     "builtIn": 0.9871808815992003,
+     "reference": 0.9863215263620263,
+     "relDiff": 0.0008712729208533258
     },
     {
      "label": "T = 12 s",
-     "builtIn": 0.9893757336014489,
-     "reference": 0.9929475689682848,
-     "relDiff": -0.003597204402793602
+     "builtIn": 0.9933685168556732,
+     "reference": 0.9929475689544256,
+     "relDiff": 0.00042393769259220786
     },
     {
      "label": "T = 14 s",
-     "builtIn": 0.9945721365998658,
-     "reference": 0.9960625050955877,
-     "relDiff": -0.0014962600118944378
+     "builtIn": 0.9962945049081148,
+     "reference": 0.9960625050895814,
+     "relDiff": 0.0002329169277509602
     },
     {
      "label": "T = 16 s",
-     "builtIn": 0.9969413655715731,
-     "reference": 0.9976476020054508,
-     "relDiff": -0.0007079017004180842
+     "builtIn": 0.9977863610997193,
+     "reference": 0.9976476020025394,
+     "relDiff": 0.0001390862834745834
     },
     {
      "label": "T = 20 s",
-     "builtIn": 0.9988083617249945,
-     "reference": 0.9990177530520831,
-     "relDiff": -0.00020959720330176123
+     "builtIn": 0.9990750167809562,
+     "reference": 0.9990177530512057,
+     "relDiff": 0.0000573200321772783
     },
     {
      "label": "T = 25 s",
-     "builtIn": 0.9995282321465805,
-     "reference": 0.9995934784363013,
-     "relDiff": -0.00006527282453151728
+     "builtIn": 0.9996161989446065,
+     "reference": 0.9995934784360326,
+     "relDiff": 0.000022729748706874207
     }
    ],
-   "verdict": "agrees within stated range",
-   "validity": "Within 5 % at wave periods 8, 10, 12, 14, 16, 20, 25 s (7 of 11); largest difference 31 % at T = 5 s.",
-   "note": "The closed-form model under-predicts heave in short waves: it is within 5 % from T = 8 s, twice its heave natural period 2 pi sqrt(2T/g) = 4.01 s (wavelength 100 m, five barge lengths), and 16 % low at 6 s (wavelength 56 m). It takes the heave added mass equal to the displacement (Capytaine: 1.47 times at 5 s, 2.69 times at 25 s) and a two-dimensional sectional damping. Reference: Capytaine coefficients read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.667 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed."
+   "verdict": "agrees",
+   "validity": "Within 5 % at wave periods 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 25 s (11 of 11); largest difference 3.8 % at T = 4 s.",
+   "note": "Largest difference −3.8 % at T = 4 s, where the response falls steeply below the heave resonance and follows the added mass to within its discretisation error (A33 of the model is +1.5 % from Capytaine's on average over the two shortest periods). The closed form (method 'closed-form') differs by −22 % at 4 s, −31 % at 5 s, −16 % at 6 s, −7.4 % at 7 s. Model: three-dimensional panel solution of the box with the free-surface Green function (111 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (768 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.67 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 4.36 s, roll natural period 5.24 s; the wavelength equals the beam at 2.26 s."
   },
   {
    "id": "barge-rao-pitch",
-   "title": "Barge pitch RAO in head seas: closed-form box model against Capytaine",
-   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 180 }) — src/engine/hydro/floater.js",
+   "title": "Barge 20 × 8 × 2 m, pitch RAO in head seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 180, GMt: 1.667, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
    "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
    "quantity": "pitch amplitude per unit wave amplitude, barge 20 × 8 × 2 m draught",
    "unit": "rad/m",
    "cases": [
     {
      "label": "T = 4 s",
-     "builtIn": 0.10415130517342439,
-     "reference": 0.27943455265169576,
-     "relDiff": -0.6272783584382103
+     "builtIn": 0.2708074404960311,
+     "reference": 0.2794345568287647,
+     "relDiff": -0.030873476890763505
     },
     {
      "label": "T = 5 s",
-     "builtIn": 0.11634386676528352,
-     "reference": 0.14404107248622622,
-     "relDiff": -0.19228686126029237
+     "builtIn": 0.1458309206391307,
+     "reference": 0.1440410483652258,
+     "relDiff": 0.012426126400903128
     },
     {
      "label": "T = 6 s",
-     "builtIn": 0.09649411345937792,
-     "reference": 0.10039389156557242,
-     "relDiff": -0.0388447747704586
+     "builtIn": 0.10119168429015447,
+     "reference": 0.10039389525356616,
+     "relDiff": 0.00794658912848558
     },
     {
      "label": "T = 7 s",
-     "builtIn": 0.07637496660906642,
-     "reference": 0.07608044352878164,
-     "relDiff": 0.003871206142132492
+     "builtIn": 0.07649481419000126,
+     "reference": 0.07608044384479282,
+     "relDiff": 0.005446476443457331
     },
     {
      "label": "T = 8 s",
-     "builtIn": 0.060510716330178446,
-     "reference": 0.05954754877120558,
-     "relDiff": 0.016174764181705693
+     "builtIn": 0.059793534440179416,
+     "reference": 0.059547548830538415,
+     "relDiff": 0.004130910750684839
     },
     {
      "label": "T = 10 s",
-     "builtIn": 0.0397313815477317,
-     "reference": 0.03901838758219039,
-     "relDiff": 0.018273281130324198
+     "builtIn": 0.039136401085706624,
+     "reference": 0.039018387587975954,
+     "relDiff": 0.0030245611114652206
     },
     {
      "label": "T = 12 s",
-     "builtIn": 0.02780427887811398,
-     "reference": 0.027392511329259933,
-     "relDiff": 0.015032121148169686
+     "builtIn": 0.027463718949294943,
+     "reference": 0.027392511330414045,
+     "relDiff": 0.0025995286821999396
     },
     {
      "label": "T = 14 s",
-     "builtIn": 0.02048537322672919,
-     "reference": 0.02024197869509294,
-     "relDiff": 0.012024246013817491
+     "builtIn": 0.02029048097145508,
+     "reference": 0.020241978695434596,
+     "relDiff": 0.002396123261972526
     },
     {
      "label": "T = 16 s",
-     "builtIn": 0.015703113665673705,
-     "reference": 0.015551057602658352,
-     "relDiff": 0.009777859930848672
+     "builtIn": 0.015586560939001882,
+     "reference": 0.015551057602786925,
+     "relDiff": 0.0022830174719817953
     },
     {
      "label": "T = 20 s",
-     "builtIn": 0.010058997085507579,
-     "reference": 0.009989584946407563,
-     "relDiff": 0.006948450758705215
+     "builtIn": 0.010011206527317906,
+     "reference": 0.009989584946435467,
+     "relDiff": 0.0021644123352846543
     },
     {
      "label": "T = 25 s",
-     "builtIn": 0.006439827866337888,
-     "reference": 0.006407260808793129,
-     "relDiff": 0.005082836256651936
+     "builtIn": 0.006420684357560733,
+     "reference": 0.006407260808799681,
+     "relDiff": 0.002095052653798123
     }
    ],
-   "verdict": "agrees within stated range",
-   "validity": "Within 5 % at wave periods 6, 7, 8, 10, 12, 14, 16, 20, 25 s (9 of 11); largest difference 63 % at T = 4 s.",
-   "note": "The closed-form pitch is within 4 % from T = 6 s (wavelength 56 m, 2.8 barge lengths) and far too low at 4 s, where the wavelength (25 m) is close to the barge length. Reference: Capytaine coefficients read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.667 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed."
+   "verdict": "agrees",
+   "validity": "Within 5 % at wave periods 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 25 s (11 of 11); largest difference 3.1 % at T = 4 s.",
+   "note": "Surge–pitch pair with the mass gyradius 0.25 L of the reference. The closed form (method 'closed-form') differs by −63 % at 4 s, −19 % at 5 s. Model: three-dimensional panel solution of the box with the free-surface Green function (111 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (768 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.67 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 4.36 s, roll natural period 5.24 s; the wavelength equals the beam at 2.26 s."
   },
   {
    "id": "barge-rao-heaveBeam",
-   "title": "Barge heave RAO in beam seas: closed-form box model against Capytaine",
-   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 90 }) — src/engine/hydro/floater.js",
+   "title": "Barge 20 × 8 × 2 m, heave RAO in beam seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 90, GMt: 1.667, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
    "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
    "quantity": "heave amplitude per unit wave amplitude, barge 20 × 8 × 2 m draught",
    "unit": "m/m",
    "cases": [
     {
      "label": "T = 4 s",
-     "builtIn": 0.7028512376103243,
-     "reference": 1.219262025593131,
-     "relDiff": -0.42354373148920943
+     "builtIn": 1.174362321173406,
+     "reference": 1.2192619926949282,
+     "relDiff": -0.03682528594390176
     },
     {
      "label": "T = 5 s",
-     "builtIn": 0.8821142150387196,
-     "reference": 1.322863196331474,
-     "relDiff": -0.333178050848362
+     "builtIn": 1.3259761682731697,
+     "reference": 1.322860998634293,
+     "relDiff": 0.0023548729927730648
     },
     {
      "label": "T = 6 s",
-     "builtIn": 0.9477624494902939,
-     "reference": 1.1092557024792415,
-     "relDiff": -0.1455870387936724
+     "builtIn": 1.1141109825033089,
+     "reference": 1.1092559414140128,
+     "relDiff": 0.004376844791209416
     },
     {
      "label": "T = 7 s",
-     "builtIn": 0.977383185133992,
-     "reference": 1.0446184542378505,
-     "relDiff": -0.06436347053902379
+     "builtIn": 1.0481175818748132,
+     "reference": 1.0446184462052446,
+     "relDiff": 0.0033496782315876376
     },
     {
      "label": "T = 8 s",
-     "builtIn": 0.9905188507801834,
-     "reference": 1.0215023629063842,
-     "relDiff": -0.030331317137677786
+     "builtIn": 1.0237332700936552,
+     "reference": 1.0215023522148152,
+     "relDiff": 0.002183957652180572
     },
     {
      "label": "T = 10 s",
-     "builtIn": 0.9987820081911578,
-     "reference": 1.0069575788431164,
-     "relDiff": -0.008119081502272868
+     "builtIn": 1.0079667319151284,
+     "reference": 1.0069575748706545,
+     "relDiff": 0.0010021842723647372
     },
     {
      "label": "T = 12 s",
-     "builtIn": 1.0002937787203003,
-     "reference": 1.0029648257054946,
-     "relDiff": -0.0026631512060409806
+     "builtIn": 1.0034429295631708,
+     "reference": 1.0029648241701465,
+     "relDiff": 0.0004766920848095254
     },
     {
      "label": "T = 14 s",
-     "builtIn": 1.0004731321420437,
-     "reference": 1.001491924648554,
-     "relDiff": -0.0010172748091482582
+     "builtIn": 1.001751235041207,
+     "reference": 1.0014919239731408,
+     "relDiff": 0.0002589247719916293
     },
     {
      "label": "T = 16 s",
-     "builtIn": 1.000402068105828,
-     "reference": 1.0008380341150789,
-     "relDiff": -0.00043560096078507765
+     "builtIn": 1.000992067501722,
+     "reference": 1.0008380337842706,
+     "relDiff": 0.00015390474007973877
     },
     {
      "label": "T = 20 s",
-     "builtIn": 1.0002262649575877,
-     "reference": 1.0003277883291566,
-     "relDiff": -0.00010149010429716553
+     "builtIn": 1.0003911385670663,
+     "reference": 1.0003277882281671,
+     "relDiff": 0.0000633295802082615
     },
     {
      "label": "T = 25 s",
-     "builtIn": 1.0001090460743232,
-     "reference": 1.0001307706440645,
-     "relDiff": -0.00002172172917685129
+     "builtIn": 1.0001559196542096,
+     "reference": 1.000130770612882,
+     "relDiff": 0.000025145753002134134
     }
    ],
-   "verdict": "agrees within stated range",
-   "validity": "Within 5 % at wave periods 8, 10, 12, 14, 16, 20, 25 s (7 of 11); largest difference 42 % at T = 4 s.",
-   "note": "The heave force is the integral of the undisturbed pressure over the bottom, rho g L B exp(-kT) sinc(k_x L/2) sinc(k_y B/2), at every heading (the published closed form approximates the depth decay by exp(-|k cos beta| T), which in beam seas gave 1 + kT in long waves: +8 % at 10 s). The model now tends to 1 as Capytaine does (−0.81 % at 10 s) and is within 5 % from T = 8 s, twice its heave natural period of 4.01 s. Below that it is low (15 % at 6 s, 42 % at 4 s) for the reason given for head seas: added mass equal to the displacement and a two-dimensional sectional damping, 2.4 times the Capytaine value at 5 s for this barge of L/B = 2.5. Reference: Capytaine coefficients read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.667 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed."
+   "verdict": "agrees",
+   "validity": "Within 5 % at wave periods 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 25 s (11 of 11); largest difference 3.7 % at T = 4 s.",
+   "note": "The closed form (method 'closed-form') differs by −42 % at 4 s, −33 % at 5 s, −15 % at 6 s, −6.4 % at 7 s. Model: three-dimensional panel solution of the box with the free-surface Green function (111 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (768 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.67 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 4.36 s, roll natural period 5.24 s; the wavelength equals the beam at 2.26 s."
   },
   {
    "id": "barge-rao-roll",
-   "title": "Barge roll RAO in beam seas: one-degree-of-freedom model against Capytaine",
-   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 90, GMt: 1.667, kxxDry: 0.35 B }) — src/engine/hydro/floater.js",
+   "title": "Barge 20 × 8 × 2 m, roll RAO in beam seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 20, B: 8, T: 2, headingDeg: 90, GMt: 1.667, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
    "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
    "quantity": "roll amplitude per unit wave amplitude, barge 20 × 8 × 2 m draught",
    "unit": "rad/m",
    "cases": [
     {
      "label": "T = 4 s",
-     "builtIn": 0.06550810377098921,
-     "reference": 0.07671433483722997,
-     "relDiff": -0.14607740639370442
+     "builtIn": 0.0815792087178075,
+     "reference": 0.0767446730684766,
+     "relDiff": 0.06299506475214518
     },
     {
      "label": "T = 5 s",
-     "builtIn": 0.3858656968743392,
-     "reference": 0.4220819723130343,
-     "relDiff": -0.08580389074716402
+     "builtIn": 0.4365974780445716,
+     "reference": 0.42449731728572104,
+     "relDiff": 0.028504681339849732
     },
     {
      "label": "T = 6 s",
-     "builtIn": 0.2584303734704608,
-     "reference": 0.2380446744671726,
-     "relDiff": 0.08563812254535214
+     "builtIn": 0.24922482883516126,
+     "reference": 0.23836638598566542,
+     "relDiff": 0.045553582585041254
     },
     {
      "label": "T = 7 s",
-     "builtIn": 0.12442290336772191,
-     "reference": 0.11873508652531167,
-     "relDiff": 0.047903421043094294
+     "builtIn": 0.12309844544059217,
+     "reference": 0.1187722807886318,
+     "relDiff": 0.03642402607102619
     },
     {
      "label": "T = 8 s",
-     "builtIn": 0.08127272019122558,
-     "reference": 0.07850934628933197,
-     "relDiff": 0.03519802459836694
+     "builtIn": 0.08100036762707082,
+     "reference": 0.07852050445727968,
+     "relDiff": 0.03158236421087115
     },
     {
      "label": "T = 10 s",
-     "builtIn": 0.04587952316700824,
-     "reference": 0.04472817691464877,
-     "relDiff": 0.025740960883706344
+     "builtIn": 0.04593742581496324,
+     "reference": 0.04473068570364665,
+     "relDiff": 0.02697790325217871
     },
     {
      "label": "T = 12 s",
-     "builtIn": 0.030313939831774297,
-     "reference": 0.029655061368872672,
-     "relDiff": 0.022218077875678057
+     "builtIn": 0.030394434366678942,
+     "reference": 0.02965598843978868,
+     "relDiff": 0.024900398393044598
     },
     {
      "label": "T = 14 s",
-     "builtIn": 0.021714603236395708,
-     "reference": 0.0212783590462934,
-     "relDiff": 0.020501777846365442
+     "builtIn": 0.021784687639274596,
+     "reference": 0.021278791959094146,
+     "relDiff": 0.023774642900450903
     },
     {
      "label": "T = 16 s",
-     "builtIn": 0.016380752472455243,
-     "reference": 0.01606703058697024,
-     "relDiff": 0.01952581616041865
+     "builtIn": 0.016438259193745957,
+     "reference": 0.016067262837009186,
+     "relDiff": 0.023090202761992595
     },
     {
      "label": "T = 20 s",
-     "builtIn": 0.010317734500654986,
-     "reference": 0.010130328841930453,
-     "relDiff": 0.01849946449406876
+     "builtIn": 0.010356586819382714,
+     "reference": 0.010130414982745086,
+     "relDiff": 0.02232601892645676
     },
     {
      "label": "T = 25 s",
-     "builtIn": 0.00654127939757898,
-     "reference": 0.006426223885651199,
-     "relDiff": 0.01790406216389108
+     "builtIn": 0.006566723773889746,
+     "reference": 0.006426257082604035,
+     "relDiff": 0.02185824337248441
     }
    ],
    "verdict": "agrees within stated range",
-   "validity": "Within 5 % at wave periods 7, 8, 10, 12, 14, 16, 20, 25 s (8 of 11); largest difference 15 % at T = 4 s.",
-   "note": "Model: Froude–Krylov moment plus relative-motion diffraction, strip added inertia of the rectangular section from DNV-RP-C205 Table D-1 (1237000 kg·m²; Capytaine 1136000 at infinite frequency, 1142000 at 5 s), radiation damping from the Haskind relation (51800 N·m·s at 5 s; Capytaine B44 51700), dry gyradius 0.35 B as in the reference and 5 % of critical added damping, 451800 N·m·s, which was also added to the Capytaine solution. The roll natural period is 5.3 s against 5.23 s with the Capytaine added inertia (the strip value has no end effect), which is what separates the two between 4 and 6 s; from 7 s the model is 1.8 %–4.8 % high. The reference itself is uncertain by a similar amount: its sway–roll added-mass terms are not symmetric on this mesh (A24 = -10700, A42 = -27200 kg·m at 25 s), and using A24 on both sides raises the reference roll by 3.1 %–5.4 % at 7–25 s. The model has no sway–roll coupling. Reference: Capytaine coefficients read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.667 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed."
+   "validity": "Within 5 % at wave periods 5, 6, 7, 8, 10, 12, 14, 16, 20, 25 s (10 of 11); largest difference 6.3 % at T = 4 s.",
+   "note": "Sway–roll pair with the dry gyradius 0.35 B of the reference and 5 % of critical added roll damping, 447000 N·m·s, which was also added to the Capytaine solution; added roll inertia of the free sway–roll pair at the natural period 1156000 kg·m². The reference is uncertain by a few per cent in roll: its sway–roll added-mass terms are not symmetric on its mesh (A24 = -10700, A42 = -27200 kg·m at 25 s); with their mean on both sides the model differs by −0.22 % to +4.5 % over the periods instead of +2.2 % to +6.3 %. The closed form (method 'closed-form') differs by −15 % at 4 s, −9.1 % at 5 s, +8.4 % at 6 s. Model: three-dimensional panel solution of the box with the free-surface Green function (111 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (768 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 1.667 m, GMl = 15.67 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 4.36 s, roll natural period 5.24 s; the wavelength equals the beam at 2.26 s."
+  },
+  {
+   "id": "barge100-rao-heave",
+   "title": "Barge 100 × 20 × 5 m, heave RAO in head seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 100, B: 20, T: 5, headingDeg: 180, GMt: 4.167, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "heave amplitude per unit wave amplitude, barge 100 × 20 × 5 m draught",
+   "unit": "m/m",
+   "cases": [
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.029601667870692794,
+     "reference": 0.030623346793517393,
+     "relDiff": -0.033362745414909294
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.07698189783078603,
+     "reference": 0.08071876645102455,
+     "relDiff": -0.04629491733506399
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.25143922068423086,
+     "reference": 0.253894034343752,
+     "relDiff": -0.009668654349702209
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.1179517458234155,
+     "reference": 0.11646620374985772,
+     "relDiff": 0.012755134328481898
+    },
+    {
+     "label": "T = 9 s",
+     "builtIn": 0.2802141554772004,
+     "reference": 0.28099960894739195,
+     "relDiff": -0.0027952119689198377
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.480869284990489,
+     "reference": 0.4810103389824129,
+     "relDiff": -0.00029324523922362363
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.735497473395682,
+     "reference": 0.7349232702912863,
+     "relDiff": 0.0007813102776948737
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.8548463217333335,
+     "reference": 0.8539328107619296,
+     "relDiff": 0.0010697691432992476
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.9138146725016937,
+     "reference": 0.9130698715203079,
+     "relDiff": 0.0008157108285104279
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.9640713597360474,
+     "reference": 0.9636966202008098,
+     "relDiff": 0.00038885633443386274
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 0.9851421476277029,
+     "reference": 0.9849646213438074,
+     "relDiff": 0.00018023620346216537
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "Within 5 % at wave periods 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 25 s (11 of 11); largest difference 4.6 % at T = 6 s.",
+   "note": "Largest difference −4.6 % at T = 6 s, where the response falls steeply below the heave resonance and follows the added mass to within its discretisation error (A33 of the model is +1.5 % from Capytaine's on average over the two shortest periods). The closed form (method 'closed-form') differs by −15 % at 5 s, +7.2 % at 6 s, −28 % at 7 s, −99 % at 8 s, −15 % at 9 s, −7.9 % at 10 s. Model: three-dimensional panel solution of the box with the free-surface Green function (127 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (1600 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 4.167 m, GMl = 164.2 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 6.97 s, roll natural period 8.32 s; the wavelength equals the beam at 3.58 s."
+  },
+  {
+   "id": "barge100-rao-pitch",
+   "title": "Barge 100 × 20 × 5 m, pitch RAO in head seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 100, B: 20, T: 5, headingDeg: 180, GMt: 4.167, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "pitch amplitude per unit wave amplitude, barge 100 × 20 × 5 m draught",
+   "unit": "rad/m",
+   "cases": [
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.0017175201362264552,
+     "reference": 0.001758687285823249,
+     "relDiff": -0.023407884919986417
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.010797737753700378,
+     "reference": 0.011169928364271293,
+     "relDiff": -0.03332076969816769
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.008622973186930427,
+     "reference": 0.008697318039790842,
+     "relDiff": -0.008548020495546075
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.021225478285704147,
+     "reference": 0.021233888953630348,
+     "relDiff": -0.0003960964449125488
+    },
+    {
+     "label": "T = 9 s",
+     "builtIn": 0.026475327203559745,
+     "reference": 0.026412359296606628,
+     "relDiff": 0.0023840318937811533
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.026650671928108834,
+     "reference": 0.02655149985127679,
+     "relDiff": 0.003735083795173
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.022675463184192075,
+     "reference": 0.022607470834701982,
+     "relDiff": 0.0030075168508334723
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.01821742663618453,
+     "reference": 0.018182413676565045,
+     "relDiff": 0.0019256497097859464
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.014590955040747538,
+     "reference": 0.014571820476684197,
+     "relDiff": 0.0013131210402954222
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.009716488743648206,
+     "reference": 0.009708681757456417,
+     "relDiff": 0.0008041242247736563
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 0.006330658739019723,
+     "reference": 0.006326722824774714,
+     "relDiff": 0.0006221094797447147
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "Within 5 % at wave periods 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 25 s (11 of 11); largest difference 3.3 % at T = 6 s.",
+   "note": "Surge–pitch pair with the mass gyradius 0.25 L of the reference. The closed form (method 'closed-form') differs by −71 % at 5 s, −36 % at 6 s, −44 % at 7 s, −15 % at 8 s, −7.8 % at 9 s. Model: three-dimensional panel solution of the box with the free-surface Green function (127 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (1600 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 4.167 m, GMl = 164.2 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 6.97 s, roll natural period 8.32 s; the wavelength equals the beam at 3.58 s."
+  },
+  {
+   "id": "barge100-rao-heaveBeam",
+   "title": "Barge 100 × 20 × 5 m, heave RAO in beam seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 100, B: 20, T: 5, headingDeg: 90, GMt: 4.167, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "heave amplitude per unit wave amplitude, barge 100 × 20 × 5 m draught",
+   "unit": "m/m",
+   "cases": [
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.20673687208361236,
+     "reference": 0.21302014567251507,
+     "relDiff": -0.029496147273142204
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.7552279574897195,
+     "reference": 0.7833068912625007,
+     "relDiff": -0.035846657403364374
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 1.475816987636174,
+     "reference": 1.4816438983775124,
+     "relDiff": -0.003932733599294179
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 1.3062009999842266,
+     "reference": 1.3011332794600172,
+     "relDiff": 0.0038948512071818597
+    },
+    {
+     "label": "T = 9 s",
+     "builtIn": 1.1599762475926576,
+     "reference": 1.1550928701959722,
+     "relDiff": 0.004227692441610274
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 1.0892380857697543,
+     "reference": 1.0865539592880837,
+     "relDiff": 0.002470311261328665
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 1.03450896889025,
+     "reference": 1.0324852572079055,
+     "relDiff": 0.00196003930149774
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 1.0159235827454651,
+     "reference": 1.014581448824664,
+     "relDiff": 0.0013228449252209932
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 1.0083539940808786,
+     "reference": 1.0074995832255933,
+     "relDiff": 0.0008480508275247044
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 1.0029719755284194,
+     "reference": 1.0026287667172387,
+     "relDiff": 0.0003423089607776681
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 1.0011380112507204,
+     "reference": 1.0009806076244252,
+     "relDiff": 0.00015724942630886333
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "Within 5 % at wave periods 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 25 s (11 of 11); largest difference 3.6 % at T = 6 s.",
+   "note": "The closed form (method 'closed-form') differs by −38 % at 5 s, −22 % at 6 s, −45 % at 7 s, −32 % at 8 s, −19 % at 9 s, −12 % at 10 s. Model: three-dimensional panel solution of the box with the free-surface Green function (127 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (1600 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 4.167 m, GMl = 164.2 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 6.97 s, roll natural period 8.32 s; the wavelength equals the beam at 3.58 s."
+  },
+  {
+   "id": "barge100-rao-roll",
+   "title": "Barge 100 × 20 × 5 m, roll RAO in beam seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 100, B: 20, T: 5, headingDeg: 90, GMt: 4.167, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "roll amplitude per unit wave amplitude, barge 100 × 20 × 5 m draught",
+   "unit": "rad/m",
+   "cases": [
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.006853752975945702,
+     "reference": 0.006197192505810549,
+     "relDiff": 0.1059448241311781
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.02262697111261286,
+     "reference": 0.021337721787229688,
+     "relDiff": 0.06042113297000469
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.058594293556929244,
+     "reference": 0.05630774803361491,
+     "relDiff": 0.040608008722872437
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.18056383673553328,
+     "reference": 0.1765775202762091,
+     "relDiff": 0.02257544705061344
+    },
+    {
+     "label": "T = 9 s",
+     "builtIn": 0.14663323710707388,
+     "reference": 0.1411193263227643,
+     "relDiff": 0.0390726835791315
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.0754609446957685,
+     "reference": 0.07298017823948381,
+     "relDiff": 0.03399233211166013
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.03787854924250985,
+     "reference": 0.03689440021549157,
+     "relDiff": 0.026674753384527072
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.024741551822845424,
+     "reference": 0.024187559123556402,
+     "relDiff": 0.02290403494040395
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.017881091993071332,
+     "reference": 0.017518214927712605,
+     "relDiff": 0.02071427179402166
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.010840467147357057,
+     "reference": 0.01064377265268273,
+     "relDiff": 0.01847977226615699
+    },
+    {
+     "label": "T = 25 s",
+     "builtIn": 0.0067428364401103565,
+     "reference": 0.006628611867189387,
+     "relDiff": 0.017232050270791072
+    }
+   ],
+   "verdict": "agrees within stated range",
+   "validity": "Within 5 % at wave periods 7, 8, 9, 10, 12, 14, 16, 20, 25 s (9 of 11); largest difference 11 % at T = 5 s.",
+   "note": "Sway–roll pair with the dry gyradius 0.35 B of the reference and 5 % of critical added roll damping, 55450000 N·m·s, which was also added to the Capytaine solution; added roll inertia of the free sway–roll pair at the natural period 231900000 kg·m². The reference is uncertain by a few per cent in roll: its sway–roll added-mass terms are not symmetric on its mesh (A24 = -2670000, A42 = -3600000 kg·m at 25 s); with their mean on both sides the model differs by +0.56 % to +9.5 % over the periods instead of +1.7 % to +11 %. The closed form (method 'closed-form') differs by −81 % at 5 s, −17 % at 6 s, +6.7 % at 9 s. Model: three-dimensional panel solution of the box with the free-surface Green function (127 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (1600 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 4.167 m, GMl = 164.2 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 6.97 s, roll natural period 8.32 s; the wavelength equals the beam at 3.58 s."
+  },
+  {
+   "id": "barge80-rao-heave",
+   "title": "Barge 80 × 24 × 3 m, heave RAO in head seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 80, B: 24, T: 3, headingDeg: 180, GMt: 14.5, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "heave amplitude per unit wave amplitude, barge 80 × 24 × 3 m draught",
+   "unit": "m/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.020754187875487294,
+     "reference": 0.021291048790492397,
+     "relDiff": -0.025215334401226887
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.05917300581641085,
+     "reference": 0.06110648331280511,
+     "relDiff": -0.031641118774529346
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.18244424672172357,
+     "reference": 0.18767684567215365,
+     "relDiff": -0.027880897783047375
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.15939132861434094,
+     "reference": 0.15914396255585728,
+     "relDiff": 0.0015543540233066602
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.26505864155233555,
+     "reference": 0.2660733679929661,
+     "relDiff": -0.0038137091595630067
+    },
+    {
+     "label": "T = 9 s",
+     "builtIn": 0.4707390739985511,
+     "reference": 0.4714940126677603,
+     "relDiff": -0.0016011627908861616
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.634599252486802,
+     "reference": 0.634545732353607,
+     "relDiff": 0.00008434401252140964
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.8195417814399842,
+     "reference": 0.8185859224472076,
+     "relDiff": 0.0011676953714510772
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.9018225831048524,
+     "reference": 0.9009240098339286,
+     "relDiff": 0.0009973907467394892
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.9421318274150986,
+     "reference": 0.9414259503917657,
+     "relDiff": 0.0007497955872569355
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.9760815660139345,
+     "reference": 0.9757659790012619,
+     "relDiff": 0.00032342489845316446
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "Within 5 % at wave periods 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20 s (11 of 11); largest difference 3.2 % at T = 5 s.",
+   "note": "Largest difference −3.2 % at T = 5 s, where the response falls steeply below the heave resonance and follows the added mass to within its discretisation error (A33 of the model is +1.1 % from Capytaine's on average over the two shortest periods). The closed form (method 'closed-form') differs by −37 % at 4 s, −56 % at 5 s, −75 % at 7 s, −19 % at 8 s, −7.6 % at 9 s, −5.6 % at 10 s. Model: three-dimensional panel solution of the box with the free-surface Green function (108 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (1584 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 14.5 m, GMl = 176.3 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 6.58 s, roll natural period 6.05 s; the wavelength equals the beam at 3.92 s."
+  },
+  {
+   "id": "barge80-rao-pitch",
+   "title": "Barge 80 × 24 × 3 m, pitch RAO in head seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 80, B: 24, T: 3, headingDeg: 180, GMt: 14.5, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "pitch amplitude per unit wave amplitude, barge 80 × 24 × 3 m draught",
+   "unit": "rad/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.0017816085955714724,
+     "reference": 0.0018465349096110834,
+     "relDiff": -0.035161162511293
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.0077122081245142035,
+     "reference": 0.008000478401597405,
+     "relDiff": -0.036031629936735296
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.011151079047703153,
+     "reference": 0.011224935027483661,
+     "relDiff": -0.006579635392069121
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.022576638532133552,
+     "reference": 0.022680859755340378,
+     "relDiff": -0.0045951178364076984
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.03151725948200695,
+     "reference": 0.03146799606453534,
+     "relDiff": 0.0015655085684698844
+    },
+    {
+     "label": "T = 9 s",
+     "builtIn": 0.03260300805691855,
+     "reference": 0.032468346501064504,
+     "relDiff": 0.004147471933922768
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.030466714623717205,
+     "reference": 0.030343446423833877,
+     "relDiff": 0.004062432400114722
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.02431785461190758,
+     "reference": 0.024256064038969467,
+     "relDiff": 0.002547427844799584
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.01898108668215838,
+     "reference": 0.01895109199678773,
+     "relDiff": 0.001582741795340092
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.014975775267255943,
+     "reference": 0.014959152910867472,
+     "relDiff": 0.0011111829986306194
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.009838686184640443,
+     "reference": 0.009831394852098139,
+     "relDiff": 0.0007416376467422571
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "Within 5 % at wave periods 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20 s (11 of 11); largest difference 3.6 % at T = 5 s.",
+   "note": "Surge–pitch pair with the mass gyradius 0.25 L of the reference. The closed form (method 'closed-form') differs by −32 % at 4 s, +55 % at 5 s, −97 % at 6 s, −15 % at 7 s, −8.8 % at 8 s. Model: three-dimensional panel solution of the box with the free-surface Green function (108 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (1584 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 14.5 m, GMl = 176.3 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 6.58 s, roll natural period 6.05 s; the wavelength equals the beam at 3.92 s."
+  },
+  {
+   "id": "barge80-rao-heaveBeam",
+   "title": "Barge 80 × 24 × 3 m, heave RAO in beam seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 80, B: 24, T: 3, headingDeg: 90, GMt: 14.5, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "heave amplitude per unit wave amplitude, barge 80 × 24 × 3 m draught",
+   "unit": "m/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.08553991105046835,
+     "reference": 0.09271713599483673,
+     "relDiff": -0.07740990775176741
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.33477586670553966,
+     "reference": 0.3491101728977225,
+     "relDiff": -0.04105954883297632
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.8369972186260238,
+     "reference": 0.8611521874584691,
+     "relDiff": -0.028049593537855588
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 1.0674627650501525,
+     "reference": 1.0755480911928657,
+     "relDiff": -0.007517400857218694
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 1.0562539692698991,
+     "reference": 1.0570921092955612,
+     "relDiff": -0.0007928732210673689
+    },
+    {
+     "label": "T = 9 s",
+     "builtIn": 1.0314774860134701,
+     "reference": 1.0302723379739558,
+     "relDiff": 0.0011697373549640914
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 1.0170890101243133,
+     "reference": 1.0148663202498838,
+     "relDiff": 0.002190130690199918
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 1.0050916058932546,
+     "reference": 1.0029469840621659,
+     "relDiff": 0.0021383202354351323
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 1.0015572862461917,
+     "reference": 1.0001223306905993,
+     "relDiff": 0.0014347800379594638
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 1.0005150309308863,
+     "reference": 0.9995540919748285,
+     "relDiff": 0.0009613676376026135
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 1.0000011905212625,
+     "reference": 0.9996063570037016,
+     "relDiff": 0.0003949890022152033
+    }
+   ],
+   "verdict": "agrees within stated range",
+   "validity": "Within 5 % at wave periods 5, 6, 7, 8, 9, 10, 12, 14, 16, 20 s (10 of 11); largest difference 7.7 % at T = 4 s.",
+   "note": "The closed form (method 'closed-form') differs by −90 % at 4 s, +53 % at 5 s, −25 % at 6 s, −30 % at 7 s, −21 % at 8 s, −13 % at 9 s, −8.6 % at 10 s. Model: three-dimensional panel solution of the box with the free-surface Green function (108 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (1584 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 14.5 m, GMl = 176.3 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 6.58 s, roll natural period 6.05 s; the wavelength equals the beam at 3.92 s."
+  },
+  {
+   "id": "barge80-rao-roll",
+   "title": "Barge 80 × 24 × 3 m, roll RAO in beam seas: box panel model against Capytaine",
+   "builtIn": "boxBargeRAO({ L: 80, B: 24, T: 3, headingDeg: 90, GMt: 14.5, kxxDry: 0.35 B }) — src/engine/hydro/floater.js (method 'panel')",
+   "reference": "Capytaine 3.0.0 + raoSolve (src/engine/hydro/hydrodb.js)",
+   "quantity": "roll amplitude per unit wave amplitude, barge 80 × 24 × 3 m draught",
+   "unit": "rad/m",
+   "cases": [
+    {
+     "label": "T = 4 s",
+     "builtIn": 0.012699066157755456,
+     "reference": 0.01304490351233302,
+     "relDiff": -0.02651130031361282
+    },
+    {
+     "label": "T = 5 s",
+     "builtIn": 0.05312680657835759,
+     "reference": 0.05345745737187974,
+     "relDiff": -0.006185307154097549
+    },
+    {
+     "label": "T = 6 s",
+     "builtIn": 0.15170095105725073,
+     "reference": 0.15550070052600357,
+     "relDiff": -0.024435577819904554
+    },
+    {
+     "label": "T = 7 s",
+     "builtIn": 0.12489194889105278,
+     "reference": 0.123279334815514,
+     "relDiff": 0.013080976450368093
+    },
+    {
+     "label": "T = 8 s",
+     "builtIn": 0.08021984229871446,
+     "reference": 0.07889333471243502,
+     "relDiff": 0.016813937338490403
+    },
+    {
+     "label": "T = 9 s",
+     "builtIn": 0.058008426050391575,
+     "reference": 0.057165893232267895,
+     "relDiff": 0.014738382809841294
+    },
+    {
+     "label": "T = 10 s",
+     "builtIn": 0.044837985579395306,
+     "reference": 0.04427705527009243,
+     "relDiff": 0.012668645326144002
+    },
+    {
+     "label": "T = 12 s",
+     "builtIn": 0.02976834323036933,
+     "reference": 0.029469930387995825,
+     "relDiff": 0.010126011105036749
+    },
+    {
+     "label": "T = 14 s",
+     "builtIn": 0.021423797173743892,
+     "reference": 0.021236956154055554,
+     "relDiff": 0.00879791898297334
+    },
+    {
+     "label": "T = 16 s",
+     "builtIn": 0.016215900749210692,
+     "reference": 0.016086545915490632,
+     "relDiff": 0.008041181394664528
+    },
+    {
+     "label": "T = 20 s",
+     "builtIn": 0.010255696513623737,
+     "reference": 0.010181627841039115,
+     "relDiff": 0.007274737766987802
+    }
+   ],
+   "verdict": "agrees",
+   "validity": "Within 5 % at wave periods 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20 s (11 of 11); largest difference 2.7 % at T = 4 s.",
+   "note": "Sway–roll pair with the dry gyradius 0.35 B of the reference and 5 % of critical added roll damping, 80830000 N·m·s, which was also added to the Capytaine solution; added roll inertia of the free sway–roll pair at the natural period 361700000 kg·m². The reference is uncertain by a few per cent in roll: its sway–roll added-mass terms are not symmetric on its mesh (A24 = -11500000, A42 = -12800000 kg·m at 20 s); with their mean on both sides the model differs by −3.1 % to +0.59 % over the periods instead of −2.7 % to +1.7 %. The closed form (method 'closed-form') differs by −80 % at 4 s, −42 % at 5 s, −7.2 % at 6 s. Model: three-dimensional panel solution of the box with the free-surface Green function (108 panels on a quarter of the hull, 14 frequencies to the wavelength equal to the beam, interpolated), equations of motion about the waterline centre. Reference: Capytaine coefficients (1584 panels) read with readCapytaineCsv and solved with raoSolve for a mass of rho L B T, centre of gravity on the waterline, GMt = 14.5 m, GMl = 176.3 m, dry gyradii 0.35 B (roll) and 0.25 L (pitch). Deep water, zero speed. Heave natural period 6.58 s, roll natural period 6.05 s; the wavelength equals the beam at 3.92 s."
   },
   {
    "id": "spar-force-surge",

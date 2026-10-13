@@ -82,7 +82,7 @@ function engineModel(m, section, fixedNodes, nodal) {
 
 test('cross-solver.json: every comparison is complete and consistent', () => {
   assert.deepEqual(SPEC.solvers.map((s) => s.name), ['Capytaine', 'NEMOH', 'CalculiX CrunchiX (ccx)']);
-  assert.ok(SPEC.comparisons.length >= 18);
+  assert.ok(SPEC.comparisons.length >= 26);
   for (const c of SPEC.comparisons) {
     for (const k of ['id', 'title', 'builtIn', 'reference', 'quantity', 'unit', 'validity', 'note']) assert.ok(typeof c[k] === 'string' && c[k].length > 0, `${c.id}.${k}`);
     assert.ok(['agrees', 'agrees within stated range', 'differs'].includes(c.verdict), c.id);
@@ -170,36 +170,75 @@ test('built-in panel method stays within the recorded differences from Capytaine
   assert.ok(rel(k.builtIn, exact) < 2e-3 && rel(k.reference, exact) > 0.01);
 });
 
-test('closed-form barge RAOs stay within the recorded differences from Capytaine', () => {
+test('box panel model: barge RAOs stay within the recorded differences from Capytaine (three hulls)', () => {
+  const hulls = [
+    ['barge', 20, 8, 2, PERIODS], ['barge100', 100, 20, 5, [5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 25]], ['barge80', 80, 24, 3, [4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20]],
+  ];
+  for (const [name, L, B, T, periods] of hulls) {
+    const db = capDb(name);
+    const om = periods.map((t) => Number((2 * Math.PI / t).toPrecision(10)));
+    const m = RHO * L * B * T; const z6 = () => Array.from({ length: 6 }, () => [0, 0, 0, 0, 0, 0]);
+    // centre of gravity on the waterline, dry gyradii 0.35 B and 0.25 L in the model and in the reference
+    const GMt = B * B / (12 * T) - T / 2; const GMl = L * L / (12 * T) - T / 2;
+    const opt = { L, B, T, omega: om, GMt, kxxDry: 0.35 * B, rho: RHO, g: G };
+    const head = boxBargeRAO({ ...opt, headingDeg: 180 }); const beam = boxBargeRAO({ ...opt, headingDeg: 90 });
+    assert.equal(head.method, 'panel');
+    const M = z6(); const C = z6(); const Bext = z6();
+    [m, m, m, m * (0.35 * B) ** 2, m * (0.25 * L) ** 2, m * (0.25 * L) ** 2].forEach((v, i) => { M[i][i] = v; });
+    C[2][2] = RHO * G * L * B; C[3][3] = m * G * GMt; C[4][4] = m * G * GMl;
+    // the added roll damping of the model (5 % of critical of its own oscillator) goes into the reference as well
+    Bext[3][3] = 2 * 0.05 * Math.sqrt((M[3][3] + beam.rollAddedInertia) * C[3][3]);
+    const refHead = raoSolve({ db, M, C, Bext, omega: om, headingDeg: 180 }); const refBeam = raoSolve({ db, M, C, Bext, omega: om, headingDeg: 90 });
+    periods.forEach((t, i) => {
+      within(`${name}-rao-heave`, `T = ${t} s`, head.heave[i], refHead.amp[2][i]);
+      within(`${name}-rao-pitch`, `T = ${t} s`, head.pitch[i], refHead.amp[4][i]);
+      within(`${name}-rao-heaveBeam`, `T = ${t} s`, beam.heave[i], refBeam.amp[2][i]);
+      within(`${name}-rao-roll`, `T = ${t} s`, beam.roll[i], refBeam.amp[3][i]);
+    });
+    // the range the model states: down to the wave whose length is the beam
+    assert.ok(rel(beam.validPeriodMin.heave, Math.sqrt(2 * Math.PI * B / G)) < 1e-12 && beam.validPeriodMin.roll === beam.validPeriodMin.heave);
+    // its parts against the solver's own coefficients at the longest period: added mass, and the roll inertia of
+    // the free sway–roll pair against the same combination of the reference
+    const h = hydroAt(db, om[om.length - 1], 90);
+    assert.ok(rel(beam.heaveNaturalPeriod, 2 * Math.PI * Math.sqrt((m + hydroAt(db, 2 * Math.PI / beam.heaveNaturalPeriod, 90).A[2][2]) / C[2][2])) < 0.01, `${name}: heave natural period`);
+    assert.ok(h.A[3][3] > 0 && beam.rollAddedInertia > 0.5 * h.A[3][3] && beam.rollAddedInertia < 1.1 * h.A[3][3], `${name}: roll added inertia`);
+  }
+  // the recorded agreement in numbers: heave and pitch within 5 % at every period in head seas for all three hulls
+  for (const name of ['barge', 'barge100', 'barge80']) for (const key of ['heave', 'pitch']) for (const k of comparison(`${name}-rao-${key}`).cases) assert.ok(Math.abs(k.relDiff) <= 0.05, `${name} ${key} ${k.label}`);
+  // beam seas: heave within 5 % except the wide barge at 4 s (wavelength equal to its beam); roll within 5 % from
+  // 5 s (20 × 8 × 2), 7 s (100 × 20 × 5) and at every period (80 × 24 × 3), and never further than 12 %
+  for (const k of comparison('barge-rao-heaveBeam').cases) assert.ok(Math.abs(k.relDiff) <= 0.05, k.label);
+  for (const k of comparison('barge100-rao-heaveBeam').cases) assert.ok(Math.abs(k.relDiff) <= 0.05, k.label);
+  for (const k of comparison('barge80-rao-heaveBeam').cases) assert.equal(Math.abs(k.relDiff) <= 0.05, k.label !== 'T = 4 s', k.label);
+  for (const [name, from] of [['barge', 5], ['barge100', 7], ['barge80', 4]]) for (const k of comparison(`${name}-rao-roll`).cases) { assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= from, `${name} roll ${k.label}`); assert.ok(Math.abs(k.relDiff) < 0.12, k.label); }
+});
+
+test('closed-form barge model (method closed-form): the differences from Capytaine that its validity limits state', () => {
   const db = capDb('barge');
   const m = RHO * 320; const z6 = () => Array.from({ length: 6 }, () => [0, 0, 0, 0, 0, 0]);
   const GMt = 1 + 64 / 24 - 2; const GMl = 1 + 400 / 24 - 2;
-  const head = boxBargeRAO({ L: 20, B: 8, T: 2, omega: OM, headingDeg: 180, rho: RHO, g: G });
-  // roll with the dry gyradius of the reference; the model adds its own strip added inertia
-  const beam = boxBargeRAO({ L: 20, B: 8, T: 2, omega: OM, headingDeg: 90, GMt, kxxDry: 0.35 * 8, rho: RHO, g: G });
+  const head = boxBargeRAO({ L: 20, B: 8, T: 2, omega: OM, headingDeg: 180, method: 'closed-form', rho: RHO, g: G });
+  const beam = boxBargeRAO({ L: 20, B: 8, T: 2, omega: OM, headingDeg: 90, GMt, kxxDry: 0.35 * 8, method: 'closed-form', rho: RHO, g: G });
   const M = z6(); const C = z6(); const Bext = z6();
   [m, m, m, m * (0.35 * 8) ** 2, m * 5 ** 2, m * 5 ** 2].forEach((v, i) => { M[i][i] = v; });
   C[2][2] = RHO * G * 160; C[3][3] = m * G * GMt; C[4][4] = m * G * GMl;
-  // the added roll damping of the model (5 % of critical of its own oscillator) goes into the reference as well
   Bext[3][3] = 2 * 0.05 * Math.sqrt((M[3][3] + beam.rollAddedInertia) * C[3][3]);
   const refHead = raoSolve({ db, M, C, Bext, omega: OM, headingDeg: 180 }); const refBeam = raoSolve({ db, M, C, Bext, omega: OM, headingDeg: 90 });
+  const d = (a, b) => a / b - 1;
+  // heave within 5 % from 8 s in head and in beam seas (twice the heave natural period of the model, the limit it
+  // returns) and low below; pitch from 6 s; roll from 7 s (1.3 roll natural periods) and within 16 % below
   PERIODS.forEach((T, i) => {
-    within('barge-rao-heave', `T = ${T} s`, head.heave[i], refHead.amp[2][i]);
-    within('barge-rao-pitch', `T = ${T} s`, head.pitch[i], refHead.amp[4][i]);
-    within('barge-rao-heaveBeam', `T = ${T} s`, beam.heave[i], refBeam.amp[2][i]);
-    within('barge-rao-roll', `T = ${T} s`, beam.roll[i], refBeam.amp[3][i]);
+    assert.equal(Math.abs(d(head.heave[i], refHead.amp[2][i])) <= 0.05, T >= 8, `heave ${T} s`);
+    assert.equal(Math.abs(d(beam.heave[i], refBeam.amp[2][i])) <= 0.05, T >= 8, `heave, beam sea ${T} s`);
+    if (T < 8) assert.ok(d(head.heave[i], refHead.amp[2][i]) < 0 && d(beam.heave[i], refBeam.amp[2][i]) < 0, `low at ${T} s`);
+    assert.equal(Math.abs(d(head.pitch[i], refHead.amp[4][i])) <= 0.05, T >= 6, `pitch ${T} s`);
+    assert.equal(Math.abs(d(beam.roll[i], refBeam.amp[3][i])) <= 0.05, T >= 7, `roll ${T} s`);
+    assert.ok(Math.abs(d(beam.roll[i], refBeam.amp[3][i])) < 0.16, `roll ${T} s`);
   });
-  // the validity range in numbers: heave within 5 % from 8 s in head and in beam seas (twice the heave natural period
-  // of the model, which is the limit boxBargeRAO returns), pitch from 6 s, roll from 7 s (1.3 roll natural periods)
-  for (const id of ['barge-rao-heave', 'barge-rao-heaveBeam']) for (const k of comparison(id).cases) assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= 8, `${id} ${k.label}`);
-  for (const k of comparison('barge-rao-pitch').cases) assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= 6, k.label);
-  for (const k of comparison('barge-rao-roll').cases) { assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= 7, k.label); assert.ok(Math.abs(k.relDiff) < 0.16, k.label); }
   assert.ok(beam.validPeriodMin.heave > 7 && beam.validPeriodMin.heave <= 8.03 && beam.validPeriodMin.roll > 6 && beam.validPeriodMin.roll <= 7);
-  // beam-sea heave tends to 1 with the solver (it was 1 + kT: +8 % at 10 s)
-  for (const k of comparison('barge-rao-heaveBeam').cases) if (Number(/\d+/.exec(k.label)[0]) >= 10) assert.ok(Math.abs(k.relDiff) < 0.01, k.label);
   // the parts of the roll model against the solver's own coefficients: strip added inertia (no end effect) 6–11 %
   // above A44, Haskind radiation damping within 12 % of B44 from 5 s
-  for (const w of OM) { const d = beam.rollAddedInertia / hydroAt(db, w, 90).A[3][3] - 1; assert.ok(d > 0.05 && d < 0.11, `A44 at ${w} rad/s: ${d}`); }
+  for (const w of OM) { const dd = beam.rollAddedInertia / hydroAt(db, w, 90).A[3][3] - 1; assert.ok(dd > 0.05 && dd < 0.11, `A44 at ${w} rad/s: ${dd}`); }
   PERIODS.forEach((T, i) => { if (T >= 5) assert.ok(rel(beam.rollRadiationDamping[i], hydroAt(db, OM[i], 90).B[3][3]) < 0.12, `B44 at T = ${T} s`); });
 });
 

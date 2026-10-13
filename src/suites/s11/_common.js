@@ -51,7 +51,7 @@ export const sev = (uc) => (uc > 1 ? 'fail' : uc > 0.9 ? 'warn' : 'ok');
 export const steelCo2Text = (tonnes) => `${fmt(Math.abs(tonnes))} t of steel ≈ ${fmt(Math.abs(tonnes) * CO2_STEEL)} t CO₂e at the screening factor of ${CO2_STEEL} t CO₂e per tonne (confirm with the mill's product declaration).`;
 export const fuelCo2Text = (tonnesFuel) => `${fmt(tonnesFuel)} t of marine gas oil ≈ ${fmt(tonnesFuel * CO2_MGO)} t CO₂ at the screening factor of ${CO2_MGO} t CO₂ per tonne of fuel.`;
 
-export const LIMIT_HYDRO = 'There is no potential-flow panel (BEM) solver in the suite: motions come from long-wave Froude–Krylov and Morison loading on slender members (valid for member diameter / wavelength < 0.2, no diffraction, frequency-independent strip added mass, radiation damping from the Haskind relation with the same long-wave excitation), from a closed-form box-barge model (heave, pitch and a one-degree-of-freedom roll with user gyradius and added damping; no surge, sway or yaw) or from imported coefficients. Against a panel solution the box model is within 5 % in heave only for wave periods above twice its heave natural period 2π√(2T/g) (15 % low at 1.5 times, 30–40 % low near it) and in roll above 1.3 times the roll natural period (within 15 % from there down to 0.75 times); the slender-member model was checked on a single column, where surge and pitch within 0.9–1.4 times the pitch natural period differ by up to 25 %. A run whose peak period lies outside these ranges carries a warning.';
+export const LIMIT_HYDRO = 'There is no panel (BEM) solution of the actual hull form in the suite: motions come from long-wave Froude–Krylov and Morison loading on slender members (valid for member diameter / wavelength < 0.2, no diffraction, frequency-independent strip added mass, radiation damping from the Haskind relation with the same long-wave excitation), from the panel solution of a rectangular box with the length, beam, draught and displacement of the hull (heave, pitch and roll with user gyradius and added roll damping; deep water, zero speed; surge, sway and yaw are not returned) or from imported coefficients. For a box the box model is within 5 % of an independent panel code in heave, pitch and roll for waves longer than the beam, the roll peak following the gyradius and damping entered; the slender-member model was checked on a single column, where surge and pitch within 0.9–1.4 times the pitch natural period differ by up to 25 %. A run whose peak period lies outside these ranges carries a warning.';
 export const LIMIT_CFD = 'CFD and hydroelastic finite-element analysis are outside the suite.';
 
 /* --------------------------------------------------------------------------------------------- hull geometry */
@@ -286,7 +286,7 @@ function membersFrom(inp, hull) {
 }
 
 /**
- * Motion model of the unit. Slender-member model for semi, spar and TLP; closed-form box model for ship,
+ * Motion model of the unit. Slender-member model for semi, spar and TLP; box panel model for ship,
  * barge and imported hulls. Returns helpers that evaluate six-degree-of-freedom RAOs on a frequency grid.
  */
 export function motionFrom(inp, hull) {
@@ -335,7 +335,8 @@ export function motionFrom(inp, hull) {
   const L = hull.Lc; const B = hull.Bc; const T = hull.T;
   const Cb = Math.min(1, hull.volume / (L * B * T));
   const kxx = inp.kRoll * B;
-  const box0 = boxBargeRAO({ L, B, T, omega: [0.5], headingDeg: 90, Cb, GMt, kxx, rollDampingRatio: inp.zetaRoll ?? 0.06, rho });
+  const kyy = inp.kPitch > 0 ? inp.kPitch * L : undefined;
+  const box0 = boxBargeRAO({ L, B, T, omega: [0.5], headingDeg: 90, Cb, GMt, kxx, kyy, rollDampingRatio: inp.zetaRoll ?? 0.06, rho });
   // pitch natural period from the same strip assumptions: added inertia taken equal to the rigid inertia (screening)
   const TnPitch = 2 * Math.PI * Math.sqrt(2 * (inp.kPitch * L) ** 2 / (G * Math.max(hull.hs.GMl, 1e-6)));
   const mTot = hull.mass;
@@ -345,7 +346,7 @@ export function motionFrom(inp, hull) {
     Tn: [TnSurge, Kh > 0 ? 2 * Math.PI * Math.sqrt(1.8 * mTot / Kh) : null, box0.heaveNaturalPeriod, box0.rollNaturalPeriod, TnPitch, null],
     raoLin(omega, headingDeg) { return this.rao(omega, headingDeg); },
     rao(omega, headingDeg) {
-      const r = run(() => boxBargeRAO({ L, B, T, omega, headingDeg, Cb, GMt, kxx, rollDampingRatio: inp.zetaRoll ?? 0.06, rho }), 'Box-barge RAO');
+      const r = run(() => boxBargeRAO({ L, B, T, omega, headingDeg, Cb, GMt, kxx, kyy, rollDampingRatio: inp.zetaRoll ?? 0.06, rho }), 'Box-barge RAO');
       const n = omega.length; const z = () => new Float64Array(n);
       const re = [z(), z(), Float64Array.from(r.heave), z(), Float64Array.from(r.pitch), z()]; const im = [z(), z(), z(), z(), z(), z()];
       for (let i = 0; i < n; i++) { const a = r.roll ? r.roll[i] : 0; const ph = r.rollPhase ? r.rollPhase[i] : 0; re[3][i] = a * Math.cos(ph); im[3][i] = a * Math.sin(ph); }
@@ -363,7 +364,7 @@ export function motionFrom(inp, hull) {
  */
 export function motionRangeAdvice(mot, Tp, headingDeg = 90) {
   const out = [];
-  const basis = 'DNV-RP-C205 (2019) §6.1.2 and §7.3 (range of the slender-member and strip approximations); comparison of the built-in models with Capytaine 3.0.0 on a barge and a column (cross-solver verification of this application).';
+  const basis = 'DNV-RP-C205 (2019) §6.1.2 and §7.3 (range of the slender-member approximation; radiation–diffraction analysis); comparison of the built-in models with Capytaine 3.0.0 on three barges and a column (cross-solver verification of this application).';
   if (!(Tp > 0)) return out;
   if (mot.kind === 'slender') {
     const Tv = 2 * Math.PI / mot.validOmegaMax;
@@ -372,12 +373,10 @@ export function motionRangeAdvice(mot, Tp, headingDeg = 90) {
       `Take wave-frequency loads and motions from a radiation–diffraction analysis for this sea (import its coefficients in the RAO module), or treat the present values as upper-bound estimates for periods below ${fmt(Tv)} s.`, basis));
   } else if (mot.validPeriodMin) {
     const v = mot.validPeriodMin;
-    if (Tp < v.heave) out.push(adv('engineering', 'warn',
-      `Peak period ${fmt(Tp)} s is below twice the heave natural period of the box model (${fmt(v.heave / 2)} s, limit ${fmt(v.heave)} s). There the closed-form heave is low against a panel solution: about 15 % at 1.5 times the natural period and 30–40 % near it; pitch is within 5 % down to 1.5 times and 20–60 % low near it.`,
-      `Do not rely on heave, pitch and the motions derived from them for this sea: import radiation–diffraction coefficients in the RAO module, or raise the heave and pitch responses by the stated margins for screening.`, basis));
-    if (v.roll && Tp < v.roll && Math.abs(Math.sin(headingDeg * DEG)) > 0.1) out.push(adv('engineering', 'warn',
-      `Peak period ${fmt(Tp)} s is below 1.3 times the roll natural period (${fmt(v.roll / 1.3)} s, limit ${fmt(v.roll)} s). There the one-degree-of-freedom roll was within 15 % of a panel solution instead of 5 % (compared down to 0.75 times the natural period), and near resonance it follows the roll gyradius and the added damping that were entered.`,
-      'Confirm the roll gyradius (it sets the natural period) and the roll damping from an inclining and decay test or a roll-damping calculation before using the resonant roll; vary both in a sensitivity run.', basis));
+    const rollToo = v.roll && Math.abs(Math.sin(headingDeg * DEG)) > 0.1;
+    if (Tp < v.heave || (rollToo && Tp < v.roll)) out.push(adv('engineering', 'warn',
+      `Peak period ${fmt(Tp)} s is below the range of the box motion model, whose panel solution is carried down to the wave whose length equals the beam (period ${fmt(Math.max(v.heave, rollToo ? v.roll : 0))} s). Much of the energy of this sea lies in shorter waves, where the model uses the coefficients of that last period: the motions there are small but not verified.`,
+      'Import radiation–diffraction coefficients in the RAO module for this sea, or treat the wave-frequency motions as indicative.', basis));
   }
   return out;
 }

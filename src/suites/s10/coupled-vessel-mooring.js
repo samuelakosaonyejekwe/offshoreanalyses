@@ -19,8 +19,8 @@ export default {
   covers: [3],
   fidelity: 'reduced-order',
   standards: ['DNV-OS-E301 (2018) Ch.2 Sec.2 [2.2]–[2.4]', 'API RP 2SK (3rd ed., 2005) §5.4–5.5', 'DNV-RP-C205 (2019) §7.4 (slowly varying drift forces)', 'ISO 19901-7 (2013) §8'],
-  models: ['Newtonian equation of motion along the load direction with nonlinear mooring restoring force', 'Second-order slowly varying drift force by Newman\'s approximation of the quadratic transfer function', 'First-order wave-frequency motion from response amplitude operators (Froude–Krylov surge/sway; closed-form heave, pitch and roll of a box hull)', 'JONSWAP random sea with seeded phases', 'Frequency-domain slow-drift response for cross-check', 'Explicit RK4 time integration'],
-  limits: `One translational degree of freedom along the environment direction is integrated in time; wave-frequency motions are superposed linearly and the mooring acts quasi-statically (no line dynamics, no current or wave load on lines). Hull hydrodynamics are closed-form box-hull estimates with constant added mass and linearised damping: frequency-dependent radiation (Cummins convolution), full diffraction RAOs, full QTFs and yaw/sway coupling are outside this module and should come from a diffraction analysis for design. Against a panel solution the closed-form heave is within 5 % only for wave periods above twice the heave natural period 2π√(2T/g) of the box hull (about 15 % low at 1.5 times, 30–40 % low near it) and the one-degree-of-freedom roll above 1.3 times the roll natural period (within 15 % from there down to 0.75 times); a peak period outside these ranges carries a warning. ${LIMIT_PROPS}`,
+  models: ['Newtonian equation of motion along the load direction with nonlinear mooring restoring force', 'Second-order slowly varying drift force by Newman\'s approximation of the quadratic transfer function', 'First-order wave-frequency motion from response amplitude operators (Froude–Krylov surge/sway; heave, pitch and roll of a box hull from a three-dimensional panel solution)', 'JONSWAP random sea with seeded phases', 'Frequency-domain slow-drift response for cross-check', 'Explicit RK4 time integration'],
+  limits: `One translational degree of freedom along the environment direction is integrated in time; wave-frequency motions are superposed linearly and the mooring acts quasi-statically (no line dynamics, no current or wave load on lines). The slow-drift equation uses a constant added mass and linearised damping: frequency-dependent radiation (Cummins convolution), full QTFs and yaw/sway coupling are outside this module and should come from a diffraction analysis for design. The wave-frequency heave, pitch and roll in the motion table are those of a rectangular box with the hull's length, beam and draught (panel solution, deep water, zero speed; roll with a gyradius of 0.4 B including added inertia and 5 % of critical added damping): within 5 % of an independent panel code for a box in waves longer than the beam, but not the motions of the actual hull form; a peak period below the wave whose length equals the beam carries a warning. ${LIMIT_PROPS}`,
   publishes: ['mooring.lfSigma', 'mooring.wfSigma', 'mooring.TnSurge'],
   searchTerms: 'coupled vessel mooring slow drift time domain Newman approximation',
   inputs: [
@@ -147,7 +147,7 @@ export default {
       const SF = newmanDriftSpectrum({ omega: og, S: Sg, D: driftCoeff(og, { R2: inp.R2, width, draught: inp.draught, rho: inp.rhoW }), mu });
       fd = slowDriftResponse({ mass: M, stiffness: K0, damping: c, mu, SF, meanForce: Ftot, duration: inp.duration });
     }
-    // --- six-degree-of-freedom wave-frequency statistics from closed-form RAOs
+    // --- six-degree-of-freedom wave-frequency statistics from the box-hull RAOs
     const dof = [];
     let hullRange = null;
     if (waves) {
@@ -206,7 +206,7 @@ export default {
       tables: [
         { title: 'Vessel wave-frequency response in six degrees of freedom (3-hour storm)', columns: [{ key: 'dof', label: 'Motion' }, { key: 'sig', label: 'Significant amplitude' }, { key: 'mpm', label: 'Most probable maximum' }, { key: 'u', label: 'Unit' }],
           rows: dof.map(([d, s, m, u]) => ({ dof: d, sig: round(s, 4), mpm: round(m, 4), u })),
-          explain: 'Significant (2σ) and most probable 3-hour maximum amplitude of each first-order motion from closed-form box-hull RAOs. Yaw is not excited in this collinear, heading-held model and is reported as zero.' },
+          explain: 'Significant (2σ) and most probable 3-hour maximum amplitude of each first-order motion from box-hull RAOs (panel solution). Yaw is not excited in this collinear, heading-held model and is reported as zero.' },
         { title: 'Offset and tension statistics', columns: [{ key: 'q', label: 'Quantity' }, { key: 'mean', label: 'Mean' }, { key: 'sd', label: 'Std. dev.' }, { key: 'max', label: 'Maximum' }, { key: 'min', label: 'Minimum' }, { key: 'u', label: 'Unit' }],
           rows: [{ q: 'Offset', mean: round(meanOff), sd: round(Math.hypot(lfSig, wfSig)), max: round(xmax), min: round(xmin), u: 'm' }, { q: lineBased ? 'Critical-line tension' : 'Restoring force', mean: round(Tmean / 1e3), sd: round(Tstd / 1e3), max: round(Tmax / 1e3), min: round(Tmin / 1e3), u: 'kN' }],
           explain: 'Summary statistics of the simulated run after the start-up window; feed the standard deviations and periods to the tension-and-offset and fatigue modules.' },
@@ -216,18 +216,14 @@ export default {
         beyond ? 'The vessel moved beyond the tabulated restoring curve; tension there is capped at the last tabulated value — treat the maximum as a lower bound and reduce the load or strengthen the system.' : 'All excursions stayed within the tabulated restoring curve.'],
       advice: [
         ...(hullRange && inp.Tp < hullRange.heave ? [adv('engineering', 'warn',
-          `Peak period ${fmt(inp.Tp)} s is below twice the heave natural period of the closed-form hull model (${fmt(hullRange.heave / 2)} s, limit ${fmt(hullRange.heave)} s). There its heave is low against a panel solution, about 15 % at 1.5 times the natural period and 30–40 % near it, and pitch 20–60 % low near it: the wave-frequency heave and pitch in the motion table are under-predicted.`,
-          'Take the wave-frequency motions from the diffraction analysis of the vessel for this sea state, or raise heave and pitch by those margins for screening. The offset and line tensions of this module do not depend on them.',
-          'DNV-RP-C205 (2019) §7.3 (range of strip and closed-form motion estimates); comparison of the closed-form box model with Capytaine 3.0.0 on a 20 × 8 × 2 m barge (cross-solver verification of this application).')] : []),
-        ...(hullRange && hullRange.roll && inp.Tp < hullRange.roll && Math.abs(Math.sin(inp.envDirDeg * DEG)) > 0.1 ? [adv('engineering', 'warn',
-          `Peak period ${fmt(inp.Tp)} s is below 1.3 times the roll natural period of the closed-form hull model (${fmt(hullRange.roll / 1.3)} s, limit ${fmt(hullRange.roll)} s). There the one-degree-of-freedom roll was within 15 % of a panel solution instead of 5 % (compared down to 0.75 times the natural period), and near resonance it follows the assumed gyradius (0.4 B including added inertia) and added damping (5 % of critical).`,
-          'Use the roll response of the vessel motion analysis near roll resonance; the roll in the motion table is a screening value.',
-          'DNV-RP-C205 (2019) §7.3 (range of strip and closed-form motion estimates); comparison of the closed-form box model with Capytaine 3.0.0 on a 20 × 8 × 2 m barge (cross-solver verification of this application).')] : []),
+          `Peak period ${fmt(inp.Tp)} s is below the range of the box-hull motion model, whose panel solution is carried down to the wave whose length equals the beam (period ${fmt(hullRange.heave)} s). Much of the energy of this sea lies in shorter waves, where the heave, pitch and roll in the motion table use the coefficients of that last period and are not verified.`,
+          'Take the wave-frequency motions from the diffraction analysis of the vessel for this sea state. The offset and line tensions of this module do not depend on them.',
+          'DNV-RP-C205 (2019) §7.3 (wave-frequency motions by radiation–diffraction analysis); comparison of the box panel model with Capytaine 3.0.0 on barges of 20 × 8 × 2 m, 100 × 20 × 5 m and 80 × 24 × 3 m (cross-solver verification of this application).')] : []),
         adv('engineering', sev(g.uc), `Maximum offset ${fmt(xmax)} m (${fmt(100 * xmax / b.depth)} % of depth): mean ${fmt(meanOff)} m, slow-drift σ ${fmt(lfSig)} m, wave-frequency σ ${fmt(wfSig)} m.${lineBased ? ` Critical-line tension peaks at ${fmt(Tmax / 1e3)} kN (${fmt(100 * Tmax / MBL)} % MBL).` : ''}`,
           g.uc > 1 ? `Reduce the excursion by ${fmt(Math.max(0, xmax - inp.offsetLimitPct / 100 * b.depth))} m: more pretension shortens both the mean offset and the slow drift (σ ∝ 1/√K); confirm the ${inp.zetaLF} % damping, which is the most uncertain input.`
             : `Use σLF = ${fmt(lfSig)} m, σWF = ${fmt(wfSig)} m and Tn = ${fmt(Tn)} s in the tension-and-offset module; repeat with several seeds and take the mean of the maxima for a 3-hour extreme.`,
           'DNV-OS-E301 (2018) Ch.2 Sec.2 [2.2]–[2.4]; API RP 2SK (3rd ed., 2005) §5.4; DNV-RP-C205 (2019) §7.4.'),
-        adv('engineering', 'info', 'Hull motions come from closed-form box-hull RAOs and a constant reflection coefficient, and the lines are quasi-static.',
+        adv('engineering', 'info', 'Hull motions come from the RAOs of a box with the main dimensions of the hull and a constant reflection coefficient, and the lines are quasi-static.',
           'Before design use, replace the RAOs and drift coefficients with diffraction-analysis output for the actual hull, and apply the dynamic amplification from the line-dynamics module to the wave-frequency tension.',
           'DNV-OS-E301 (2018) Ch.2 Sec.2 [2.1] (analysis methods); ISO 19901-7 (2013) §8.6.'),
         steelAdvice(b, lineBased ? Tmax * inp.sfIntact / MBL : 0.5, 'coupled-analysis tension'),

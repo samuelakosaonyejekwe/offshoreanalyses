@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fl from '../../src/engine/hydro/floater.js';
 import { rectangleAddedMassCoefficient, rectangleRollInertiaCoefficient, finiteCylinderAddedMassCoefficient } from '../../src/engine/hydro/morison.js';
+import fs from 'node:fs';
+import { readCapytaineCsv } from '../../src/interop/index.js';
+import { raoSolve } from '../../src/engine/hydro/hydrodb.js';
 
 const close = (a, b, rel, msg) => assert.ok(Math.abs(a - b) <= rel * Math.max(Math.abs(b), 1e-300), `${msg || ''} got ${a}, expected ${b}`);
 const near = (a, b, abs, msg) => assert.ok(Math.abs(a - b) <= abs, `${msg || ''} got ${a}, expected ${b}`);
@@ -245,9 +248,11 @@ test('Air gap of a fixed deck point: relative motion = wave, sigma = Hs/4', () =
   close(amp.sigma, 1.2 * sig, 1e-6);
 });
 
+const cf = (o) => fl.boxBargeRAO({ ...o, method: 'closed-form' });
+
 test('Box barge, Jensen–Mansour–Olsen (2004): long-wave limits and an independently evaluated point', () => {
   const L = 100; const B = 20; const T = 5;
-  const lw = fl.boxBargeRAO({ L, B, T, omega: [0.05], headingDeg: 180, GMt: 4 });
+  const lw = cf({ L, B, T, omega: [0.05], headingDeg: 180, GMt: 4 });
   close(lw.heave[0], 1, 1e-3); close(lw.pitch[0], 0.05 * 0.05 / g, 2e-3);
   close(lw.heaveNaturalPeriod, 2 * Math.PI * Math.sqrt(10 / g), 1e-12);
   // hand evaluation at omega = 0.6 rad/s, head sea, zero speed (alpha = 1)
@@ -258,11 +263,11 @@ test('Box barge, Jensen–Mansour–Olsen (2004): long-wave limits and an indepe
   const F = kappa * f * (2 / (ke * L)) * Math.sin(ke * L / 2);
   const Gp = kappa * f * (24 / ((ke * L) ** 2 * L)) * (Math.sin(ke * L / 2) - (ke * L / 2) * Math.cos(ke * L / 2));
   const eta = 1 / Math.sqrt((1 - 2 * k * T) ** 2 + (A * A / (k * B)) ** 2);
-  const r = fl.boxBargeRAO({ L, B, T, omega: [w], headingDeg: 180 });
+  const r = cf({ L, B, T, omega: [w], headingDeg: 180 });
   close(r.heave[0], eta * F, 1e-12); close(r.pitch[0], eta * Gp, 1e-12);
-  assert.equal(r.roll, null);
+  assert.equal(r.roll, null); assert.equal(r.method, 'closed-form');
   // beam sea: no pitch; the bottom pressure keeps its depth decay exp(-kT) and is averaged over the beam instead of the length
-  const beam = fl.boxBargeRAO({ L, B, T, omega: [w], headingDeg: 90 });
+  const beam = cf({ L, B, T, omega: [w], headingDeg: 90 });
   near(beam.pitch[0], 0, 1e-12); close(beam.heave[0], eta * f * Math.exp(-k * T) * Math.sin(k * B / 2) / (k * B / 2), 1e-9);
   // the limits of the stated validity follow the heave natural period of the same equation of motion
   close(beam.validPeriodMin.heave, 2 * beam.heaveNaturalPeriod, 1e-12); assert.equal(beam.validPeriodMin.roll, null);
@@ -272,20 +277,20 @@ test('Box barge heave force is the bottom-pressure integral at any heading: exp(
   const L = 100; const B = 20; const T = 5;
   // long beam waves: heave -> exp(-kT)(1 - kT)/(1 - 2kT) = 1 + O((kT)²), not 1 + kT (kT = 0.08: 1.011, not 1.08)
   const w = Math.sqrt(0.08 * g / T); const k = w * w / g;
-  const beam = fl.boxBargeRAO({ L, B, T, omega: [w], headingDeg: 90 }).heave[0];
+  const beam = cf({ L, B, T, omega: [w], headingDeg: 90 }).heave[0];
   const A = 2 * Math.sin(0.5 * k * B) * Math.exp(-k * T); const d = A * A / (k * B);
   close(beam, Math.exp(-k * T) * (Math.sin(k * B / 2) / (k * B / 2)) * Math.hypot(1 - k * T, d) / Math.hypot(1 - 2 * k * T, d), 1e-12);
   assert.ok(Math.abs(beam - 1) < 0.02, `beam-sea heave at kT = 0.08: ${beam}`);
   // a free body follows a very long wave from any direction
-  for (const h of [0, 45, 90, 135, 180]) close(fl.boxBargeRAO({ L, B, T, omega: [0.03], headingDeg: h }).heave[0], 1, 1e-3, `heading ${h}`);
+  for (const h of [0, 45, 90, 135, 180]) close(cf({ L, B, T, omega: [0.03], headingDeg: h }).heave[0], 1, 1e-3, `heading ${h}`);
   // oblique sea: the ratio to head sea at the same frequency is the ratio of the two pressure integrals
   const w2 = 0.5; const k2 = w2 * w2 / g; const bt = 3 * Math.PI / 4;
   const sinc = (x) => Math.sin(x) / x;
-  const obl = fl.boxBargeRAO({ L, B, T, omega: [w2], headingDeg: 135 }); const head = fl.boxBargeRAO({ L, B, T, omega: [w2], headingDeg: 180 });
+  const obl = cf({ L, B, T, omega: [w2], headingDeg: 135 }); const head = cf({ L, B, T, omega: [w2], headingDeg: 180 });
   close(obl.heave[0] / head.heave[0], Math.abs(sinc(0.5 * k2 * L * Math.cos(bt)) * sinc(0.5 * k2 * B * Math.sin(bt)) / sinc(0.5 * k2 * L)), 1e-9);
   // heading symmetry of a box
-  close(fl.boxBargeRAO({ L, B, T, omega: [w2], headingDeg: 45 }).heave[0], obl.heave[0], 1e-12);
-  close(fl.boxBargeRAO({ L, B, T, omega: [w2], headingDeg: 45 }).pitch[0], obl.pitch[0], 1e-12);
+  close(cf({ L, B, T, omega: [w2], headingDeg: 45 }).heave[0], obl.heave[0], 1e-12);
+  close(cf({ L, B, T, omega: [w2], headingDeg: 45 }).pitch[0], obl.pitch[0], 1e-12);
 });
 
 test('Box barge roll: quasi-static roll equals the wave slope in long beam waves; added inertia, natural period, damping', () => {
@@ -294,7 +299,7 @@ test('Box barge roll: quasi-static roll equals the wave slope in long beam waves
   // strip added inertia of the section 20 × 5 m: half the double body 20 × 10 m, DNV-RP-C205 Table D-1, ratio 2 -> 0.15
   const A44 = 0.5 * 0.15 * rho * Math.PI * 10 ** 4 * L;
   const w = 0.05;
-  const r = fl.boxBargeRAO({ L, B, T, omega: [w], headingDeg: 90, GMt, kxx: 8 });
+  const r = cf({ L, B, T, omega: [w], headingDeg: 90, GMt, kxx: 8 });
   close(r.rollAddedInertia, A44, 1e-12);
   const wn0 = Math.sqrt(g * GMt) / 8;
   // wave slope k times the 1-DOF dynamic amplification (0.5 %), less the added-inertia moment of the relative roll
@@ -309,16 +314,16 @@ test('Box barge roll: quasi-static roll equals the wave slope in long beam waves
   close(r.roll[0], k * (1 - decay - w * w * A44 / C44) * amp, 1e-5);
   close(r.rollNaturalPeriod, 2 * Math.PI * 8 / Math.sqrt(g * GMt), 1e-12);
   close(r.validPeriodMin.roll, 1.3 * r.rollNaturalPeriod, 1e-12);
-  near(fl.boxBargeRAO({ L, B, T, omega: [0.5], headingDeg: 180, GMt }).roll[0], 0, 1e-12);
+  near(cf({ L, B, T, omega: [0.5], headingDeg: 180, GMt }).roll[0], 0, 1e-12);
   // gyradius of the mass alone: the strip added inertia is added, I44 = Δ kxxDry² + A44
-  const dry = fl.boxBargeRAO({ L, B, T, omega: [w], headingDeg: 90, GMt, kxxDry: 7 });
+  const dry = cf({ L, B, T, omega: [w], headingDeg: 90, GMt, kxxDry: 7 });
   close(dry.rollNaturalPeriod, 2 * Math.PI * Math.sqrt((disp * 49 + A44) / C44), 1e-12);
-  assert.throws(() => fl.boxBargeRAO({ L, B, T, omega: [w], headingDeg: 90, GMt, kxx: 8, kxxDry: 7 }), /not both/);
+  assert.throws(() => cf({ L, B, T, omega: [w], headingDeg: 90, GMt, kxx: 8, kxxDry: 7 }), /not both/);
   // a deep narrow section uses the draught as the longer half-side: 4 × 10 m -> double body 4 × 20 m, ratio 5
-  close(fl.boxBargeRAO({ L, B: 4, T: 10, omega: [w], headingDeg: 90, GMt: 0.5 }).rollAddedInertia, 0.5 * rectangleRollInertiaCoefficient(5) * rho * Math.PI * 10 ** 4 * L, 1e-12);
+  close(cf({ L, B: 4, T: 10, omega: [w], headingDeg: 90, GMt: 0.5 }).rollAddedInertia, 0.5 * rectangleRollInertiaCoefficient(5) * rho * Math.PI * 10 ** 4 * L, 1e-12);
   // without radiation damping the amplification at resonance is 1/(2 zeta) of the quasi-static response to the same moment
   const wn = (2 * Math.PI) / r.rollNaturalPeriod;
-  const at = (z, rad) => fl.boxBargeRAO({ L, B, T, omega: [wn], headingDeg: 90, GMt, kxx: 8, rollDampingRatio: z, rollRadiation: rad });
+  const at = (z, rad) => cf({ L, B, T, omega: [wn], headingDeg: 90, GMt, kxx: 8, rollDampingRatio: z, rollRadiation: rad });
   close(at(0.05, false).roll[0] / at(0.10, false).roll[0], 2, 1e-9);
   assert.equal(at(0.05, false).rollRadiationDamping[0], 0);
   // with it the damping is B_rad + 2 zeta sqrt(I44 C44): the two responses are in the inverse ratio of the totals
@@ -335,25 +340,114 @@ test('Box barge roll radiation damping satisfies the Haskind relation with the r
   // long waves: M(beta) -> C44 k sin(beta) (1 - omega² A44/C44), so ∫|M|² d beta = pi (…)² and
   // B_rad -> omega³ (C44 k)² (1 - omega² A44/C44)² / (4 rho g³)
   const w = 0.04; const k = w * w / g;
-  const r = fl.boxBargeRAO({ L, B, T, omega: [w], headingDeg: 90, GMt, kxx: 8 });
+  const r = cf({ L, B, T, omega: [w], headingDeg: 90, GMt, kxx: 8 });
   close(r.rollRadiationDamping[0], w ** 3 * (C44 * k * (1 - w * w * A44 / C44)) ** 2 / (4 * rho * g ** 3), 5e-3);
   // any frequency: the moment at a heading is recovered from the undamped off-resonance response, M = phi (C44 - omega² I44),
   // and its square integrated over all headings gives the damping, omega³/(4 pi rho g³) ∫|M|² d beta
   const w2 = 0.7; const I44 = disp * 64; const n = 720; let sum = 0;
   for (let j = 0; j < n; j++) {
-    const phi = fl.boxBargeRAO({ L, B, T, omega: [w2], headingDeg: 360 * (j + 0.5) / n, GMt, kxx: 8, rollDampingRatio: 0, rollRadiation: false }).roll[0];
+    const phi = cf({ L, B, T, omega: [w2], headingDeg: 360 * (j + 0.5) / n, GMt, kxx: 8, rollDampingRatio: 0, rollRadiation: false }).roll[0];
     sum += (phi * (C44 - w2 * w2 * I44)) ** 2;
   }
   const expected = w2 ** 3 / (4 * Math.PI * rho * g ** 3) * sum * 2 * Math.PI / n;
-  close(fl.boxBargeRAO({ L, B, T, omega: [w2], headingDeg: 90, GMt, kxx: 8 }).rollRadiationDamping[0], expected, 1e-9);
+  close(cf({ L, B, T, omega: [w2], headingDeg: 90, GMt, kxx: 8 }).rollRadiationDamping[0], expected, 1e-9);
   // resonance with radiation damping alone: |phi| = |M| / (omega_n B_rad)
   const wn = Math.sqrt(C44 / I44);
-  const und = fl.boxBargeRAO({ L, B, T, omega: [wn * 0.5], headingDeg: 90, GMt, kxx: 8, rollDampingRatio: 0, rollRadiation: false });
+  const und = cf({ L, B, T, omega: [wn * 0.5], headingDeg: 90, GMt, kxx: 8, rollDampingRatio: 0, rollRadiation: false });
   assert.ok(und.roll[0] > 0);
-  const res = fl.boxBargeRAO({ L, B, T, omega: [wn], headingDeg: 90, GMt, kxx: 8, rollDampingRatio: 0 });
-  const off = fl.boxBargeRAO({ L, B, T, omega: [wn], headingDeg: 90, GMt, kxx: 9, rollDampingRatio: 0, rollRadiation: false });
+  const res = cf({ L, B, T, omega: [wn], headingDeg: 90, GMt, kxx: 8, rollDampingRatio: 0 });
+  const off = cf({ L, B, T, omega: [wn], headingDeg: 90, GMt, kxx: 9, rollDampingRatio: 0, rollRadiation: false });
   const M = off.roll[0] * Math.abs(C44 - wn * wn * disp * 81); // same moment, read from a detuned undamped oscillator
   close(res.roll[0], M / (wn * res.rollRadiationDamping[0]), 1e-6);
+});
+
+test('Box barge, panel method (default): long-wave limits, symmetry, options and what it returns', () => {
+  const L = 100; const B = 20; const T = 5; const GMt = 3;
+  const lw = fl.boxBargeRAO({ L, B, T, omega: [0.05], headingDeg: 180, GMt });
+  assert.equal(lw.method, 'panel');
+  // a free body follows a long wave: heave -> 1, pitch -> wave slope k (head sea), roll -> k (beam sea)
+  const k = 0.05 * 0.05 / g;
+  close(lw.heave[0], 1, 1e-3); close(lw.pitch[0], k, 5e-3);
+  assert.ok(lw.roll[0] < 1e-9 * k, 'no roll in head seas');
+  const lb = fl.boxBargeRAO({ L, B, T, omega: [0.05], headingDeg: 90, GMt });
+  close(lb.heave[0], 1, 1e-3); close(lb.roll[0], k, 0.01); assert.ok(lb.pitch[0] < 1e-9 * k, 'no pitch in beam seas');
+  // phases: heave in phase with the crest at midship; pitch and roll a quarter period from it
+  near(lw.heavePhase[0], 0, 0.01); close(Math.abs(lw.pitchPhase[0]), Math.PI / 2, 0.01); close(Math.abs(lb.rollPhase[0]), Math.PI / 2, 0.02);
+  // heading symmetry of a box
+  const w = [0.5, 0.8];
+  const q1 = fl.boxBargeRAO({ L, B, T, omega: w, headingDeg: 135, GMt }); const q2 = fl.boxBargeRAO({ L, B, T, omega: w, headingDeg: 45, GMt }); const q3 = fl.boxBargeRAO({ L, B, T, omega: w, headingDeg: 225, GMt });
+  for (const i of [0, 1]) for (const key of ['heave', 'pitch', 'roll']) { close(q2[key][i], q1[key][i], 1e-9, key); close(q3[key][i], q1[key][i], 1e-9, key); }
+  // valid down to the wave whose length is the beam; natural periods carry the computed added mass
+  close(lw.validPeriodMin.heave, Math.sqrt(2 * Math.PI * B / g), 1e-12); close(lw.validPeriodMin.roll, lw.validPeriodMin.heave, 1e-12);
+  const r0 = fl.boxBargeRAO({ L, B, T, omega: [0.5] });
+  assert.equal(r0.roll, null); assert.equal(r0.rollNaturalPeriod, null); assert.equal(r0.validPeriodMin.roll, null);
+  // heave natural period: above 2 pi sqrt(T/g) (no added mass) and consistent with the peak of the undamped denominator
+  assert.ok(r0.heaveNaturalPeriod > 2 * Math.PI * Math.sqrt(T / g) * 1.2 && r0.heaveNaturalPeriod < 2 * Math.PI * Math.sqrt(3 * T / g));
+  // forward speed: the panel solution is for zero speed, the closed form takes over unless it is asked for
+  assert.equal(fl.boxBargeRAO({ L, B, T, omega: [0.5], speed: 5 }).method, 'closed-form');
+  assert.throws(() => fl.boxBargeRAO({ L, B, T, omega: [0.5], speed: 5, method: 'panel' }), /zero-speed/);
+  assert.throws(() => fl.boxBargeRAO({ L, B, T, omega: [0.5], method: 'strip' }), /method must be/);
+  assert.throws(() => fl.boxBargeRAO({ L, B, T, omega: [0.5], GMt, kxx: 8, kxxDry: 7 }), /not both/);
+  // block coefficient: heave and pitch are those of the box of breadth B·Cb
+  const cbv = fl.boxBargeRAO({ L, B, T, omega: w, Cb: 0.8 }); const nar = fl.boxBargeRAO({ L, B: 16, T, omega: w });
+  for (const i of [0, 1]) { close(cbv.heave[i], nar.heave[i], 1e-12); close(cbv.pitch[i], nar.pitch[i], 1e-12); }
+});
+
+test('Box barge, panel method: roll inertia inputs, natural period, damping and resonance', () => {
+  const L = 100; const B = 20; const T = 5; const GMt = 3; const disp = rho * L * B * T; const C44 = disp * g * GMt;
+  // kxx includes the added inertia: the roll natural period is 2 pi kxx / sqrt(g GMt)
+  const r = fl.boxBargeRAO({ L, B, T, omega: [0.3], headingDeg: 90, GMt, kxx: 8 });
+  close(r.rollNaturalPeriod, 2 * Math.PI * 8 / Math.sqrt(g * GMt), 1e-6);
+  // the added inertia of this section (B/T = 4) lies between a quarter and the whole of the strip value of
+  // DNV-RP-C205 Table D-1 about the waterline centre, which has no end effect and no sway coupling
+  const strip = 0.5 * rectangleRollInertiaCoefficient(2) * rho * Math.PI * 10 ** 4 * L;
+  assert.ok(r.rollAddedInertia > 0.25 * strip && r.rollAddedInertia < strip, `added inertia ${r.rollAddedInertia} (strip ${strip})`);
+  // kxxDry: the same response when it is the mass gyradius that kxx implies
+  const kDry = Math.sqrt((disp * 64 - r.rollAddedInertia) / disp);
+  const d = fl.boxBargeRAO({ L, B, T, omega: [0.3], headingDeg: 90, GMt, kxxDry: kDry });
+  close(d.rollNaturalPeriod, r.rollNaturalPeriod, 1e-6); close(d.roll[0], r.roll[0], 1e-6);
+  // a larger mass gyradius lengthens the period
+  assert.ok(fl.boxBargeRAO({ L, B, T, omega: [0.3], headingDeg: 90, GMt, kxxDry: kDry * 1.2 }).rollNaturalPeriod > r.rollNaturalPeriod * 1.05);
+  // at resonance the added damping governs: doubling it nearly halves the roll; radiation damping lowers it further
+  const wn = 2 * Math.PI / r.rollNaturalPeriod;
+  const at = (z, rad) => fl.boxBargeRAO({ L, B, T, omega: [wn], headingDeg: 90, GMt, kxx: 8, rollDampingRatio: z, rollRadiation: rad });
+  close(at(0.05, false).roll[0] / at(0.10, false).roll[0], 2, 1e-3);
+  assert.equal(at(0.05, false).rollRadiationDamping[0], 0);
+  assert.ok(at(0.05, true).rollRadiationDamping[0] > 0 && at(0.05, true).roll[0] < at(0.05, false).roll[0]);
+  // with the added damping alone the resonant roll is 1/(2 zeta) = 10 times the quasi-static roll for the moment
+  // at that frequency, which is below the wave slope (wavelength 6.7 B: decay over the draught and the beam)
+  const peak = at(0.05, false).roll[0]; const kn = wn * wn / g;
+  assert.ok(peak > 3 * kn && peak < 10 * kn, `resonant roll ${peak / kn} wave slopes`);
+  // stiffness check of the model: pitch cannot be solved when the centre of gravity is above the longitudinal metacentre
+  assert.throws(() => fl.boxBargeRAO({ L: 4, B: 20, T: 5, omega: [0.5], GMt: 0.2 }), /pitch stiffness/);
+});
+
+test('Box barge, panel method against Capytaine (barge 20 × 8 × 2 m): heave, pitch and roll within 5 % from 4 to 25 s', () => {
+  const db = readCapytaineCsv(fs.readFileSync(new URL('../interop/fixtures/capytaine/barge_hydro.csv', import.meta.url), 'utf8'));
+  const L = 20; const B = 8; const T = 2; const m = rho * L * B * T; const GMt = B * B / (12 * T) - T / 2;
+  const om = [4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 25].map((t) => Number((2 * Math.PI / t).toPrecision(10)));
+  const head = fl.boxBargeRAO({ L, B, T, omega: om, headingDeg: 180, GMt, kxxDry: 0.35 * B });
+  const beam = fl.boxBargeRAO({ L, B, T, omega: om, headingDeg: 90, GMt, kxxDry: 0.35 * B });
+  const z6 = () => Array.from({ length: 6 }, () => [0, 0, 0, 0, 0, 0]);
+  const M = z6(); const C = z6(); const Bext = z6();
+  [m, m, m, m * (0.35 * B) ** 2, m * (0.25 * L) ** 2, m * (0.25 * L) ** 2].forEach((v, i) => { M[i][i] = v; });
+  C[2][2] = rho * g * L * B; C[3][3] = m * g * GMt; C[4][4] = m * g * (L * L / (12 * T) - T / 2);
+  Bext[3][3] = 2 * 0.05 * Math.sqrt((M[3][3] + beam.rollAddedInertia) * C[3][3]);
+  // the reference's sway–roll added-mass and damping terms are not symmetric on its mesh; their mean is used
+  for (const Q of [...db.A, ...db.B]) { const a = 0.5 * (Q[1][3] + Q[3][1]); Q[1][3] = a; Q[3][1] = a; }
+  const rh = raoSolve({ db, M, C, Bext, omega: om, headingDeg: 180 }); const rb = raoSolve({ db, M, C, Bext, omega: om, headingDeg: 90 });
+  for (let i = 0; i < om.length; i++) {
+    close(head.heave[i], rh.amp[2][i], 0.05, `heave, head sea, omega ${om[i]}`);
+    close(head.pitch[i], rh.amp[4][i], 0.05, `pitch, omega ${om[i]}`);
+    close(beam.heave[i], rb.amp[2][i], 0.05, `heave, beam sea, omega ${om[i]}`);
+    close(beam.roll[i], rb.amp[3][i], 0.05, `roll, omega ${om[i]}`);
+  }
+  // a second call with the same hull re-uses the solved panel model: 200 frequencies in little processor time
+  const many = Array.from({ length: 200 }, (_, i) => 0.2 + 0.01 * i);
+  const c0 = process.cpuUsage();
+  fl.boxBargeRAO({ L, B, T, omega: many, headingDeg: 135, GMt });
+  const cu = process.cpuUsage(c0);
+  assert.ok((cu.user + cu.system) / 1000 < 5000, `cached run took ${(cu.user + cu.system) / 1000} ms`);
 });
 
 test('Operability and limiting Hs: linear scaling with Hs', () => {

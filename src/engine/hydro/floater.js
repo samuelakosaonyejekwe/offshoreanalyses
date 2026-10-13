@@ -3,8 +3,9 @@
 //      cylinders, rectangular pontoons and heave plates: strip added mass, long-wave Froude–Krylov + inertia
 //      excitation, radiation damping from the Haskind relation, stochastically linearised Morison drag,
 //      hydrostatic and external stiffness.
-//  (b) Box-shaped ships and barges: closed-form heave/pitch of Jensen, Mansour & Olsen (2004) and a one-degree
-//      of freedom roll model (Froude–Krylov moment, relative-motion diffraction, Haskind radiation damping).
+//  (b) Box-shaped ships and barges: heave, pitch and roll from the panel solution of the box (radiation.js), or
+//      the closed-form heave/pitch of Jensen, Mansour & Olsen (2004) with a one-degree-of-freedom roll model
+//      (Froude–Krylov moment, relative-motion diffraction, Haskind radiation damping).
 // Axes: origin on the still-water plane, x forward, y to port, z up. Motions (surge, sway, heave, roll, pitch,
 // yaw) are about the origin. Heading is the direction the waves travel towards, measured from +x towards +y
 // (0° following sea, 90° waves travelling to port, 180° head sea). Complex convention exp(+i omega t), unit
@@ -19,6 +20,7 @@
 import { eigGenSym } from '../math/eigen.js';
 import { G, dispersion, jonswap, spectrumMoments, csolve, needPos, needVec3 } from './_wavehelp.js';
 import { rectangleAddedMassCoefficient, rectangleRollInertiaCoefficient, finiteCylinderAddedMassCoefficient } from './morison.js';
+import { boxHydrodynamics, boxCoefficients, boxExcitation } from './radiation.js';
 
 const DEG = Math.PI / 180;
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -739,9 +741,31 @@ export function limitingHs({ omega, amp, limit, Tp, gamma = 3.3, statistic = 'si
 const sinc = (x) => (Math.abs(x) < 1e-4 ? 1 - (x * x) / 6 : Math.sin(x) / x);
 
 /**
- * Wave-induced motions of a box-shaped ship or barge.
- * Heave and pitch: closed-form expressions of Jensen, Mansour & Olsen (2004) for a homogeneously loaded box
- * L × B × T (deep water, optional forward speed):
+ * Wave-induced heave, pitch and roll of a box-shaped ship or barge L × B × T in deep water.
+ *
+ * method 'panel' (default at zero speed): frequency-dependent added mass, wave damping and exciting forces of
+ * the box from a three-dimensional panel solution with the free-surface Green function (radiation.js:
+ * boxHydrodynamics, 14 frequencies up to the wavelength equal to the beam, interpolated, cached per geometry),
+ * and the equations of motion about the waterline centre in three uncoupled groups,
+ *   heave:        (m + A33) z'' + B33 z' + rho g L B z = X3,
+ *   surge–pitch:  2 × 2 with the mass coupling m zG, I55 = m (kyy² + zG²), C55 = rho g (B L³/12 - V T/2) - m g zG,
+ *   sway–roll:    2 × 2 with the mass coupling -m zG, C44 = Δ g GMt and the added roll damping below.
+ * The centre of gravity follows from GMt for the box, zG = B²/(12 T) - T/2 - GMt (on the waterline when GMt is
+ * not given, which then leaves out roll). For a block coefficient below 1 heave and pitch use the box of breadth
+ * B·Cb, as Jensen, Mansour & Olsen (2004) propose (same length, draught and displacement), and roll uses the
+ * box of breadth B with the mass Δ = rho L B T Cb.
+ * Roll inertia: with `kxxDry` the mass inertia about the centre of gravity is Δ kxxDry² and the computed added
+ * inertia is added at every frequency. With `kxx` (including added inertia; default 0.4 B) the roll natural
+ * period is the input, 2 pi kxx / sqrt(g GMt): the mass inertia is Δ kxx² less the added inertia of the free
+ * sway–roll system at that period, A44' - A24'²/(m + A22) about the centre of gravity (not less than 5 % of
+ * Δ kxx²). `rollAddedInertia` returns that added inertia at the roll natural period.
+ * Roll damping: wave radiation from the panel solution (`rollRadiation: false` removes the radiation damping
+ * of the sway–roll pair) plus `rollDampingRatio`, a fraction of the critical damping 2 sqrt(I44 C44) with I44
+ * the total inertia at the natural period, for what potential flow does not give (bilge keels, eddies, skin
+ * friction; typical 0.02–0.10 for barges with sharp bilges or bilge keels). Typical kxx 0.35–0.45 B, kyy 0.25 L.
+ *
+ * method 'closed-form' (default with forward speed): expressions of Jensen, Mansour & Olsen (2004) for a
+ * homogeneously loaded box (deep water, optional forward speed):
  *   alpha = 1 - Fn sqrt(kL) cos(beta), k_e = |k cos(beta)|, k_y = k sin(beta),
  *   A = 2 sin(½ k B alpha²) exp(-k T alpha²)  (sectional damping),
  *   f = sqrt((1 - kT)² + (A²/(k B alpha³))²),
@@ -755,60 +779,168 @@ const sinc = (x) => (Math.abs(x) < 1e-4 ? 1 - (x * x) / 6 : Math.sin(x) / x);
  * sinc(½ k_x L) sinc(½ k_y B): the depth decay goes with the full wave number whatever the heading. In head and
  * following seas the result is that of the paper; in beam seas the paper's form tends to 1 + kT in long waves
  * (8 % at kT = 0.08) where the heave of a floating body tends to 1 + O((kT)²).
- * Roll: NOT taken from the paper. One degree of freedom about the centre of gravity,
+ * Closed-form roll: NOT taken from the paper. One degree of freedom about the centre of gravity,
  *   I44 phi'' + (B_rad + 2 zeta sqrt(I44 C44)) phi' + C44 phi = M_FK + M_D,   C44 = Δ g GMt,
  *   I44 = Δ kxx² (kxx including added inertia) or Δ kxxDry² + A44,
  * - M_FK: Froude–Krylov roll moment integrated exactly over the box in the undisturbed deep-water wave;
  * - A44 = ½ beta rho pi a⁴ L: strip roll added inertia of the rectangular section about the waterline centre
  *   (a = the larger of B/2 and T, beta from rectangleRollInertiaCoefficient: DNV-RP-C205 Table D-1 for the
- *   double body, i.e. the high-frequency limit; 6–10 % above a panel solution for L/B = 2.5, B/T = 4, where it
- *   varies by 4 % over all frequencies);
+ *   double body, i.e. the high-frequency limit);
  * - M_D = -omega² A44 alpha_b: diffraction by the relative-motion hypothesis, the added inertia reacting to
  *   the roll relative to the wave slope. alpha_b is the wave slope carried by the pressure on the bottom,
  *   (bottom-pressure roll moment)/(rho g L B³/12) = k_y exp(-kT) sinc(½ k_x L) 3 (sin x - x cos x)/x³, x = ½ k_y B;
  * - B_rad: wave-radiation damping from the Haskind relation with this moment in waves from all directions,
  *   B_rad = omega³/(4 pi rho g³) ∫₀^{2π} |M_FK + M_D|² d beta (deep water);
- * - zeta: damping in addition to wave radiation (bilge keels, eddies, skin friction), fraction of critical
- *   (typical 0.02–0.10 for barges with sharp bilges or bilge keels).
- * Typical kxx 0.35–0.45 B. Sway–roll coupling is neglected (roll about the centre of gravity; A44 is not
- * transferred from the waterline to the centre of gravity), and the roll model is for zero speed.
- * Validity, from the comparison with a panel solution (Capytaine) of a barge 20 × 8 × 2 m (src/spec/cross-solver.json):
- * heave within 5 % for wave periods above twice the heave natural period 2 pi sqrt(2T/g) in head and beam seas
- * (-15 % at 1.5 times, -30 to -40 % near it: the model takes the added mass equal to the displacement and a
- * two-dimensional sectional damping); pitch within 5 % above 1.5 times that period; roll within 5 % above 1.3
- * times the roll natural period and within 15 % below, where the response follows the natural period (strip
- * added inertia) and the additional damping. `validPeriodMin` returns these two limits.
- * Reference: Jensen, Mansour & Olsen (2004) Estimation of ship motions using closed-form expressions, Ocean
- * Engineering 31, 61–85 (heave, pitch); Korvin-Kroukovsky & Jacobs (1957) Pitching and heaving motions of a ship
- * in regular waves, Trans. SNAME 65 (relative-motion hypothesis); Newman (1962) J. Ship Research 6(3) (Haskind
- * relation); DNV-RP-C205 (2019) Appendix D. Valid for deep water, monohull box-like forms, Fn < ~0.3.
+ * - no sway–roll coupling (A44 is not transferred from the waterline to the centre of gravity).
+ *
+ * Validity, from comparisons with a panel solution (Capytaine; src/spec/cross-solver.json, docs/engine/hydro.md).
+ * 'panel', three boxes (20 × 8 × 2 m, 100 × 20 × 5 m, 80 × 24 × 3 m; head, quartering and beam seas): heave and
+ * pitch within 5 % (5.3 % at one period at 135°) at every compared period from 0.72 times the heave natural period
+ * upward and within 1.5 % from 1.15 times; -8 % where the wavelength equals the beam of the widest box. Roll
+ * within 5 % from 0.75–0.85 times the roll natural period upward and within 11 % below, where it is small; the
+ * resonant roll follows the gyradius and the added damping that are entered. Wavelengths shorter than the beam
+ * are outside the solved range (the coefficients of the last solved frequency are held): `validPeriodMin` is the
+ * period of the wave whose length equals the beam. Not represented: hull forms other than a box, finite depth,
+ * forward speed.
+ * 'closed-form': heave within 5 % for wave periods above twice 2 pi sqrt(2T/g) in head and beam seas (-15 % at
+ * 1.5 times, -30 to -40 % near it: added mass taken equal to the displacement, two-dimensional sectional
+ * damping); pitch within 5 % above 1.5 times that period; roll within 5 % above 1.3 times the roll natural
+ * period and within 15 % below. `validPeriodMin` returns the limits of the method used.
+ * Reference: Newman (1977) Marine Hydrodynamics ch. 6 and the references of radiation.js (panel solution);
+ * Jensen, Mansour & Olsen (2004) Estimation of ship motions using closed-form expressions, Ocean Engineering 31,
+ * 61–85 (closed-form heave, pitch); Korvin-Kroukovsky & Jacobs (1957) Pitching and heaving motions of a ship in
+ * regular waves, Trans. SNAME 65 (relative-motion hypothesis); Newman (1962) J. Ship Research 6(3) (Haskind
+ * relation); DNV-RP-C205 (2019) Appendix D. Deep water, monohull box-like forms; 'closed-form' for Fn < ~0.3.
  * @param {object} o
  * @param {number} o.L length, m
  * @param {number} o.B beam, m
  * @param {number} o.T draft, m
  * @param {ArrayLike<number>} o.omega wave frequencies, rad/s
  * @param {number} [o.headingDeg=180] propagation heading, deg (180 = head sea, 90 = beam sea)
- * @param {number} [o.speed=0] forward speed, m/s
+ * @param {number} [o.speed=0] forward speed, m/s ('closed-form' only)
  * @param {number} [o.Cb=1] block coefficient
  * @param {number} [o.GMt] transverse metacentric height, m (roll omitted when absent)
  * @param {number} [o.kxx] roll radius of gyration including added inertia, m (default 0.4 B unless kxxDry is given)
- * @param {number} [o.kxxDry] roll radius of gyration of the mass alone, m; the strip added inertia A44 is added
+ * @param {number} [o.kxxDry] roll radius of gyration of the mass alone, m; the added inertia is added
+ * @param {number} [o.kyy] pitch radius of gyration of the mass about the centre of gravity, m (default 0.25 L;
+ *   'panel' only, the closed form has no mass input)
  * @param {number} [o.rollDampingRatio=0.05] damping in addition to wave radiation, fraction of critical
- * @param {boolean} [o.rollRadiation=true] include the Haskind radiation damping of roll
+ * @param {boolean} [o.rollRadiation=true] include the wave-radiation damping of roll
+ * @param {'panel'|'closed-form'} [o.method] default 'panel' at zero speed, 'closed-form' with forward speed
  * @param {number} [o.rho=1025] kg/m³
  * @param {number} [o.g=9.80665] m/s²
  * @returns {{omega:Float64Array, heave:Float64Array, pitch:Float64Array, roll:Float64Array|null,
- *   rollPhase:Float64Array|null, heaveNaturalPeriod:number, rollNaturalPeriod:number|null,
- *   rollAddedInertia:number|null, rollRadiationDamping:Float64Array|null,
- *   validPeriodMin:{heave:number, roll:number|null}}} m/m, rad/m, rad/m, rad, s (heave: 2 pi sqrt(2T/g) from the
- *   same equation of motion), s, kg·m², N·m·s, s
+ *   rollPhase:Float64Array|null, heavePhase:Float64Array|null, pitchPhase:Float64Array|null,
+ *   heaveNaturalPeriod:number, rollNaturalPeriod:number|null, rollAddedInertia:number|null,
+ *   rollRadiationDamping:Float64Array|null, validPeriodMin:{heave:number, roll:number|null}, method:string}}
+ *   m/m, rad/m, rad/m; phases rad (leads on the crest at midship; heave and pitch phases for 'panel' only);
+ *   natural periods s ('panel': with the added mass at that period; 'closed-form' heave: 2 pi sqrt(2T/g));
+ *   kg·m²; N·m·s (about the centre of gravity); validPeriodMin s: shortest wave period of the checked range
  */
-export function boxBargeRAO({ L, B, T, omega, headingDeg = 180, speed = 0, Cb = 1, GMt, kxx, kxxDry, rollDampingRatio = 0.05, rollRadiation = true, rho = 1025, g = G }) {
+export function boxBargeRAO({ L, B, T, omega, headingDeg = 180, speed = 0, Cb = 1, GMt, kxx, kxxDry, kyy, rollDampingRatio = 0.05, rollRadiation = true, method, rho = 1025, g = G }) {
   needPos(L, 'L'); needPos(B, 'B'); needPos(T, 'T');
   if (!(Cb > 0 && Cb <= 1)) throw new RangeError('Cb must be within (0, 1]');
   if (!(speed >= 0)) throw new RangeError('speed must be >= 0');
   if (kxx !== undefined && kxxDry !== undefined) throw new RangeError('give kxx (including added inertia) or kxxDry, not both');
   if (!(rollDampingRatio >= 0)) throw new RangeError('rollDampingRatio must be >= 0');
+  const mth = method === undefined ? (speed > 0 ? 'closed-form' : 'panel') : method;
+  if (mth !== 'panel' && mth !== 'closed-form') throw new RangeError("method must be 'panel' or 'closed-form'");
+  if (GMt !== undefined) needPos(GMt, 'GMt');
+  const args = { L, B, T, omega, headingDeg, speed, Cb, GMt, kxx, kxxDry, kyy, rollDampingRatio, rollRadiation, rho, g };
+  if (mth === 'closed-form') return boxBargeClosedForm(args);
+  if (speed > 0) throw new RangeError("method 'panel' is a zero-speed solution: use method 'closed-form' with forward speed");
+  return boxBargePanel(args);
+}
+
+// complex division (ar + i ai)/(br + i bi)
+function cdiv(ar, ai, br, bi, out) {
+  const d = br * br + bi * bi;
+  out.re = (ar * br + ai * bi) / d; out.im = (ai * br - ar * bi) / d;
+  return out;
+}
+
+// solves the symmetric complex system [[a, b], [b, d]] x = [f1, f2]; returns x2 in out and x1 in out1
+function csolve2(ar, ai, br, bi, dr, di, f1r, f1i, f2r, f2i, out1, out) {
+  const detR = ar * dr - ai * di - (br * br - bi * bi); const detI = ar * di + ai * dr - 2 * br * bi;
+  cdiv(f1r * dr - f1i * di - (br * f2r - bi * f2i), f1r * di + f1i * dr - (br * f2i + bi * f2r), detR, detI, out1);
+  cdiv(ar * f2r - ai * f2i - (br * f1r - bi * f1i), ar * f2i + ai * f2r - (br * f1i + bi * f1r), detR, detI, out);
+  return out;
+}
+
+function boxBargePanel({ L, B, T, omega, headingDeg, Cb, GMt, kxx, kxxDry, kyy, rollDampingRatio, rollRadiation, rho, g }) {
+  const nw = omega.length;
+  const hasRoll = GMt !== undefined;
+  const B0 = B * Cb;
+  const disp = rho * L * B * T * Cb;
+  const zG = hasRoll ? (B * B) / (12 * T) - T / 2 - GMt : 0;
+  const ky = kyy === undefined ? 0.25 * L : kyy;
+  needPos(ky, 'kyy');
+  // one model with all modes when the two boxes coincide; otherwise each box solves only the modes taken from it
+  const hp = boxHydrodynamics({ L, B: B0, T, rho, g, modes: hasRoll && Cb === 1 ? [0, 1, 2, 3, 4] : [0, 2, 4] });
+  const hr = hasRoll ? (Cb === 1 ? hp : boxHydrodynamics({ L, B, T, rho, g, modes: [1, 3] })) : null;
+  const C33 = rho * g * L * B0;
+  const I55 = disp * (ky * ky + zG * zG);
+  const C55 = rho * g * ((B0 * L ** 3) / 12 - L * B0 * T * 0.5 * T) - disp * g * zG;
+  if (!(C55 > 0)) throw new RangeError('the box has no positive pitch stiffness with this GMt (centre of gravity too high)');
+  // natural frequency of a one-degree-of-freedom oscillator whose added inertia depends on frequency
+  const natural = (stiff, inertia, added) => {
+    let w = Math.sqrt(stiff / (inertia + added(Math.sqrt(stiff / (2 * inertia)))));
+    for (let it = 0; it < 60; it++) { const wn = Math.sqrt(stiff / (inertia + added(w))); const dw = wn - w; w += 0.5 * dw; if (Math.abs(dw) < 1e-10 * w) break; }
+    return w;
+  };
+  const heaveNaturalPeriod = (2 * Math.PI) / natural(C33, disp, (w) => boxCoefficients(hp, w).A[2][2]);
+  // added inertia of the free sway–roll pair about the centre of gravity (roll about G = roll + zG × sway)
+  const rollAdded = (w) => {
+    const { A } = boxCoefficients(hr, w);
+    const a44 = A[3][3] + 2 * zG * A[1][3] + zG * zG * A[1][1]; const a24 = A[1][3] + zG * A[1][1];
+    return a44 - (a24 * a24) / (disp + A[1][1]);
+  };
+  let IG = 0; let I44 = 0; let C44 = 0; let wRoll = 0; let B44 = 0;
+  if (hasRoll) {
+    C44 = disp * g * GMt;
+    if (kxxDry !== undefined) { needPos(kxxDry, 'kxxDry'); IG = disp * kxxDry * kxxDry; } else {
+      const kx = kxx === undefined ? 0.4 * B : kxx;
+      needPos(kx, 'kxx');
+      IG = Math.max(disp * kx * kx - rollAdded(Math.sqrt((g * GMt) / (kx * kx))), 0.05 * disp * kx * kx);
+    }
+    wRoll = natural(C44, IG, rollAdded);
+    I44 = IG + rollAdded(wRoll);
+    B44 = 2 * rollDampingRatio * Math.sqrt(I44 * C44);
+  }
+  const heave = new Float64Array(nw); const pitch = new Float64Array(nw);
+  const heavePhase = new Float64Array(nw); const pitchPhase = new Float64Array(nw);
+  const roll = hasRoll ? new Float64Array(nw) : null; const rollPhase = hasRoll ? new Float64Array(nw) : null;
+  const rollRad = hasRoll ? new Float64Array(nw) : null;
+  const x1 = { re: 0, im: 0 }; const x2 = { re: 0, im: 0 };
+  for (let i = 0; i < nw; i++) {
+    const w = omega[i];
+    if (!(w > 0)) throw new RangeError('omega must be > 0');
+    const w2 = w * w;
+    const { A, B: D } = boxCoefficients(hp, w);
+    const X = boxExcitation(hp, w, headingDeg);
+    cdiv(X.re[2], X.im[2], C33 - w2 * (disp + A[2][2]), w * D[2][2], x2);
+    heave[i] = Math.hypot(x2.re, x2.im); heavePhase[i] = Math.atan2(x2.im, x2.re);
+    csolve2(-w2 * (disp + A[0][0]), w * D[0][0], -w2 * (disp * zG + A[0][4]), w * D[0][4], C55 - w2 * (I55 + A[4][4]), w * D[4][4],
+      X.re[0], X.im[0], X.re[4], X.im[4], x1, x2);
+    pitch[i] = Math.hypot(x2.re, x2.im); pitchPhase[i] = Math.atan2(x2.im, x2.re);
+    if (hasRoll) {
+      const cr = hr === hp ? { A, B: D } : boxCoefficients(hr, w);
+      const Xr = hr === hp ? X : boxExcitation(hr, w, headingDeg);
+      const Ar = cr.A; const Dr = cr.B; const q = rollRadiation ? w : 0;
+      rollRad[i] = rollRadiation ? Dr[3][3] + 2 * zG * Dr[1][3] + zG * zG * Dr[1][1] : 0;
+      csolve2(-w2 * (disp + Ar[1][1]), q * Dr[1][1], -w2 * (-disp * zG + Ar[1][3]), q * Dr[1][3], C44 - w2 * (IG + disp * zG * zG + Ar[3][3]), q * Dr[3][3] + w * B44,
+        Xr.re[1], Xr.im[1], Xr.re[3], Xr.im[3], x1, x2);
+      roll[i] = Math.hypot(x2.re, x2.im); rollPhase[i] = Math.atan2(x2.im, x2.re);
+    }
+  }
+  return {
+    omega: Float64Array.from(omega), heave, pitch, roll, rollPhase, heavePhase, pitchPhase, heaveNaturalPeriod,
+    rollNaturalPeriod: hasRoll ? (2 * Math.PI) / wRoll : null, rollAddedInertia: hasRoll ? I44 - IG : null, rollRadiationDamping: rollRad,
+    validPeriodMin: { heave: (2 * Math.PI) / hp.omegaMax, roll: hasRoll ? (2 * Math.PI) / hr.omegaMax : null }, method: 'panel',
+  };
+}
+
+function boxBargeClosedForm({ L, B, T, omega, headingDeg, speed, Cb, GMt, kxx, kxxDry, rollDampingRatio, rollRadiation, rho, g }) {
   const nw = omega.length;
   const beta = headingDeg * DEG;
   const cbt = Math.cos(beta); const sbt = Math.sin(beta);
@@ -816,7 +948,6 @@ export function boxBargeRAO({ L, B, T, omega, headingDeg = 180, speed = 0, Cb = 
   const Fn = speed / Math.sqrt(g * L);
   const heave = new Float64Array(nw); const pitch = new Float64Array(nw);
   const hasRoll = GMt !== undefined;
-  if (hasRoll) needPos(GMt, 'GMt');
   const roll = hasRoll ? new Float64Array(nw) : null;
   const rollPhase = hasRoll ? new Float64Array(nw) : null;
   const rollRad = hasRoll ? new Float64Array(nw) : null;
@@ -894,8 +1025,8 @@ export function boxBargeRAO({ L, B, T, omega, headingDeg = 180, speed = 0, Cb = 
   const heaveNaturalPeriod = 2 * Math.PI * Math.sqrt((2 * T) / g);
   const rollNaturalPeriod = hasRoll ? 2 * Math.PI * Math.sqrt(I44 / C44) : null;
   return {
-    omega: Float64Array.from(omega), heave, pitch, roll, rollPhase, heaveNaturalPeriod, rollNaturalPeriod,
+    omega: Float64Array.from(omega), heave, pitch, roll, rollPhase, heavePhase: null, pitchPhase: null, heaveNaturalPeriod, rollNaturalPeriod,
     rollAddedInertia: hasRoll ? A44 : null, rollRadiationDamping: rollRad,
-    validPeriodMin: { heave: 2 * heaveNaturalPeriod, roll: hasRoll ? 1.3 * rollNaturalPeriod : null },
+    validPeriodMin: { heave: 2 * heaveNaturalPeriod, roll: hasRoll ? 1.3 * rollNaturalPeriod : null }, method: 'closed-form',
   };
 }

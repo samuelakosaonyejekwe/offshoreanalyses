@@ -13,8 +13,8 @@ export default {
   summary: 'Dynamic top tension, touchdown bending stress and dynamic amplification of a catenary riser driven by host-vessel heave, pitch and surge in a design wave and in an irregular sea.',
   covers: [4], fidelity: 'reduced-order',
   standards: ['API RP 2RD (1998, R2013) §5.5 dynamic analysis', 'DNV-ST-F201 (2018) Sec. 4, App. A', 'DNV-RP-C205 (2019) §3.5, §6.2, §7'],
-  models: ['Response amplitude operators (closed-form box vessel or user table)', 'Frequency-domain rod dynamics with consistent mass and added mass', 'Harmonically linearised Morison drag', 'JONSWAP spectrum', 'Rayleigh extreme-value statistics', 'Quasi-static offset method'],
-  limits: `${LIMIT_2D} Dynamics are linearised about the static shape: drag damping is equivalent-linear, seabed contact status is frozen, and wave loads act only through vessel motion (no direct wave kinematics on the riser). The vessel transfer functions are closed-form estimates, not a diffraction analysis; six-degree-of-freedom motions reduce to in-plane surge and vertical motion at the porch. A nonlinear time-domain run is needed where compression or snap loading is predicted.` + LIMIT_VESSEL,
+  models: ['Response amplitude operators (panel solution of a box vessel, or user table)', 'Frequency-domain rod dynamics with consistent mass and added mass', 'Harmonically linearised Morison drag', 'JONSWAP spectrum', 'Rayleigh extreme-value statistics', 'Quasi-static offset method'],
+  limits: `${LIMIT_2D} Dynamics are linearised about the static shape: drag damping is equivalent-linear, seabed contact status is frozen, and wave loads act only through vessel motion (no direct wave kinematics on the riser). The vessel transfer functions are those of a box of the vessel's main dimensions, not of the actual hull; six-degree-of-freedom motions reduce to in-plane surge and vertical motion at the porch. A nonlinear time-domain run is needed where compression or snap loading is predicted.` + LIMIT_VESSEL,
   publishes: ['riser.dynTensionAmp', 'riser.daf', 'riser.hangoffHeaveAmp'],
   searchTerms: 'steel catenary riser vessel motion heave dynamic response touchdown',
   inputs: [
@@ -124,7 +124,7 @@ export default {
         `Design wave: dynamic tension ±${fmt(dT / 1e3)} kN on ${fmt(Ts / 1e3)} kN static (amplification ${fmt(daf)}); dynamic/quasi-static ratio ${fmt(dafDyn)}; minimum effective tension ${fmt(minTe / 1e3)} kN at s = ${fmt(base.s[kMin])} m; touchdown stress amplitude ${fmt(sTdz / 1e6)} MPa.`,
         checks[1].uc > 1 ? `Dynamic compression is predicted at touchdown. Move the porch closer to the pitch centre (lever arm now ${inp.hangArm} m), increase the hang-off angle by about ${dAng}° to raise bottom tension, or consider a lazy-wave configuration that decouples vessel heave; confirm with a nonlinear time-domain analysis.`
           : checks[0].uc > 1 ? `Reduce the dynamic stress: the governing section is at s = ${fmt(base.s[kV])} m. Reduce the vertical porch motion or upgrade the wall locally to about ${fmt(pp.t * 1e3 * vmDyn / (0.9 * allow))} mm.`
-            : 'Use the tension and stress transfer functions in the wave-fatigue analysis, and repeat with the vessel RAOs from the diffraction analysis once available — the closed-form vessel model is only a starting point.',
+            : 'Use the tension and stress transfer functions in the wave-fatigue analysis, and repeat with the vessel RAOs from the diffraction analysis of the actual hull once available — the box-vessel model is only a starting point.',
         `API RP 2RD (1998, R2013) §5.5; DNV-ST-F201 (2018) App. A on frequency-domain methods. ${CONFIRM}`),
       adv('economic', 'info',
         `Porch vertical motion of ±${fmt(zAmp)} m produces ${fmt(dT / Math.max(zAmp, 1e-6) / 1e3)} kN of tension per metre. Hang-off location is a layout decision made early and at almost no cost; correcting dynamics later means a different riser concept or a larger hull.`,

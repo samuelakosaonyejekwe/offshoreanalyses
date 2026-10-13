@@ -26,6 +26,13 @@ Hulls from `src/mesh/generate.js`, clipped at the waterline by the writer:
 | `cylinder_hydro.csv` | `cylinder({ radius: 4, height: 44, base: [0, 0, -40], segments: 24, heightDivisions: 22, capRings: 4 })` | 1128 | same frequencies; 0° |
 | `hemisphere_hydro.csv` | `sphere({ radius: 5, subdivisions: 4 })` | 2592 | 0.5 and 1.0 rad/s; 0° |
 | `barge5_hydro.csv` | the barge again | 768 | 0.25, 0.5, 0.75, 1.0, 1.25 rad/s; 0°, 90°, 180° (the NEMOH case) |
+| `bargefine_hydro.csv` | `barge({ length: 20, beam: 8, depth: 4, draft: 2, divisions: [30, 12, 12] })` | 1728 | periods 25, 8, 6, 5, 4 s; 90°, 135°, 180° |
+| `barge100_hydro.csv` | `barge({ length: 100, beam: 20, depth: 10, draft: 5, divisions: [40, 10, 8] })` | 1600 | periods 25, 20, 16, 14, 12, 10, 9, 8, 7, 6, 5 s; 90°, 135°, 180° |
+| `barge80_hydro.csv` | `barge({ length: 80, beam: 24, depth: 6, draft: 3, divisions: [40, 12, 6] })` | 1584 | periods 20, 16, 14, 12, 10, 9, 8, 7, 6, 5, 4 s; 90°, 135°, 180° |
+
+The last three files are the references of the box motion model (`boxBargeRAO`, `src/engine/hydro/radiation.js`): the
+same barge on a finer mesh, a barge of ship proportions (L/B = 5, B/T = 4) and a wide shallow one (B/T = 8). They
+were written by the same exported script, run with Capytaine 3.0.0 as the others.
 
 Rows `AINF` and `A0` are radiation problems solved at omega = inf and omega = 0. The excitation is already
 conjugated to exp(+i omega t) by the script.
