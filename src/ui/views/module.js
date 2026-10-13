@@ -335,7 +335,26 @@ function assurance(mod, values) {
   bits.push(' ', v ? h('span', { class: `chip ${v.pass ? 'ok' : 'warn'}`, title: `${v.n} independent measurements, ${new Date(v.at).toLocaleDateString()}` }, v.pass ? `validated for ${v.kpiLabel || v.kpi}${v.range ? ` over ${v.varyLabel} ${fmt(v.range[0])}–${fmt(v.range[1])}` : ''}` : 'validation attempted — outside acceptance')
     : h('span.chip', { title: 'No independent measurements have been compared with this module in this project. Use the Calibrate & validate tab.' }, 'not validated against measurements'));
   if (ev.calibration) bits.push(' ', h('span.chip.info', `calibrated on ${ev.calibration.n} measurements`));
-  return h('div', { style: { margin: '0 0 8px', fontSize: '.82rem', lineHeight: 2 } }, bits);
+  const box = h('div', { style: { margin: '0 0 8px', fontSize: '.82rem', lineHeight: 2 } }, bits);
+  if (fr.unconfirmed > 1) {
+    // not every factor deserves the same scrutiny: rank them by how far each moves this particular result
+    const rank = h('div');
+    box.append(' ', h('button.btn.small', { type: 'button', title: 'Vary each code factor by ±10 % and rank them by their effect on this result', onclick: async (e) => {
+      e.target.disabled = true; rank.replaceChildren(h('small.muted', 'Ranking…'));
+      try {
+        const keys = fr.rows.map((r) => r.key);
+        const r = await task('sensitivity', mod.id, structuredCloneSafe(values), { pct: 10, keys });
+        const target = r.base.maxUC > 0 ? 'maxUC' : r.kpis[0]?.key;
+        const tLabel = target === 'maxUC' ? 'highest utilisation' : r.kpis[0]?.label;
+        const rows = r.rows.filter((x) => x.out.low && x.out.high).map((x) => ({ name: x.name, key: x.key, swing: Math.abs(x.out.high[target] - x.out.low[target]) / (Math.abs(r.base[target]) || 1) })).sort((a, b) => b.swing - a.swing);
+        const live = rows.filter((x) => x.swing > 1e-6);
+        rank.replaceChildren(h('div.banner', icon('info'), h('div', h('b', live.length ? `${live.length} of ${rows.length} code factors move the ${tLabel} in this case. Confirm these first: ` : `None of the ${rows.length} code factors changes the ${tLabel} in this case when varied by ±10 %. `),
+          live.slice(0, 6).map((x, i) => [i ? '; ' : '', h('b', x.name), ` (±10 % → ${fmt(50 * x.swing, 2)} % change)`]), live.length ? '. ' : '', rows.length - live.length ? `The other ${rows.length - live.length} do not govern here, though they may in another load case. ` : '', h('a', { href: `#/factors/m/${mod.id}` }, 'Open the register →'))));
+      } catch (err) { rank.replaceChildren(h('small.muted', err.message)); }
+      e.target.disabled = false;
+    } }, 'Which of them matter here?'), rank);
+  }
+  return box;
 }
 function hashRows(rows) { let hsh = 2166136261; for (const ch of JSON.stringify(rows.map((d) => [d.set, d.value]))) { hsh ^= ch.charCodeAt(0); hsh = Math.imul(hsh, 16777619); } return (hsh >>> 0).toString(16); }
 

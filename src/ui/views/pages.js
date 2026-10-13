@@ -103,6 +103,17 @@ export async function verification(root) {
         val: e.validation ? h('span', { class: `chip ${e.validation.pass ? 'ok' : 'warn'}` }, `${e.validation.pass ? '✓ within' : 'outside'} ±${100 * e.validation.acceptance} % · ${e.validation.n} measurements · bias ${fmt(e.validation.bias)}`) : '—',
         rng: e.validation ? `${e.validation.kpiLabel || e.validation.kpi}${e.validation.range ? `; ${e.validation.varyLabel} ${fmt(e.validation.range[0])}–${fmt(e.validation.range[1])}` : ''}` : '—' })))
       : h('p.muted', 'None yet. Open a module, run it, and use its Calibrate & validate tab with your own measurements. Calibration and validation data are kept apart automatically, and a validation is recorded together with the range of conditions it covers.')), prog);
+  const cross = await fetch(new URL('../../spec/cross-solver.json', import.meta.url)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (cross?.comparisons?.length) {
+    const box = h('div.card', { style: { margin: '12px 0' } }, h('h3', 'Compared with independent solvers'),
+      h('p.muted', `The same cases were run in established open-source solvers (${(cross.solvers || []).map((x) => `${x.name} ${x.version || ''}`.trim()).join(', ')}) and compared with the built-in models. This is code-to-code verification: it shows where the simpler built-in models agree with a higher-fidelity method and, just as usefully, where they stop agreeing.`));
+    for (const c of cross.comparisons) {
+      box.append(h('details.fold', h('summary', h('span', c.title, ' '), h('span', { class: `chip ${c.verdict === 'agrees' ? 'ok' : c.verdict === 'differs' ? 'fail' : 'warn'}` }, c.verdict)), h('div',
+        h('p', h('b', 'Valid range: '), c.validity || '—'), c.note ? h('p.muted', c.note) : null,
+        table([{ key: 'label', label: 'Case', left: true }, { key: 'builtIn', label: `Built-in${c.unit ? ` [${c.unit}]` : ''}` }, { key: 'reference', label: `${c.reference || 'Reference'}${c.unit ? ` [${c.unit}]` : ''}` }, { key: 'd', label: 'Difference [%]' }], (c.cases || []).map((x) => ({ ...x, d: 100 * x.relDiff })), { max: 60 }))));
+    }
+    root.insertBefore(box, prog);
+  }
   const prev = await idb.get('kv', 'verification');
   if (prev) summary.append(h('div.kpi.ok', h('span', `Last full run ${new Date(prev.at).toLocaleDateString()}`), h('b', `${prev.pass}/${prev.total}`), h('small.muted', 'modules numerically verified')), h('div.kpi', { class: prev.fail ? 'fail' : '' }, h('span', 'Failing'), h('b', prev.fail)), h('div.kpi', h('span', 'Benchmark cases'), h('b', prev.cases)));
   return { title: 'Verification & validation', crumbs: [{ href: '#/verification', label: 'Verification & validation' }] };

@@ -6,6 +6,17 @@ import { suiteIndex, suiteModules, SHORT } from '../../core/registry.js';
 import { getProject, confirmFactor, save, emit, prefs } from '../../core/store.js';
 import { pager } from '../shell.js';
 
+// Status of a factor that nobody has signed off yet: what an open published source says about the built-in value.
+function evChip(e) {
+  if (!e) return h('span.chip.warn', 'built-in default, unconfirmed');
+  const tip = `${e.sourceTitle || ''}${e.edition ? `, ${e.edition}` : ''}${e.locator ? ` — ${e.locator}` : ''}${e.quote ? `: “${e.quote}”` : ''}`;
+  const link = e.url ? h('a', { href: e.url, target: '_blank', rel: 'noopener', title: tip }, 'source') : null;
+  if (e.status === 'matches') return h('span', h('span.chip.info', { title: tip }, `cross-checked: matches ${e.sourceType || 'published source'}`), ' ', link, h('small.why', 'Still to be confirmed against the edition that governs your project.'));
+  if (e.status === 'differs') return h('span', h('span.chip.fail', { title: tip }, `published source gives ${e.sourceValue}`), ' ', link);
+  if (e.status === 'edition-dependent') return h('span', h('span.chip.warn', { title: tip }, 'value depends on the edition'), ' ', link, e.note ? h('small.why', e.note) : null);
+  return h('span.chip.warn', { title: e.note || '' }, 'built-in default, unconfirmed');
+}
+
 export default async function factors(root, params = {}) {
   const idx = await suiteIndex();
   const mods = [];
@@ -13,6 +24,14 @@ export default async function factors(root, params = {}) {
   const total = mods.reduce((n, m) => n + m.criteria.length, 0);
   const p = getProject();
   p.factors ||= {};
+  // cross-checks against openly published documents, where one could be opened and read (optional file)
+  const evidence = new Map();
+  let evMeta = null;
+  try {
+    const ev = await fetch(new URL('../../library/factor-evidence.json', import.meta.url)).then((r) => (r.ok ? r.json() : null));
+    if (ev) { evMeta = ev; for (const e of ev.entries || []) for (const k of e.appliesTo || []) evidence.set(k, e); }
+  } catch { /* no evidence file in this build */ }
+  const published = await fetch(new URL('../../../profiles/index.json', import.meta.url), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : { profiles: [] })).catch(() => ({ profiles: [] }));
   const summary = h('div.kpis');
   const body = h('div');
   const who = h('input.plain', { type: 'text', value: prefs.get('checker', ''), placeholder: 'Your name or initials', 'aria-label': 'Checker name', style: { maxWidth: '220px' } });
@@ -28,7 +47,8 @@ export default async function factors(root, params = {}) {
     clear(summary).append(
       h('div.kpi', h('span', 'Standards-derived factors'), h('b', total), h('small.muted', `in ${mods.length} modules`)),
       h('div.kpi', { class: done === total ? 'ok' : '' }, h('span', 'Confirmed against the governing edition'), h('b', done), h('small.muted', `${fmt(100 * done / total, 3)} %`)),
-      h('div.kpi', { class: total - done ? 'fail' : 'ok' }, h('span', 'Still built-in defaults'), h('b', total - done), h('small.muted', 'check before design use')));
+      h('div.kpi', { class: total - done ? 'fail' : 'ok' }, h('span', 'Still built-in defaults'), h('b', total - done), h('small.muted', 'check before design use')),
+      h('div.kpi', h('span', 'Cross-checked against an open published source'), h('b', [...new Set([...evidence.keys()].filter((k) => evidence.get(k).status === 'matches'))].length), h('small.muted', evidence.size ? `${[...evidence.values()].filter((e, i, a) => a.indexOf(e) === i && e.status === 'differs').length} differ, shown in red` : 'no evidence file in this build')));
   };
 
   function draw() {
@@ -59,7 +79,7 @@ export default async function factors(root, params = {}) {
             const conf = p.factors[`${m.id}.${c.key}`];
             const inp = h('input', { type: 'text', inputmode: 'decimal', 'data-k': c.key, value: conf ? conf.value : c.default, 'aria-label': c.label, style: { width: '110px', textAlign: 'right', border: '1px solid var(--line)', borderRadius: '6px', padding: '3px 6px', background: 'var(--surface)', color: 'var(--ink)' } });
             return { label: h('span', c.label, c.help ? h('small.why', c.help) : null), def: c.default, val: inp, unit: c.unit,
-              st: conf ? h('span.chip.ok', { title: `${conf.edition} — ${conf.by}, ${new Date(conf.at).toLocaleDateString()}` }, `✓ ${conf.edition} · ${conf.by}`) : h('span.chip.warn', 'built-in default, unconfirmed'),
+              st: conf ? h('span.chip.ok', { title: `${conf.edition} — ${conf.by}, ${new Date(conf.at).toLocaleDateString()}` }, `✓ ${conf.edition} · ${conf.by}`) : evChip(evidence.get(`${m.id}.${c.key}`)),
               act: conf ? h('button.btn.small', { type: 'button', onclick: () => { confirmFactor(m.id, c.key, null); drawSummary(); draw(); } }, 'Withdraw')
                 : h('button.btn.small', { type: 'button', onclick: () => {
                   if (!who.value.trim()) { toast('Enter your name or initials first — a sign-off needs a person.'); who.focus(); return; }
@@ -93,6 +113,11 @@ export default async function factors(root, params = {}) {
     h('div.row', { style: { margin: '14px 0 4px' } }, h('label', 'Checked by'), who, suitePick, find, h('label.check', only, h('span', 'Unconfirmed only')),
       h('button.btn', { type: 'button', onclick: () => download('code-factor-profile.json', JSON.stringify({ kind: 'offshore-analyses-code-factor-profile', name: p.name, exported: new Date().toISOString(), factors: p.factors }, null, 1), 'application/json') }, icon('download'), 'Export profile'),
       file, h('button.btn', { type: 'button', onclick: () => file.click() }, icon('upload'), 'Load profile')),
+    published.profiles?.length ? h('div.card', h('h3', 'Profiles published with this application'), h('p.muted', 'Sets of factors that someone has confirmed and published in the application’s repository. Loading one records its sign-offs in your project; you remain responsible for checking that its editions are the ones your design basis names.'),
+      h('ul.clean', published.profiles.map((pr) => h('li', { style: { padding: '6px 0' } }, h('b', pr.name), ` — ${pr.description || ''} `, h('button.btn.small', { type: 'button', onclick: async () => {
+        try { const obj = await fetch(new URL(`../../../profiles/${pr.file}`, import.meta.url), { cache: 'no-cache' }).then((r) => r.json()); let n = 0; for (const [k, v] of Object.entries(obj.factors || {})) if (Number.isFinite(v.value) && v.edition && v.by) { p.factors[k] = v; n++; } save(); emit('factors', p.factors); drawSummary(); draw(); toast(`${n} confirmed factors loaded from “${pr.name}”.`); } catch { toast('That profile could not be loaded.'); }
+      } }, 'Load'))))) : null,
+    evMeta ? h('details.fold', h('summary', `How the cross-checks were made (${(evMeta.entries || []).length} constants)`), h('div.prose', h('p', evMeta.method || ''))) : null,
     params.m ? h('p', h('a', { href: '#/factors' }, '← All modules')) : null,
     body,
     pager({ href: '#/verification', label: 'Verification & validation' }, { href: '#/wiring', label: 'Suite wiring & coverage' }));

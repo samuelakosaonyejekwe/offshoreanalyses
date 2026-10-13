@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { join, relative, sep } from 'node:path';
 
 const root = process.cwd();
-const include = ['index.html', 'manifest.webmanifest', 'mirrors.json', 'css', 'assets', 'src', 'dist', 'vendor'];
+const include = ['index.html', 'manifest.webmanifest', 'mirrors.json', 'css', 'assets', 'src', 'dist', 'vendor', 'profiles'];
 // Node-only vendor builds serve the test suite, not the browser
 const skip = /(^|\/)(\.|LICENSE|README)|\.map$|\.d\.ts$|^vendor\/[^/]+\/node\/|package\.json$|^src\/suites\/s\d\d\//;   // suite sources ship packed in dist/
 
@@ -19,7 +19,7 @@ async function walk(p, out) {
 const files = [];
 for (const item of include) {
   const full = join(root, item);
-  const list = item.includes('.') && !item.endsWith('/') && !['css', 'assets', 'src', 'dist', 'vendor'].includes(item) ? [full] : await walk(full, []);
+  const list = item.includes('.') && !item.endsWith('/') && !['css', 'assets', 'src', 'dist', 'vendor', 'profiles'].includes(item) ? [full] : await walk(full, []);
   for (const f of list) {
     const path = relative(root, f).split(sep).join('/');
     if (skip.test(path)) continue;

@@ -4,7 +4,8 @@ import { h, clear, fmt, icon, toast, table, download } from '../dom.js';
 import { renderPlot } from '../plot.js';
 import { getProject, save, listProjects, newProject, openProject, deleteProject, importProject, emit, publish } from '../../core/store.js';
 import { pullSite, SITE_KEYS } from '../../data/site.js';
-import { searchPlace, bathyGrid, tideStations, tideGauge, modelledSeaLevel } from '../../data/connectors.js';
+import { searchPlace, bathyGrid } from '../../data/connectors.js';
+import { fieldChecks } from './fieldcheck.js';
 import { pager } from '../shell.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -50,48 +51,6 @@ async function worldMap(onPick, initial) {
   apply();
   const zoom = (f) => { view.z = Math.max(1, Math.min(60, view.z * f)); apply(); };
   return { el: h('div', svg, h('div.row', { style: { marginTop: '6px' } }, h('button.btn.small', { type: 'button', onclick: () => zoom(1.6), 'aria-label': 'Zoom in' }, '+ Zoom in'), h('button.btn.small', { type: 'button', onclick: () => zoom(1 / 1.6), 'aria-label': 'Zoom out' }, '− Zoom out'), h('small.muted', 'Click or tap to place the site · drag to move · wheel to zoom'))), set: (lat, lon) => { view.cx = lon; view.cy = lat; view.z = Math.max(view.z, 4); set(lat, lon, false); } };
-}
-
-// Field validation of the site-data layer: the modelled sea level is compared with what a tide gauge measured.
-// This is real validation — independent physical measurements — though only of the water-level input, and only
-// where an open gauge network exists.
-function fieldCheck(s) {
-  const out = h('div');
-  const card = h('div.card', { style: { marginTop: '14px' } }, h('h3', 'Check the modelled sea level against a tide gauge'),
-    h('p.muted', 'Finds the nearest NOAA gauge, fetches its measured hourly water levels for the last 30 days and compares them with the ocean model at the gauge position. Gauges cover United States coasts and territories; elsewhere, paste your own measurements into a module’s Calibrate & validate tab.'),
-    h('div.row', h('button.btn', { type: 'button', onclick: async (e) => {
-      e.target.disabled = true; clear(out).append(h('small.muted', 'Looking for the nearest gauge…'));
-      try {
-        const st = (await tideStations()).data;
-        const R = Math.PI / 180;
-        const dist = (a) => { const x = (a.lon - s.lon) * R * Math.cos((a.lat + s.lat) * R / 2), y = (a.lat - s.lat) * R; return 6371 * Math.hypot(x, y); };
-        const near = st.map((a) => ({ ...a, km: dist(a) })).sort((a, b) => a.km - b.km)[0];
-        if (!near || near.km > 400) { clear(out).append(h('div.banner', icon('info'), `The nearest open gauge is ${near ? `${fmt(near.km, 3)} km away (${near.name})` : 'not available'} — too far to say anything about this site.`)); e.target.disabled = false; return; }
-        out.firstChild.textContent = `Fetching ${near.name} (${fmt(near.km, 3)} km away)…`;
-        const [obs, mod] = await Promise.all([tideGauge(near.id, 30), modelledSeaLevel(near.lat, near.lon, 30)]);
-        const m = new Map(mod.data.map((r) => [r.t.slice(0, 13), r.v]));
-        const pairs = obs.data.map((r) => [r.v, m.get(r.t.slice(0, 13))]).filter((p) => typeof p[1] === 'number');
-        if (pairs.length < 100) throw new Error('Too few overlapping hours between the gauge record and the model');
-        const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
-        const mo = mean(pairs.map((p) => p[0])), mm = mean(pairs.map((p) => p[1]));
-        // datum offset is removed first: the gauge is on its own tidal-epoch mean sea level, the model on a geoid
-        const d = pairs.map((p) => (p[1] - mm) - (p[0] - mo));
-        const rmse = Math.sqrt(mean(d.map((x) => x * x)));
-        const so = Math.sqrt(mean(pairs.map((p) => (p[0] - mo) ** 2))), sm = Math.sqrt(mean(pairs.map((p) => (p[1] - mm) ** 2)));
-        const corr = mean(pairs.map((p) => (p[0] - mo) * (p[1] - mm))) / (so * sm);
-        const rngO = Math.max(...pairs.map((p) => p[0])) - Math.min(...pairs.map((p) => p[0])), rngM = Math.max(...pairs.map((p) => p[1])) - Math.min(...pairs.map((p) => p[1]));
-        const good = corr > 0.9 && rmse < 0.15 * rngO;
-        const rec = { station: near.name, id: near.id, km: near.km, hours: pairs.length, rmse, corr, rangeObs: rngO, rangeModel: rngM, offset: mm - mo, at: new Date().toISOString(), good };
-        getProject().site.data.fieldCheck = rec; save();
-        const step = Math.max(1, Math.floor(pairs.length / 400));
-        clear(out).append(h('div.banner', { class: good ? '' : 'warn' }, icon(good ? 'check' : 'warn'), h('div', h('b', good ? 'The model reproduces the measured water level well at this gauge. ' : 'The model departs noticeably from the measured water level at this gauge. '),
-          `${near.name}${near.state ? `, ${near.state}` : ''}, ${fmt(near.km, 3)} km from the site; ${pairs.length} hours compared. Correlation ${fmt(corr, 3)}, root-mean-square difference ${fmt(rmse, 2)} m after removing the datum offset (${fmt(rec.offset, 2)} m), measured range ${fmt(rngO, 3)} m against modelled ${fmt(rngM, 3)} m. `,
-          good ? '' : 'Treat the tidal range and surge values derived for this site with caution and prefer local measurements. ', 'This checks the water-level input only — it says nothing about waves, currents or any structural model.')),
-          renderPlot({ type: 'line', title: `Measured and modelled sea level — ${near.name}`, x: { label: 'Hours' }, y: { label: 'Level about the mean', unit: 'm' }, series: [{ name: 'Measured (tide gauge)', x: pairs.filter((_, i) => i % step === 0).map((_, i) => i * step), y: pairs.filter((_, i) => i % step === 0).map((p) => p[0] - mo) }, { name: 'Modelled', x: pairs.filter((_, i) => i % step === 0).map((_, i) => i * step), y: pairs.filter((_, i) => i % step === 0).map((p) => p[1] - mm) }] }));
-      } catch (err) { clear(out).append(h('div.banner.warn', icon('warn'), `The comparison could not be made: ${err.message}`)); }
-      e.target.disabled = false;
-    } }, icon('check'), 'Compare with the nearest gauge')), out);
-  return card;
 }
 
 export default async function site(root) {
@@ -189,7 +148,7 @@ export default async function site(root) {
           toast('Bathymetry grid added to the project geometry.');
         } catch (err) { toast(`Bathymetry not available: ${err.message}`); e.target.disabled = false; }
       } }, icon('download'), 'Fetch bathymetry grid')), h('p.muted', 'Samples the NOAA NCEI global mosaic on a 25 × 25 grid and stores it as project geometry for route, foundation and installation analyses. A site survey supersedes it.'));
-    if (s.lat != null) summary.append(bat, fieldCheck(s));
+    if (s.lat != null) summary.append(bat, fieldChecks({ lat: Number(s.lat), lon: Number(s.lon) }));
   }
 
   // ----- project management -----

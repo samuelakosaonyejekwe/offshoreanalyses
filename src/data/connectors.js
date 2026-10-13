@@ -52,6 +52,8 @@ export const SOURCES = [
   { id: 'elevation', name: 'Open-Meteo Elevation', provider: 'Open-Meteo (Copernicus GLO-90 DEM)', home: 'https://open-meteo.com/en/docs/elevation-api', gives: 'Land elevation for landfalls, quays and coastal works', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [5, 6, 7, 13] },
   { id: 'quakes', name: 'USGS Earthquake Catalog', provider: 'U.S. Geological Survey', home: 'https://earthquake.usgs.gov/fdsnws/event/1/', gives: 'Global earthquake catalogue (real time) for seismicity screening', ttl: 6 * HOUR, licence: 'Public domain', suites: [1, 2, 3, 5, 6, 7] },
   { id: 'tidegauge', name: 'NOAA CO-OPS tide gauges', provider: 'NOAA Center for Operational Oceanographic Products and Services', home: 'https://tidesandcurrents.noaa.gov', gives: 'Measured hourly water levels at about 300 gauges (United States coasts and territories) — used to check the modelled sea level against field measurements', ttl: 6 * HOUR, licence: 'Public domain', suites: [5, 6, 7, 15] },
+  { id: 'iocgauge', name: 'IOC Sea Level Station Monitoring', provider: 'UNESCO Intergovernmental Oceanographic Commission / VLIZ', home: 'https://www.ioc-sealevelmonitoring.org', gives: 'Measured sea level at about 1,000 gauges worldwide in real time — field check of the modelled water level anywhere', ttl: 6 * HOUR, licence: 'Open (research-quality caveats apply)', suites: [5, 6, 7, 15] },
+  { id: 'buoys', name: 'NOAA OSMC in-situ observations', provider: 'NOAA Observing System Monitoring Center (GTS buoys and ships)', home: 'https://www.osmc.noaa.gov', gives: 'Measured wave height, wind speed and sea temperature from moored buoys worldwide, last 30 days — field check of modelled waves, wind and temperature', ttl: 6 * HOUR, licence: 'Public domain', suites: [1, 3, 8, 10, 11, 15, 16] },
   { id: 'power', name: 'NASA POWER', provider: 'NASA Langley Research Center', home: 'https://power.larc.nasa.gov/', gives: 'Solar irradiance and meteorological climatology for floating solar and hybrid systems', ttl: 30 * DAY, licence: 'Public domain', suites: [16] },
   { id: 'soilgrids', name: 'ISRIC SoilGrids', provider: 'ISRIC World Soil Information', home: 'https://soilgrids.org', gives: 'Onshore soil texture at landfalls and port sites (clay / sand / silt fractions, bulk density)', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [5, 6, 7, 13] },
   { id: 'place', name: 'OpenStreetMap Nominatim', provider: 'OpenStreetMap contributors', home: 'https://nominatim.org', gives: 'Place names, country and nearest coast context', ttl: 365 * DAY, licence: 'ODbL', suites: [17] },
@@ -192,6 +194,58 @@ export const tideGauge = (stationId, days = 30, o) => cached(`tidegauge:${statio
 export const modelledSeaLevel = (lat, lon, days = 30, o) => cached(`marine:level:${r4(lat)},${r4(lon)}:${days}`, 6 * HOUR, async () => {
   const j = await getJson(`${MARINE}?${q({ latitude: lat, longitude: lon, hourly: 'sea_level_height_msl', past_days: Math.min(92, days + 2), forecast_days: 1, timezone: 'GMT', cell_selection: 'sea' })}`, { timeout: 60000 });
   return (j.hourly?.time || []).map((t, i) => ({ t, v: j.hourly.sea_level_height_msl[i] })).filter((r) => typeof r.v === 'number');
+}, o);
+
+// Worldwide sea-level gauges (UNESCO/IOC Sea Level Station Monitoring Facility, ~1000 stations, real time).
+export const iocStations = () => cached('iocgauge:stations', 30 * DAY, async () => {
+  const j = await getJson('https://www.ioc-sealevelmonitoring.org/service.php?query=stationlist&showall=all', { timeout: 60000 });
+  return j.filter((x) => Number.isFinite(x.Lat) && Number.isFinite(x.Lon)).map((x) => ({ id: x.Code, name: x.Location, country: x.country || '', lat: x.Lat, lon: x.Lon }));
+});
+/** Hourly-mean sea level at an IOC gauge for the last `days` days (arbitrary station datum, metres). */
+export const iocGauge = (code, days = 20, o) => cached(`iocgauge:${code}:${days}`, 6 * HOUR, async () => {
+  const end = new Date(), begin = new Date(end.getTime() - days * DAY);
+  const j = await getJson(`https://www.ioc-sealevelmonitoring.org/service.php?${q({ query: 'data', code, timestart: iso(begin), timestop: iso(end), format: 'json' })}`, { timeout: 90000 });
+  if (!Array.isArray(j) || !j.length) throw new Error('The gauge returned no data for this period');
+  // a station may report several sensors: keep the one with most samples, then average to the hour
+  const bySensor = new Map();
+  for (const r of j) { if (!Number.isFinite(r.slevel)) continue; (bySensor.get(r.sensor) || bySensor.set(r.sensor, []).get(r.sensor)).push(r); }
+  const rows = [...bySensor.values()].sort((a, b) => b.length - a.length)[0] || [];
+  const hours = new Map();
+  for (const r of rows) { const k = r.stime.replace(' ', 'T').slice(0, 13); const e = hours.get(k) || [0, 0]; e[0] += r.slevel; e[1]++; hours.set(k, e); }
+  return [...hours.entries()].map(([t, [sum, n]]) => ({ t, v: sum / n })).sort((a, b) => (a.t < b.t ? -1 : 1));
+}, o);
+
+// Worldwide moored buoys and ships (NOAA Observing System Monitoring Center, last 30 days of GTS observations).
+// The service sends no cross-origin header, so it is read with ERDDAP's JSONP option (a script tag).
+let jsonpSeq = 0;
+function jsonp(url, timeout = 60000) {
+  if (typeof document === 'undefined') return Promise.reject(new Error('This source can only be read from a web page'));
+  return new Promise((resolve, reject) => {
+    const cb = `__oaJsonp${Date.now().toString(36)}${jsonpSeq++}`;
+    const el = document.createElement('script');
+    const done = (fn, v) => { clearTimeout(t); delete window[cb]; el.remove(); fn(v); };
+    const t = setTimeout(() => done(reject, new Error('osmc.noaa.gov timed out')), timeout);
+    window[cb] = (data) => done(resolve, data);
+    el.onerror = () => done(reject, new Error('osmc.noaa.gov did not answer (no observations match, or the service is down)'));
+    el.src = `${url}&.jsonp=${cb}`;
+    document.head.append(el);
+  });
+}
+const OSMC = 'https://osmc.noaa.gov/erddap/tabledap/OSMC_30day.json';
+const table = (j) => { const c = j.table.columnNames; return j.table.rows.map((r) => Object.fromEntries(c.map((k, i) => [k, r[i]]))); };
+/** Platforms that reported the given variable near a point in the last two days. */
+export const buoysNear = (lat, lon, { variable = 'wvht', halfDeg = 3 } = {}) => cached(`buoys:near:${variable}:${r4(lat)},${r4(lon)}:${halfDeg}`, 6 * HOUR, async () =>
+  table(await jsonp(`${OSMC}?platform_code,platform_type,latitude,longitude,time,${variable}&${variable}%3E-90&time%3E=now-2days&latitude%3E=${lat - halfDeg}&latitude%3C=${lat + halfDeg}&longitude%3E=${lon - halfDeg}&longitude%3C=${lon + halfDeg}&orderByMax(%22platform_code,time%22)`)));
+/** 30-day record of wave height, wind speed and sea temperature at one platform. */
+export const buoyRecord = (code) => cached(`buoys:rec:${code}`, 6 * HOUR, async () =>
+  table(await jsonp(`${OSMC}?time,latitude,longitude,wvht,windspd,sst&platform_code=%22${encodeURIComponent(code)}%22&orderBy(%22time%22)`, 120000)));
+/** Modelled hourly waves, sea temperature and 10 m wind at a point for the recent past. */
+export const modelledRecent = (lat, lon, days = 30, o) => cached(`model:recent:${r4(lat)},${r4(lon)}:${days}`, 6 * HOUR, async () => {
+  const [m, w] = await Promise.all([
+    getJson(`${MARINE}?${q({ latitude: lat, longitude: lon, hourly: 'wave_height,sea_surface_temperature', past_days: Math.min(92, days + 1), forecast_days: 1, timezone: 'GMT', cell_selection: 'sea' })}`, { timeout: 60000 }),
+    getJson(`https://api.open-meteo.com/v1/forecast?${q({ latitude: lat, longitude: lon, hourly: 'wind_speed_10m', wind_speed_unit: 'ms', past_days: Math.min(92, days + 1), forecast_days: 1, timezone: 'GMT' })}`, { timeout: 60000 })]);
+  const wind = new Map((w.hourly?.time || []).map((t, i) => [t.slice(0, 13), w.hourly.wind_speed_10m[i]]));
+  return (m.hourly?.time || []).map((t, i) => ({ t: t.slice(0, 13), wvht: m.hourly.wave_height[i], sst: m.hourly.sea_surface_temperature[i], windspd: wind.get(t.slice(0, 13)) }));
 }, o);
 
 // ---------------- places ----------------
