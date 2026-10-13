@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   bucklingAnalysis, pDeltaAnalysis, beamGeometricStiffness, effectiveLength,
 } from '../../src/engine/structural/framebuckling.js';
+import { refineModel } from '../../src/engine/structural/frame3d.js';
 import { tubeSection } from '../../src/engine/structural/sections.js';
 
 const E = 2.1e11;
@@ -160,4 +161,133 @@ test('buckling with many slender members in tension: the positive factor is foun
   // all members in tension: nothing buckles
   const pull = { nodes, members, supports, loadCases: [{ name: 'ref', nodal: nodal.map((l) => ({ node: l.node, F: [0, 0, Math.abs(l.F[2]), 0, 0, 0] })) }] };
   assert.throws(() => bucklingAnalysis(pull, { loadCase: 'ref' }), /No positive buckling factor/);
+});
+
+test('shear-flexible geometric stiffness equals N ∫ w′ᵀ w′ dx of the Timoshenko shape functions', () => {
+  // w = N1 v1 + N2 θ1 + N3 v2 + N4 θ2 with d = 1 + Φ (Przemieniecki 1968 §5.6; the functions behind the stiffness matrix):
+  // N1 = (1 − 3ξ² + 2ξ³ + Φ(1 − ξ))/d, N2 = L(ξ − 2ξ² + ξ³ + Φ(ξ − ξ²)/2)/d, N3 = (3ξ² − 2ξ³ + Φξ)/d, N4 = L(−ξ² + ξ³ − Φ(ξ − ξ²)/2)/d
+  const Lb = 2.5; const N = -3e5;
+  const dN = (xi, phi) => {
+    const d = 1 + phi;
+    return [(-6 * xi + 6 * xi * xi - phi) / (Lb * d), (1 - 4 * xi + 3 * xi * xi + phi * (1 - 2 * xi) / 2) / d,
+      (6 * xi - 6 * xi * xi + phi) / (Lb * d), (-2 * xi + 3 * xi * xi - phi * (1 - 2 * xi) / 2) / d];
+  };
+  // three-point Gauss–Legendre on [0, 1] is exact for the quartic integrand
+  const gp = [0.5 - Math.sqrt(0.15), 0.5, 0.5 + Math.sqrt(0.15)]; const gw = [5 / 18, 8 / 18, 5 / 18];
+  const XY = [1, 5, 7, 11]; const XZ = [2, 4, 8, 10]; const sg = [1, -1, 1, -1];
+  const phiY = 0.37; const phiZ = 1.9;
+  const k = beamGeometricStiffness({ N, L: Lb, phiY, phiZ });
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      let iy = 0; let iz = 0;
+      gp.forEach((x, g) => { iy += gw[g] * dN(x, phiY)[i] * dN(x, phiY)[j]; iz += gw[g] * dN(x, phiZ)[i] * dN(x, phiZ)[j]; });
+      near(k[XY[i] * 12 + XY[j]], N * Lb * iy, 1e-12, `x–y plane (${i},${j})`);
+      near(k[XZ[i] * 12 + XZ[j]], sg[i] * sg[j] * N * Lb * iz, 1e-12, `x–z plane (${i},${j})`);
+    }
+  }
+  // hand value: translational term N (36 + 60Φ + 30Φ²)/(30 L (1 + Φ)²) at Φ = 1 → N·126/(120 L) = 1.05 N/L
+  near(beamGeometricStiffness({ N, L: Lb, phiY: 1 })[1 * 12 + 1], 1.05 * N / Lb, 1e-12);
+  // Φ = 0 is the Hermite matrix; Φ → ∞ leaves the string term N/L (pure shear mode)
+  assert.deepEqual(Array.from(beamGeometricStiffness({ N, L: Lb, phiY: 0, phiZ: 0 })), Array.from(beamGeometricStiffness({ N, L: Lb })));
+  near(beamGeometricStiffness({ N, L: Lb, phiY: 1e9 })[1 * 12 + 1], N / Lb, 1e-8);
+  assert.throws(() => beamGeometricStiffness({ N, L: Lb, phiY: -1 }), RangeError);
+});
+
+test('Euler and Engesser columns: upper bounds that fall monotonically under mesh halving, for every end condition', () => {
+  // Engesser: Pcr = Pe/(1 + Pe/(G As)) with Pe the Euler load of the same effective length (Timoshenko & Gere §2.17);
+  // exact where the mode is a sine wave between inflection points (not fixed–pinned, which is checked for monotony only)
+  const G = E / 2.6;
+  for (const c of cases) {
+    const Pe = c.exact; const Peng = Pe / (1 + Pe / (G * tube.Asz));
+    for (const shear of [false, true]) {
+      const exact = shear ? Peng : Pe;
+      const levels = c.name === 'fixed–fixed' ? [2, 4, 8, 16] : [1, 2, 4, 8, 16];
+      let last = Infinity; let err = 0;
+      for (const nEl of levels) {
+        const r = bucklingAnalysis(column(nEl, c.base, c.top), { loadCase: 'P', nModes: 1, shearDeformation: shear });
+        assert.ok(r.converged && r.residuals[0] <= 1e-7 && r.sturmCheck === true, `${c.name} n = ${nEl}`);
+        err = r.factors[0] / exact - 1;
+        if (shear && c.name === 'fixed–pinned') err = 0;
+        assert.ok(err > -1e-9, `${c.name}, shear ${shear}, n = ${nEl}: not an upper bound (${err})`);
+        assert.ok(r.factors[0] < last, `${c.name}, shear ${shear}, n = ${nEl}: not monotone`);
+        last = r.factors[0];
+      }
+      // fourth order without shear; with it the shear angle is constant per element: (Pcr/(G As))·O(h²)
+      assert.ok(err < (shear ? 1e-3 : 5e-5), `${c.name}, shear ${shear}: error with 16 elements ${err}`);
+    }
+  }
+  // the Hermite matrix on a shear-flexible fixed–fixed column is neither: a stocky tube (L/r = 36) goes up from 2 to 4 elements
+  const stocky = tubeSection({ D: 0.5, t: 0.025 });
+  const col = (nEl) => {
+    const m = column(nEl, 'fixed', 'fixed');
+    m.members.forEach((mem) => { mem.section = stocky; });
+    return m;
+  };
+  const h = [2, 4].map((nEl) => bucklingAnalysis(col(nEl), { loadCase: 'P', nModes: 1, consistentShear: false }).factors[0]);
+  const k = [2, 4].map((nEl) => bucklingAnalysis(col(nEl), { loadCase: 'P', nModes: 1 }).factors[0]);
+  assert.ok(h[1] > h[0] && k[1] < k[0], `Hermite ${h}, consistent ${k}`);
+});
+
+test('portal frame with shear-flexible members: sway factor falls monotonically with subdivision and converges', () => {
+  // pinned-base portal 6 m × 5 m, all members the same tube, joints rigid; no closed form with a flexible beam, so the
+  // check is monotone convergence from above and agreement of the two finest meshes
+  const base = {
+    nodes: [[0, 0, 0], [0, 0, 5], [6, 0, 5], [6, 0, 0]],
+    members: [{ a: 0, b: 1, section: tube }, { a: 1, b: 2, section: tube }, { a: 3, b: 2, section: tube }],
+    supports: [{ node: 0, fix: [1, 1, 1, 1, 0, 1] }, { node: 3, fix: [1, 1, 1, 1, 0, 1] }, { node: 1, fix: [0, 1, 0, 1, 0, 1] }, { node: 2, fix: [0, 1, 0, 1, 0, 1] }],
+    loadCases: [{ name: 'P', nodal: [{ node: 1, F: [0, 0, -1, 0, 0, 0] }, { node: 2, F: [0, 0, -1, 0, 0, 0] }] }],
+  };
+  const lam = [1, 2, 4, 8, 16].map((nEl) => {
+    const ref = refineModel(base, nEl);
+    ref.model.supports = base.supports.slice();
+    // interior nodes move in the frame plane only
+    for (let i = 4; i < ref.model.nodes.length; i++) ref.model.supports.push({ node: i, fix: [0, 1, 0, 1, 0, 1] });
+    const r = bucklingAnalysis(ref.model, { loadCase: 'P', nModes: 2 });
+    assert.ok(r.converged && r.sturmCheck === true && Math.max(...r.residuals) <= 1e-7);
+    return r.factors[0];
+  });
+  for (let i = 1; i < lam.length; i++) assert.ok(lam[i] < lam[i - 1], `not monotone: ${lam}`);
+  near(lam[3], lam[4], 1e-4);
+  // a flexible beam lowers the factor below the rigid-beam value π²EI/(2h)² (K = 2) of the test above
+  assert.ok(lam[4] < Math.PI ** 2 * EI / 100 && lam[4] > 0.6 * Math.PI ** 2 * EI / 100, `sway factor ${lam[4]}`);
+});
+
+test('clustered factors: identical members in compression and in tension, all requested modes with small residuals', () => {
+  // 40 identical pinned–pinned struts (6 m, four elements each, both planes free) under the same load P = 100 kN and 40
+  // identical ties under 2 P. Positive factors: n² π²EI/(P L²) for n = 1, 2, 3 …, each 80-fold (40 struts × two planes); the
+  // reversed-load factors of the ties at half those values are as numerous and lie nearer to zero than the second group.
+  const P = 1e5; const nodes = []; const members = []; const supports = []; const nodal = [];
+  const add = (x, F) => {
+    const b = nodes.length;
+    for (let i = 0; i <= 4; i++) { nodes.push([x, 0, 1.5 * i]); if (i < 4) members.push({ a: b + i, b: b + i + 1, section: tube }); }
+    supports.push({ node: b, fix: [1, 1, 1, 0, 0, 1] }, { node: b + 4, fix: [1, 1, 0, 0, 0, 1] });
+    for (let i = 1; i < 4; i++) supports.push({ node: b + i, fix: [0, 0, 0, 0, 0, 1] });
+    nodal.push({ node: b + 4, F: [0, 0, F, 0, 0, 0] });
+  };
+  for (let k = 0; k < 40; k++) { add(2 * k, -P); add(2 * k + 1, 2 * P); }
+  const model = { nodes, members, supports, loadCases: [{ name: 'ref', nodal }] };
+  const pe = Math.PI ** 2 * EI / L ** 2 / P;
+  // four cubic elements: +0.0512 % on the first mode (see the Euler test above)
+  const r = bucklingAnalysis(model, { loadCase: 'ref', nModes: 8, shearDeformation: false });
+  assert.equal(r.factors.length, 8);
+  assert.ok(r.converged && r.sturmCheck !== false, `converged ${r.converged}, iterations ${r.iterations}`);
+  assert.equal(r.residuals.length, 8);
+  r.factors.forEach((f, i) => { near(f, pe, 6e-4, `mode ${i + 1}`); assert.ok(r.residuals[i] <= 1e-7, `residual ${r.residuals[i]}`); });
+  // more modes than the first group holds: 80 at pe, then the second group at 4 pe (+0.75 % with two elements per half-wave)
+  const few = { ...model, nodes: nodes.slice(0, 20), members: members.filter((m) => m.b < 20), supports: supports.filter((s) => s.node < 20),
+    loadCases: [{ name: 'ref', nodal: nodal.slice(0, 4) }] };
+  const r2 = bucklingAnalysis(few, { loadCase: 'ref', nModes: 8, shearDeformation: false });
+  assert.ok(r2.converged && r2.factors.length === 8 && r2.sturmCheck === true);
+  for (let i = 0; i < 4; i++) near(r2.factors[i], pe, 6e-4);
+  for (let i = 4; i < 8; i++) near(r2.factors[i], 4 * pe, 8e-3);
+  assert.ok(r2.shifts.length >= 2 && Math.max(...r2.residuals) <= 1e-7, `shifts ${r2.shifts}`);
+});
+
+test('sweep cap reached: the estimates are returned with their residuals and converged is false', () => {
+  const r = bucklingAnalysis(column(8, 'pinned', 'pinned'), { loadCase: 'P', nModes: 3, shearDeformation: false, maxIter: 2 });
+  assert.equal(r.converged, false);
+  assert.equal(r.iterations, 2);
+  assert.equal(r.factors.length, 3);
+  assert.ok(r.residuals[2] > 1e-7 && r.residuals[0] < r.residuals[2], `residuals ${r.residuals}`);
+  near(r.factors[0], Math.PI ** 2 * EI / L ** 2, 1e-3);
 });

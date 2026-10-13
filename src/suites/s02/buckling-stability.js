@@ -47,9 +47,11 @@ export default {
     { key: 'sigX', label: 'In-plane compressive stress in the deck plate', unit: 'MPa', type: 'number', default: 110, min: 0, max: 600, group: 'Deck plate panel', role: 'bc', help: 'Factored membrane compression along the stiffeners when the plate acts as the flange of a girder (from the in-place or local stress analysis).' },
     { key: 'tauXY', label: 'In-plane shear stress in the deck plate', unit: 'MPa', type: 'number', default: 25, min: 0, max: 400, group: 'Deck plate panel', role: 'bc' },
     { key: 'latFrac', label: 'Laterally unrestrained fraction of a girder bay', unit: '-', type: 'number', default: 0.25, min: 0.02, max: 1, group: 'Acceptance criteria', role: 'criteria', help: 'Spacing of lateral restraints to the compression flange as a fraction of the bay length.' },
-    solverInput(2),
+    solverInput(4),
   ],
-  mesh: { key: 'nSub', label: 'Elements per member', levels: [1, 2, 4], qoi: 'alphaCr' },
+  // One element per member cannot bow between its joints, so the ladder starts at two; a member held at both ends gains
+  // little from two to four elements and most from four to eight, so the asymptotic range is the last three levels.
+  mesh: { key: 'nSub', label: 'Elements per member', levels: [2, 4, 8, 16], qoi: 'alphaCr' },
   compute(inp, ctx) {
     const deck = buildDeck(inp, ctx), eqs = equipmentOf(deck, inp), st = deck.steel;
     need(inp.tPlate > 0, 'The plate buckling checks need a deck plate thickness above zero.');

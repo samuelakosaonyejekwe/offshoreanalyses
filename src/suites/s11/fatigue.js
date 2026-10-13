@@ -5,7 +5,7 @@ import { pointMotion } from '../../engine/hydro/floater.js';
 import { snCurve, snConstants, SN_CURVE_NAMES } from '../../engine/fatigue/sn.js';
 import { longTermSpectralDamage } from '../../engine/fatigue/spectral.js';
 import { fatigueLife } from '../../engine/fatigue/damage.js';
-import { hullInputs, hullFrom, motionInputs, motionFrom, seaFrom, spectrum, omegaGrid, pointInputs,
+import { hullInputs, hullFrom, motionInputs, motionFrom, motionRangeAdvice, seaFrom, spectrum, omegaGrid, pointInputs,
   G, DEG, YEAR_S, LIMIT_HYDRO, need, run, round, rnd, fmt, adv, check, sev, steelCo2Text } from './_common.js';
 import { scatterInput, scatterFrom } from './frequency-domain.js';
 
@@ -55,6 +55,7 @@ export default {
   compute(inp) {
     const om = omegaGrid(inp.nFreq); const f = om.map((w) => w / (2 * Math.PI));
     let H; let what;
+    let motUsed = null;
     if (inp.mode === 'hull-girder') {
       need(['ship', 'barge'].includes(inp.hullType), 'Hull-girder fatigue applies to ship-shaped hulls and barges: choose one of those hull types, or use the motion-induced or direct stress option.');
       const hull = hullFrom(inp);
@@ -64,6 +65,7 @@ export default {
       what = `hull-girder bending, Z = ${fmt(inp.Zsec)} m³`;
     } else if (inp.mode === 'motion') {
       const hull = hullFrom(inp); const mot = motionFrom(inp, hull);
+      motUsed = mot;
       // drag linearised for a moderate fatigue sea (the cells that dominate damage)
       const r = mot.rao(om, inp.headingDeg, { Hs: 3, Tp: 10, gamma: inp.gamma });
       const pm = pointMotion({ rao: r, point: [inp.px, inp.py, inp.pz - hull.T] });
@@ -125,6 +127,7 @@ export default {
         `Annual damage ${fmt(dYear)}: characteristic life ${fmt(cap(fl.characteristicLife))} yr, ${fmt(cap(fl.designLife))} yr with DFF ${fmt(inp.dff)}. Worst sea state ${top.label} gives ${fmt(100 * top.share)} % of the damage.`,
       ],
       advice: [
+        ...(motUsed ? motionRangeAdvice(motUsed, contrib.reduce((a, c) => (c.share > a.share ? c : a), contrib[0]).Tp, inp.headingDeg) : []),
         adv('engineering', sev(util), `Fatigue utilisation is ${fmt(util)} for ${fmt(inp.designLife)} years with DFF ${fmt(inp.dff)}; design life ${fmt(cap(fl.remainingLife))} yr.`,
           util > 1 ? `Reduce the hot-spot stress by ${fmt(100 * (1 - (1 / util) ** (1 / mEff)))} % (SCF from ${fmt(inp.scf)} to about ${fmt(scfReq)}): soft-toe brackets, ground weld toes (one S–N class better when documented), thicker insert plate, or a larger section modulus. Halving stress multiplies life by ${fmt(2 ** mEff)}.`
             : `Margin corresponds to a ${fmt(100 * ((1 / Math.max(util, 1e-9)) ** (1 / mEff) - 1))} % higher stress. Confirm the SCF by hot-spot finite-element analysis and include every heading with its probability for a spread-moored unit.`,

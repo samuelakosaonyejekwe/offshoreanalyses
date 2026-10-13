@@ -1098,39 +1098,131 @@
   },
   {
    "id": "c203-thickness-exponent-c",
-   "what": "Thickness exponent k of curves C, C1 and C2",
-   "standard": "DNV-RP-C203 (2021) Table 2-1",
-   "builtIn": "C 0.05, C1 0.10, C2 0.15",
+   "what": "Thickness exponent k of curves C, C1 and C2 in air and in seawater with cathodic protection",
+   "standard": "DNVGL-RP-C203 (April 2016; September 2019) Tables 2-1 and 2-2",
+   "builtIn": "default edition '2016': C 0.05, C1 0.10, C2 0.15; edition '2014': the same; edition '2011': 0.15, 0.15, 0.15",
    "appliesTo": [
-    "engine: src/engine/fatigue/sn.js#AIR (C, C1, C2 column k)"
+    "engine: src/engine/fatigue/sn.js#AIR (C, C1, C2 column k)",
+    "engine: src/engine/fatigue/sn.js#K_C_2011"
    ],
    "status": "edition-dependent",
-   "sourceTitle": "DNV-RP-C203 Fatigue Design of Offshore Steel Structures",
+   "sourceTitle": "DNVGL-RP-C203 Fatigue design of offshore steel structures",
    "sourceType": "primary standard (free edition)",
-   "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/RP-C203.pdf",
-   "edition": "October 2011",
-   "locator": "[2.4.4], Table 2-1 (p.18)",
-   "quote": "C 3.0 12.592 16.320 73.10 0.15 C1 3.0 12.449 16.081 65.50 0.15 C2 3.0 12.301 15.835 58.48 0.15",
-   "sourceValue": "2011: k = 0.15 for C, C1 and C2. 2016 and later (as coded): 0.05 / 0.10 / 0.15 — not opened",
-   "note": "The built-in exponents for C and C1 are those recalled from the 2016+ editions, which are not openly accessible; against the 2011 table they are lower (less thickness penalty, unconservative for thick plates under the 2011 edition). Confirm in the governing edition."
+   "url": "https://fenix.tecnico.ulisboa.pt/downloadFile/1126518382266636/DNVGL-RP-C203_2016-Fatgiue.pdf",
+   "edition": "April 2016",
+   "locator": "[2.4.4] Table 2-1 (p.23), [2.4.5] Table 2-2 (p.24); Changes – historic, 2014-06 edition",
+   "quote": "C 3.0 12.592 16.320 73.10 0.05 C1 3.0 12.449 16.081 65.50 0.10 C2 3.0 12.301 15.835 58.48 0.15 ... The thickness exponent for S-N class C and C1 has been modified in Table 2-1 and Table 2-2.",
+   "sourceValue": "October 2011: 0.15 / 0.15 / 0.15. June 2014 (DNVGL-RP-0005), April 2016 and September 2019 (amended January 2020): 0.05 / 0.10 / 0.15. September 2021 amendment and October 2024 edition: not read",
+   "note": "Settled for the editions up to 2019: the built-in default is what the 2014, 2016 and 2019 editions tabulate, and the lookup now takes the edition as an option (snCurve(name, environment, { edition })) with the 2011 values selectable. Independent sources for 0.05 / 0.10: the June 2014 edition itself (Table 2-1: \"C 3.0 12.592 16.320 73.10 0.05\", \"C1 3.0 12.449 16.081 65.50 0.10\"; https://web.archive.org/web/2020id_/https://wiki.unece.org/download/attachments/26902968/R55_11_03-C203_DNVGL-RP-0005_2014-06.pdf?api=v2), an open S–N library coded from the 2014 edition with a switch back to k = 0.15 for the October 2012 revision (https://raw.githubusercontent.com/iamlikeme/sncurves/master/sncurves.py), and a copy of the September 2019 edition on a document-sharing site with the same rows. Against the 2011 edition the default is less severe for plates thicker than 25 mm (life longer by a factor 2^0.30 = 1.23 for C and 2^0.15 = 1.11 for C1 at 50 mm). Not confirmed for the 2021 amendment or the 2024 edition; a consultant's bulletin on the 2024 edition reports revised B1–C2 curves including their slopes, so the governing edition must be checked."
   },
   {
    "id": "c203-t-curve",
-   "what": "S–N curve T for tubular joints: log a1, log a2, fatigue limit and reference thickness",
-   "standard": "DNV-RP-C203 (2021) Table 2-1",
-   "builtIn": "log a1 12.48, log a2 16.13, limit 67.09 MPa, tref 16 mm; cathodic protection 12.18; free corrosion 12.03",
+   "what": "S–N curve T for tubular joints: log a1, log a2, fatigue limit, thickness exponent and reference thickness in air, with cathodic protection and in free corrosion",
+   "standard": "DNVGL-RP-C203 (April 2016; September 2019) [2.4.3], [2.4.6] Table 2-3",
+   "builtIn": "default edition '2016': air 12.48 / 16.13, limit 67.09 MPa; cathodic protection 12.18 (slope change at 1.8e6 cycles); free corrosion 12.03; tref 16 mm; k 0.25",
    "appliesTo": [
-    "engine: src/engine/fatigue/sn.js#AIR.T, CP_LOGA1.T, FREE_LOGA.T, tRef"
+    "engine: src/engine/fatigue/sn.js#DNV_T[2016]"
    ],
    "status": "edition-dependent",
+   "sourceTitle": "DNVGL-RP-C203 Fatigue design of offshore steel structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://fenix.tecnico.ulisboa.pt/downloadFile/1126518382266636/DNVGL-RP-C203_2016-Fatgiue.pdf",
+   "edition": "April 2016",
+   "locator": "Changes – current (p.3); [2.4.3] (p.22); [2.4.6] Table 2-3 S-N curves for tubular joints (p.25)",
+   "quote": "[2.4.6] New S-N curve for simple tubular joint for harmonisation with ISO 19902. ... For tubular joints the reference thickness is 16 mm. ... Air 3.0 12.48 5.0 16.13 67.09 0.25 Seawater with cathodic protection 3.0 12.18 5.0 16.13 67.09 0.25 Seawater free corrosion 3.0 12.03 3.0 12.03 0 0.25",
+   "sourceValue": "April 2016 and September 2019 (amended January 2020): as built in. October 2011 and June 2014: T equal to D (12.164 / 15.606 / 52.63; 11.764; 11.687) with tref 32 mm and k 0.25 for SCF ≤ 10, 0.30 above. September 2021 amendment and October 2024 edition: not read",
+   "note": "The built-in curve is the DNV T curve of the 2016 and 2019 editions and at the same time the ISO 19902 TJ / API RP 2A-WSD WJ curve: DNV adopted it in 2016, so the label was correct for those editions and wrong only against 2011. It is now selectable by edition, and the ISO and API curves are available under their own names (ISO-TJ, API-WJ). The two DNV curves are not equivalent: the 2016 curve gives 2.07 times the life of the 2011 curve at 16 mm and 1.23 times at 32 mm and above. Independent sources for the 2016 values: a BSEE report citing DNVGL-RP-C203 2016 (\"Tubular In-Air 12.48 3 16.13 5\", \"Tubular Cathodic Protection 12.18 3 16.13 5\", \"Tubular Free Corrosion 12.03 3\"; https://www.bsee.gov/sites/bsee.gov/files/2024-01/TAP%20806%20Block%20Island%20Structural%20Fatigue%20.pdf), an open-access paper (\"the reference thickness of the DNVGL T curve, which is 16 mm\"; https://mdpi-res.com/d_attachment/jmse/jmse-08-00895/article_deploy/jmse-08-00895.pdf) and a copy of the September 2019 edition on a document-sharing site, which words the reference thickness as \"For simple tubular joints the reference thickness is 16 mm when using the T-curve. The reference thickness is equal 25 mm when other S-N curves are used for fatigue analysis of tubular joints.\" The exponent 0.30 for SCF > 10 no longer appears in Table 2-3. Not confirmed for the 2021 amendment or the 2024 edition (a software vendor's help page for the 2024 edition still states 16 mm for tubular joints; one source, not the standard)."
+  },
+  {
+   "id": "c203-t-curve-2011",
+   "what": "S–N curve T for tubular joints in the editions before 2016 (selectable as edition '2011' or '2014')",
+   "standard": "DNV-RP-C203 (October 2011) [2.4.3], Tables 2-1 to 2-3; DNVGL-RP-0005 (June 2014)",
+   "builtIn": "air 12.164 / 15.606, limit 52.63 MPa; cathodic protection 11.764; free corrosion 11.687; tref 32 mm; k 0.25 for SCF ≤ 10, 0.30 for SCF > 10",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#DNV_T[2011]"
+   ],
+   "status": "matches",
    "sourceTitle": "DNV-RP-C203 Fatigue Design of Offshore Steel Structures",
    "sourceType": "primary standard (free edition)",
    "url": "https://web.archive.org/web/2/https://rules.dnv.com/docs/pdf/DNVPM/codes/docs/2011-10/RP-C203.pdf",
    "edition": "October 2011",
    "locator": "[2.4.3] and Table 2-1 (p.17–18)",
    "quote": "T 3.0 12.164 15.606 52.63 0.25 for SCF ≤ 10.0 ... For tubular joints the reference thickness is 32 mm.",
-   "sourceValue": "2011: T equals D (12.164 / 15.606 / 52.63) with tref 32 mm; in seawater with CP 11.764; free corrosion 11.687. 2016 and later (as coded): 12.48 / 16.13 / 67.09 with tref 16 mm — not opened",
-   "note": "The two parameter sets are equivalent at t = 32 mm by construction of the 2016 revision, but the coded values could not be read in an open copy of the 2016+ text."
+   "sourceValue": "identical",
+   "note": "Also read in the June 2014 edition (\"T 3.0 12.164 15.606 52.63 0.25 for SCF ≤ 10.0 1.00\", \"0.30 for SCF >10.0\", \"the reference thickness is 32 mm\"; https://web.archive.org/web/2020id_/https://wiki.unece.org/download/attachments/26902968/R55_11_03-C203_DNVGL-RP-0005_2014-06.pdf?api=v2). Superseded in April 2016."
+  },
+  {
+   "id": "c203-free-corrosion-k-c",
+   "what": "Thickness exponent k of curves C, C1 and C2 in free corrosion",
+   "standard": "DNVGL-RP-C203 (April 2016; September 2019) Table 2-4",
+   "builtIn": "0.15 for C, C1 and C2 in every edition",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#K_FREE"
+   ],
+   "status": "matches",
+   "sourceTitle": "DNVGL-RP-C203 Fatigue design of offshore steel structures",
+   "sourceType": "primary standard (free edition)",
+   "url": "https://fenix.tecnico.ulisboa.pt/downloadFile/1126518382266636/DNVGL-RP-C203_2016-Fatgiue.pdf",
+   "edition": "April 2016",
+   "locator": "[2.4.9] Table 2-4 S-N curves in seawater for free corrosion (p.26)",
+   "quote": "C 12.115 0.15 C1 11.972 0.15 C2 11.824 0.15",
+   "sourceValue": "0.15 / 0.15 / 0.15 (October 2011 Table 2-3, June 2014 Table 2-3, April 2016 and September 2019 Table 2-4)",
+   "note": "Corrected: the engine used the air exponents (0.05 and 0.10) for C and C1 in free corrosion as well, which overstated the life of plates thicker than 25 mm (by 2^0.30 = 1.23 for C and 2^0.15 = 1.11 for C1 at 50 mm). The 2014 change applied to Tables 2-1 and 2-2 only. Second source: the open S–N library coded from the 2014 edition has k = 0.15 for C and C1 in free corrosion (https://raw.githubusercontent.com/iamlikeme/sncurves/master/sncurves.py)."
+  },
+  {
+   "id": "iso19902-tj",
+   "what": "ISO 19902 tubular-joint curve TJ: log k1, slopes, cathodic-protection curve, reference thickness and exponent",
+   "standard": "ISO 19902:2007 Table 16.11-1, 16.11.4, A.16.11.1",
+   "builtIn": "air 12.48 (m 3) / 16.13 (m 5); cathodic protection 12.18 / 16.13; free corrosion 12.48 − log 3 = 12.003 (m 3, single slope); tref 16 mm; exponent 0.25",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#JOINT[ISO-TJ]"
+   ],
+   "status": "matches",
+   "sourceTitle": "ISO 19902:2007 Petroleum and natural gas industries — Fixed steel offshore structures",
+   "sourceType": "primary standard (read in a copy that is not linked here)",
+   "url": "",
+   "edition": "First edition, 2007-12-01",
+   "locator": "16.11.1 Table 16.11-1 (p.175); 16.11.4 Eq. (16.11-2); A.16.11.1",
+   "quote": "Tubular joints (TJ) 12,48 3,0 for N ≤ 10^7 12,18 3,0 for N ≤ 1,8 × 10^6 16,13 5,0 for N > 10^7 16,13 5,0 for N > 1,8 × 10^6 ... The TJ and OJ curves presented in Table 16.11-1 are based on 16 mm material thickness. For material thickness above 16 mm, the following thickness effect shall be applied: S = S0 (16/t)^0,25",
+   "sourceValue": "identical; free corrosion from A.16.11.1: \"a factor of 3 on N for all resistances, without a change of slope at 1 × 10^7 cycles, is recommended\"",
+   "note": "Read in a full-text copy of the 2007 edition hosted by an industry association; the ≤ signs and exponents are restored from the text layer. Second sources: the ABS Guide for the Fatigue Assessment of Offshore Structures (June 2020) Table 4, T(A) A = 3.02×10^12 (m 3) and C = 1.35×10^16 (r 5), i.e. log 12.48 and 16.13, T(CP) 1.51×10^12 with the slope change at 1.8×10^6, reference thickness 16 mm and exponent 0.25 (https://ww2.eagle.org/content/dam/eagle/rules-and-guides/current/offshore/115_fatigueassessmentofoffshorestructures/offshore-fatigue-guide-jun20.pdf); an open-access paper tabulating tref 16 mm and exponent 0.25 for ISO 19902 (https://mdpi-res.com/d_attachment/jmse/jmse-08-00895/article_deploy/jmse-08-00895.pdf). The commentary A.16.11.4 of the same edition speaks of an exponent of 0,3; the normative equation has 0,25, which is built in. ISO 19902:2020 was not readable beyond its contents list, which keeps clauses 16.11.1 and 16.11.4. No link is given because the copy read is not an authorised distribution; check the quoted table in a licensed copy."
+  },
+  {
+   "id": "api2a-wj",
+   "what": "API RP 2A-WSD welded-joint curve WJ: log k1, slopes, environment rules, reference thickness and exponent",
+   "standard": "API RP 2A-WSD 21st ed., Errata and Supplement 3 (October 2007) Table 5.5.1-1, 5.5.2",
+   "builtIn": "air 12.48 (m 3) / 16.13 (m 5); cathodic protection 12.48 − log 2 = 12.179 on the m = 3 branch; free corrosion 12.48 − log 3 = 12.003 (single slope); tref 16 mm; exponent 0.25",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#JOINT[API-WJ]"
+   ],
+   "status": "matches",
+   "sourceTitle": "API RP 2A-WSD Recommended Practice for Planning, Designing and Constructing Fixed Offshore Platforms — Working Stress Design",
+   "sourceType": "primary standard (read in a copy that is not linked here)",
+   "url": "",
+   "edition": "21st edition, December 2000, with Errata and Supplement 3, October 2007",
+   "locator": "5.5.1 Table 5.5.1-1 Basic Design S-N Curves; 5.5.2; C5.5.1",
+   "quote": "Welded Joints (WJ) 9.95 12.48 3 for N 11.92 16.13 5 for N > 107 ... For Welded Joints in seawater with adequate cathodic protection, the m = 3 branch of the S-N curve should be reduced by a factor of 2.0 on life, with the m = 5 branch remaining unchanged and the position of the slope change adjusted accordingly. ... The WJ curve is based on 5/8-in. (16 mm) reference thickness.",
+   "sourceValue": "identical; exponent 0.25 for as-welded joints (0.20 with profile control, 0.15 ground or peened); free corrosion: \"a penalty factor of 3 on N on the air m = 3 life, extended for all endurances without a change of slope\"",
+   "note": "The API text itself was read in one place only, an unlicensed upload of the 21st edition with Supplement 3 on a document-sharing site (the less-than sign of the first branch is lost in its text layer). The numbers are the same as ISO 19902:2007 TJ and ABS T(A), both read independently (see iso19902-tj), and API's 12.179 with cathodic protection is ISO's tabulated 12.18. The 22nd edition (2014), which the modules cite, was not read: confirm before relying on it. No link is given because the copy read is not an authorised distribution; check the quoted table in a licensed copy."
+  },
+  {
+   "id": "api-iso-cast-joints",
+   "what": "Cast-joint curves API CJ and ISO CJ: log k1, slopes, reference thickness and exponent",
+   "standard": "API RP 2A-WSD 21st ed. Supplement 3 Table 5.5.1-1, 5.5.2; ISO 19902:2007 Table 16.11-1, 16.11.4",
+   "builtIn": "API-CJ 15.17 (m 4) / 17.21 (m 5); ISO-CJ 15.17 (m 4, single slope); tref 38 mm; exponent 0.15; air only",
+   "appliesTo": [
+    "engine: src/engine/fatigue/sn.js#JOINT[API-CJ]",
+    "engine: src/engine/fatigue/sn.js#JOINT[ISO-CJ]"
+   ],
+   "status": "matches",
+   "sourceTitle": "ISO 19902:2007 Petroleum and natural gas industries — Fixed steel offshore structures",
+   "sourceType": "primary standard (read in a copy that is not linked here)",
+   "url": "",
+   "edition": "First edition, 2007-12-01",
+   "locator": "16.11.1 Table 16.11-1 (p.175); 16.11.4 Eq. (16.11-3)",
+   "quote": "Cast joints (CJ) 15,17 4,0 See A.16.10.2.5 and A.16.11.3 ... The CJ curve is based on 38 mm material thickness. For material thickness above 38 mm, the following thickness effect shall be applied: S = S0 (38/t)^0,15",
+   "sourceValue": "ISO: identical. API (document-sharing copy of the 21st edition, Supplement 3): \"11.80 15.17 4 for N 13.00 17.21 5 for N > 107 Cast Joints (CJ)\" and \"The material thickness effect for castings is given by: S = So (tref /t)0.15 where the reference thickness tref is 1.5 in (38 mm).\"",
+   "note": "Second source for the first branch: ABS fatigue guide (June 2020) Table 5, cast steel curve CS A = 1.48×10^15, m = 4.0 (log 15.17), reference thickness 38 mm, exponent 0.15 (https://ww2.eagle.org/content/dam/eagle/rules-and-guides/current/offshore/115_fatigueassessmentofoffshorestructures/offshore-fatigue-guide-jun20.pdf). The second API branch (17.21, m 5) rests on the one copy of the API text. Neither standard tabulates the cast-joint curve for seawater, so the engine refuses other environments rather than assume a factor. No link is given because the copy read is not an authorised distribution; check the quoted table in a licensed copy."
   },
   {
    "id": "c203-cp-loga",

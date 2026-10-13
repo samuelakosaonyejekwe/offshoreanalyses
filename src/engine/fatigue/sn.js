@@ -14,8 +14,10 @@ function positive(v, name) {
   need(Number.isFinite(v) && v > 0, `${name} must be a positive finite number`);
 }
 
-// DNV-RP-C203 Table 2-1 (air): [m1, log a1 (N <= 1e7), log a2 (m2 = 5, N > 1e7), fatigue limit at 1e7 [MPa],
-// thickness exponent k, structural stress concentration embedded in the detail relative to curve D].
+// DNV-RP-C203 plated-structure curves in air (Table 2-1): [m1, log a1 (N <= 1e7), log a2 (m2 = 5, N > 1e7), fatigue
+// limit at 1e7 [MPa], thickness exponent k, structural stress concentration embedded in the detail relative to curve D].
+// Identical in the October 2011, June 2014, April 2016 and September 2019 (amended January 2020) editions except for
+// the exponents of C and C1, which were 0.15 until the June 2014 edition lowered them (K_C_2011 below).
 const AIR = {
   B1: [4.0, 15.117, 17.146, 106.97, 0.0, null],
   B2: [4.0, 14.885, 16.856, 93.59, 0.0, null],
@@ -31,62 +33,142 @@ const AIR = {
   W1: [3.0, 11.261, 14.101, 26.32, 0.25, 2.00],
   W2: [3.0, 11.107, 13.845, 23.39, 0.25, 2.25],
   W3: [3.0, 10.970, 13.617, 21.05, 0.25, 2.50],
-  // Tubular joints, 2016 and later editions: reference thickness 16 mm.
-  T: [3.0, 12.48, 16.13, 67.09, 0.25, 1.00],
 };
 
-// DNV-RP-C203 Table 2-2 (seawater with cathodic protection): log a1 for the upper branch (N <= 1e6, 1.8e6 for T);
-// the lower branch (m2 = 5) is the same as in air.
+// Thickness exponents of the 2011 edition in air and with cathodic protection where they differ from AIR.
+const K_C_2011 = { C: 0.15, C1: 0.15 };
+
+// Free corrosion keeps k = 0.15 for C and C1 in every edition read (2011 Table 2-3; 2014 Table 2-3; 2016 and 2019
+// Table 2-4): the June 2014 change touched the air and cathodic-protection tables only.
+const K_FREE = { C: 0.15, C1: 0.15 };
+
+// DNV-RP-C203 seawater with cathodic protection (Table 2-2): log a1 for the upper branch (N <= 1e6); the lower branch
+// (m2 = 5) is the same as in air.
 const CP_LOGA1 = {
   B1: 14.917, B2: 14.685, C: 12.192, C1: 12.049, C2: 11.901, D: 11.764, E: 11.610, F: 11.455, F1: 11.299,
-  F3: 11.146, G: 10.998, W1: 10.861, W2: 10.707, W3: 10.570, T: 12.18,
+  F3: 11.146, G: 10.998, W1: 10.861, W2: 10.707, W3: 10.570,
 };
 
-// DNV-RP-C203 Table 2-4 (free corrosion): single slope m = 3 for every curve, no fatigue limit.
+// DNV-RP-C203 free corrosion (Table 2-3 until 2014, Table 2-4 from 2016): single slope m = 3, no fatigue limit.
 const FREE_LOGA = {
   B1: 12.436, B2: 12.262, C: 12.115, C1: 11.972, C2: 11.824, D: 11.687, E: 11.533, F: 11.378, F1: 11.222,
-  F3: 11.068, G: 10.921, W1: 10.784, W2: 10.630, W3: 10.493, T: 12.03,
+  F3: 11.068, G: 10.921, W1: 10.784, W2: 10.630, W3: 10.493,
+};
+
+// DNV-RP-C203 curve T for tubular joints. Until the June 2014 edition T is a row of Tables 2-1 to 2-3 equal to curve D,
+// with reference thickness 32 mm and k = 0.25 (0.30 for SCF > 10). The April 2016 edition replaced it ("New S-N curve
+// for simple tubular joint for harmonisation with ISO 19902", Table 2-3 "S-N curves for tubular joints") by the
+// ISO 19902 TJ / API RP 2A WJ curve with reference thickness 16 mm and k = 0.25; unchanged in September 2019.
+// The two are not equivalent: at t = 32 mm the new curve stands at log a = 12.48 − 0.75 log 2 = 12.254 against 12.164.
+// [log a1, log a2, fatigue limit at 1e7 [MPa], log a1 with cathodic protection, log a free corrosion, tRef [m], k,
+//  k for SCF > 10 or null, embedded SCF relative to D or null]
+const DNV_T = {
+  2011: [12.164, 15.606, 52.63, 11.764, 11.687, 0.032, 0.25, 0.30, 1.00],
+  2016: [12.48, 16.13, 67.09, 12.18, 12.03, 0.016, 0.25, null, null],
+};
+
+// Tubular- and cast-joint curves of API RP 2A-WSD (21st ed. Supplement 3, 2007, Table 5.5.1-1 and §5.5.2) and
+// ISO 19902:2007 (Table 16.11-1 and §16.11.4), log k1 for stress in MPa. Welded/tubular joints: reference thickness
+// 16 mm, exponent 0.25; cast joints: 38 mm, 0.15. Seawater with cathodic protection: ISO tabulates 12.18 for TJ; API
+// reduces the m = 3 branch "by a factor of 2.0 on life" (log 12.48 − log 2 = 12.179) with the m = 5 branch unchanged.
+// Free corrosion: "a factor of 3 on N" on the air m = 3 curve "without a change of slope" in both (commentary).
+// ISO gives the cast-joint curve as a single m = 4 line; neither standard tabulates it for seawater.
+const JOINT = {
+  'API-WJ': { standard: 'API RP 2A-WSD', m1: 3.0, logA1: 12.48, logA2: 16.13, cp: 12.48 - Math.log10(2), tRef: 0.016, k: 0.25 },
+  'API-CJ': { standard: 'API RP 2A-WSD', m1: 4.0, logA1: 15.17, logA2: 17.21, cp: null, tRef: 0.038, k: 0.15 },
+  'ISO-TJ': { standard: 'ISO 19902', m1: 3.0, logA1: 12.48, logA2: 16.13, cp: 12.18, tRef: 0.016, k: 0.25 },
+  'ISO-CJ': { standard: 'ISO 19902', m1: 4.0, logA1: 15.17, logA2: null, cp: null, tRef: 0.038, k: 0.15 },
 };
 
 /** Names of the DNV-RP-C203 curves available from {@link snCurve}. */
-export const SN_CURVE_NAMES = Object.freeze(Object.keys(AIR));
+export const SN_CURVE_NAMES = Object.freeze([...Object.keys(AIR), 'T']);
+
+/** Names of the API RP 2A-WSD and ISO 19902 joint curves available from {@link snCurve}. */
+export const SN_JOINT_CURVE_NAMES = Object.freeze(Object.keys(JOINT));
 
 /** Environments accepted by {@link snCurve}. */
 export const SN_ENVIRONMENTS = Object.freeze(['air', 'seawater-cp', 'free-corrosion']);
 
+/** DNV-RP-C203 editions accepted by {@link snCurve}, oldest first; the last is the default. */
+export const SN_EDITIONS = Object.freeze(['2011', '2014', '2016']);
+
 /**
- * DNV-RP-C203 S–N curve record.
- * Reference: DNV-RP-C203 (2016–2021 edition family) Tables 2-1 (air), 2-2 (seawater with cathodic protection)
- * and 2-4 (free corrosion). log N = log a − m·log(Δσ·(t/tRef)^k), Δσ in MPa.
- * Validity: welded and base-material steel details with yield strength up to 960 MPa in air (550 MPa in seawater).
- * @param {string} name curve designation, one of SN_CURVE_NAMES
- * @param {string} [environment='air'] 'air' | 'seawater-cp' | 'free-corrosion'
- * @returns {{name:string, environment:string, m1:number, logA1:number, m2:(number|null), logA2:(number|null),
- *   kneeStress:number, kneeCycles:number, fatigueLimitTabulated:(number|null), k:number, tRef:number,
- *   scfRelativeToD:(number|null)}} kneeStress and fatigueLimitTabulated in Pa, tRef in m, kneeCycles in cycles;
- *   logA values refer to stress in MPa. kneeStress is the exact intersection of the two branches (the tabulated
- *   fatigue limit agrees with it to the rounding of the table).
+ * Display label of a curve name: 'DNV-RP-C203 D', 'API RP 2A-WSD WJ', 'ISO 19902 TJ'.
+ * @param {string} name one of SN_CURVE_NAMES or SN_JOINT_CURVE_NAMES
+ * @returns {string}
  */
-export function snCurve(name, environment = 'air') {
+export function snCurveLabel(name) {
+  const j = JOINT[name];
+  return j ? `${j.standard} ${name.slice(4)}` : `DNV-RP-C203 ${name}`;
+}
+
+function bilinear(base, m1, logA1, logA2, limit) {
+  const m2 = 5.0;
+  const logKnee = (logA2 - logA1) / (m2 - m1);
+  return {
+    ...base, m1, logA1, m2, logA2, kneeStress: 10 ** logKnee * MPA, kneeCycles: 10 ** (logA1 - m1 * logKnee),
+    fatigueLimitTabulated: limit === null ? null : limit * MPA,
+  };
+}
+function singleSlope(base, m1, logA1) {
+  return { ...base, m1, logA1, m2: null, logA2: null, kneeStress: 0, kneeCycles: Infinity, fatigueLimitTabulated: null };
+}
+
+/**
+ * S–N curve record of DNV-RP-C203 (B1 … W3, T), API RP 2A-WSD (API-WJ welded tubular joints, API-CJ cast joints) or
+ * ISO 19902 (ISO-TJ tubular joints, ISO-CJ cast joints). log N = log a − m·log(Δσ·(t/tRef)^k), Δσ in MPa.
+ *
+ * DNV editions (o.edition; the constants not listed are the same in all of them):
+ *   '2016' (default) April 2016 and September 2019 (amended January 2020): Table 2-1 air, 2-2 cathodic protection,
+ *          2-3 tubular joints, 2-4 free corrosion. k = 0.05 / 0.10 / 0.15 for C / C1 / C2; T = 12.48 / 16.13,
+ *          fatigue limit 67.09 MPa, 12.18 with cathodic protection (slope change at 1.8e6 cycles), 12.03 free
+ *          corrosion, tRef 16 mm, k 0.25. The 2019 text limits the 16 mm to simple tubular joints assessed with the
+ *          T curve (25 mm when another curve is used for a tubular joint).
+ *   '2014' June 2014 (DNVGL-RP-0005): C / C1 / C2 exponents as 2016; T as 2011.
+ *   '2011' October 2011 (also April 2010, October 2012): k = 0.15 for C, C1 and C2; T equal to D (12.164 / 15.606,
+ *          52.63 MPa; 11.764; 11.687) with tRef 32 mm and k = 0.25 for SCF <= 10, 0.30 above (kScfAbove10).
+ * The September 2021 amendment and the October 2024 edition have not been read; the 2024 edition is reported to
+ * revise the B1–C2 curves, so '2016' must not be taken as the 2024 values.
+ * Free corrosion keeps k = 0.15 for C, C1 and C2 in every edition.
+ * API RP 2A-WSD 21st ed. Supplement 3 (2007) Table 5.5.1-1, §5.5.2; ISO 19902:2007 Table 16.11-1, §16.11.4 (the
+ * 22nd edition of API and ISO 19902:2020 have not been read). The API exponent 0.25 is for as-welded joints (0.20
+ * with profile control, 0.15 ground or peened: pass `k` to {@link snConstants}).
+ * Validity: welded and base-material steel details with yield strength up to 960 MPa in air (550 MPa in seawater).
+ * @param {string} name curve designation, one of SN_CURVE_NAMES or SN_JOINT_CURVE_NAMES
+ * @param {string} [environment='air'] 'air' | 'seawater-cp' | 'free-corrosion'
+ * @param {object} [o]
+ * @param {string} [o.edition='2016'] DNV-RP-C203 edition, one of SN_EDITIONS (ignored by the API and ISO curves)
+ * @returns {{name:string, standard:string, edition:(string|null), environment:string, m1:number, logA1:number,
+ *   m2:(number|null), logA2:(number|null), kneeStress:number, kneeCycles:number, fatigueLimitTabulated:(number|null),
+ *   k:number, kScfAbove10:(number|null), tRef:number, scfRelativeToD:(number|null)}} kneeStress and
+ *   fatigueLimitTabulated in Pa, tRef in m, kneeCycles in cycles; logA values refer to stress in MPa. kneeStress is
+ *   the exact intersection of the two branches (the tabulated fatigue limit agrees with it to the rounding of the
+ *   table). kScfAbove10 replaces k when the stress concentration factor passed to {@link snConstants} exceeds 10.
+ */
+export function snCurve(name, environment = 'air', { edition = '2016' } = {}) {
+  need(SN_ENVIRONMENTS.includes(environment), `environment: unknown environment "${environment}"`);
+  const joint = JOINT[name];
+  if (joint) {
+    const base = { name, standard: joint.standard, edition: null, environment, k: joint.k, kScfAbove10: null, tRef: joint.tRef, scfRelativeToD: null };
+    if (environment === 'air') return joint.logA2 === null ? singleSlope(base, joint.m1, joint.logA1) : bilinear(base, joint.m1, joint.logA1, joint.logA2, null);
+    need(joint.cp !== null, `environment: ${joint.standard} gives the cast-joint curve ${name} for air only`);
+    if (environment === 'free-corrosion') return singleSlope(base, joint.m1, joint.logA1 - Math.log10(3));
+    return bilinear(base, joint.m1, joint.cp, joint.logA2, null);
+  }
+  need(SN_EDITIONS.includes(edition), `edition: unknown DNV-RP-C203 edition "${edition}"`);
+  if (name === 'T') {
+    const [logA1, logA2, limit, cp, free, tRef, k, kHigh, scf] = DNV_T[edition === '2016' ? 2016 : 2011];
+    const base = { name, standard: 'DNV-RP-C203', edition, environment, k, kScfAbove10: kHigh, tRef, scfRelativeToD: scf };
+    if (environment === 'free-corrosion') return singleSlope(base, 3.0, free);
+    return bilinear(base, 3.0, environment === 'air' ? logA1 : cp, logA2, environment === 'air' ? limit : null);
+  }
   const row = AIR[name];
   need(row !== undefined, `name: unknown S-N curve "${name}"`);
-  need(SN_ENVIRONMENTS.includes(environment), `environment: unknown environment "${environment}"`);
-  const [m1Air, logA1Air, logA2, limit, k, scf] = row;
-  const tRef = name === 'T' ? 0.016 : 0.025;
-  if (environment === 'free-corrosion') {
-    return {
-      name, environment, m1: 3.0, logA1: FREE_LOGA[name], m2: null, logA2: null, kneeStress: 0,
-      kneeCycles: Infinity, fatigueLimitTabulated: null, k, tRef, scfRelativeToD: scf,
-    };
-  }
-  const logA1 = environment === 'air' ? logA1Air : CP_LOGA1[name];
-  const m2 = 5.0;
-  const logKnee = (logA2 - logA1) / (m2 - m1Air);
-  return {
-    name, environment, m1: m1Air, logA1, m2, logA2, kneeStress: 10 ** logKnee * MPA,
-    kneeCycles: 10 ** (logA1 - m1Air * logKnee), fatigueLimitTabulated: environment === 'air' ? limit * MPA : null,
-    k, tRef, scfRelativeToD: scf,
-  };
+  const [m1, logA1, logA2, limit, kAir, scf] = row;
+  const kOld = edition === '2011' ? K_C_2011[name] : undefined;
+  const base = { name, standard: 'DNV-RP-C203', edition, environment, k: kOld === undefined ? kAir : kOld, kScfAbove10: null, tRef: 0.025, scfRelativeToD: scf };
+  if (environment === 'free-corrosion') return singleSlope({ ...base, k: K_FREE[name] === undefined ? kAir : K_FREE[name] }, 3.0, FREE_LOGA[name]);
+  return bilinear(base, m1, environment === 'air' ? logA1 : CP_LOGA1[name], logA2, environment === 'air' ? limit : null);
 }
 
 /**
@@ -122,7 +204,7 @@ export function snCurveFromDetailCategory({ category, m1 = 3, m2 = 5, kneeCycles
 
 /**
  * Thickness correction factor on stress, (t/tRef)^k for t > tRef, 1 otherwise.
- * Reference: DNV-RP-C203 §2.4.3.
+ * Reference: DNV-RP-C203 §2.4.3; API RP 2A-WSD §5.5.2; ISO 19902 §16.11.4.
  * @param {number} thickness plate (or brace wall) thickness [m]
  * @param {number} tRef reference thickness [m]
  * @param {number} k thickness exponent [-]
@@ -171,7 +253,8 @@ export function stressRatio(stressMax, stressMin) {
 function stressModifier(curve, { thickness, scf = 1, meanStressFactor: fm = 1, k } = {}) {
   positive(scf, 'scf');
   need(fm > 0 && fm <= 1, 'meanStressFactor must be in (0, 1]');
-  const kk = k === undefined ? curve.k : k;
+  // DNV-RP-C203 up to the 2014 edition: a larger exponent for tubular joints with SCF > 10
+  const kk = k !== undefined ? k : curve.kScfAbove10 != null && scf > 10 ? curve.kScfAbove10 : curve.k;
   const tf = thickness === undefined ? 1 : thicknessFactor(thickness, curve.tRef, kk);
   return scf * fm * tf;
 }
@@ -185,7 +268,7 @@ function stressModifier(curve, { thickness, scf = 1, meanStressFactor: fm = 1, k
  * @param {number} [o.thickness] thickness for the size correction [m]; omitted = no correction
  * @param {number} [o.scf=1] stress concentration factor applied to the nominal range [-]
  * @param {number} [o.meanStressFactor=1] reduction factor on the range, see {@link meanStressFactor} [-]
- * @param {number} [o.k] override of the thickness exponent [-]
+ * @param {number} [o.k] override of the thickness exponent [-] (default: the curve's k, or its kScfAbove10 when scf > 10)
  * @returns {{m1:number, a1:number, m2:(number|null), a2:(number|null), sKnee:number}} a in Pa^m·cycles, sKnee in Pa
  *   (0 for single-slope curves)
  */

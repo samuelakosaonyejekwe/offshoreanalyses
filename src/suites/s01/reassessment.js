@@ -31,7 +31,7 @@ export default {
     { key: 'removed', label: 'Damaged or missing members', type: 'text', default: '', group: 'Condition assessment (initial condition)', role: 'ic', help: 'Comma-separated member numbers recorded as severed, flooded-and-cracked or removed.' },
     { key: 'fatLife', label: 'Calculated fatigue life of the governing joint', unit: 'years', type: 'number', default: 100, min: 1, max: 1e6, group: 'Fatigue and cracks', role: 'ic', help: 'Life from new without design fatigue factor, from the fatigue module (the bus value is the design life, already divided by the factor it was computed with).' },
     { key: 'dff', label: 'Design fatigue factor for the extension', unit: '-', type: 'number', default: 2, min: 1, max: 10, group: 'Fatigue and cracks', role: 'criteria', help: `A lower factor than in design can be justified by a completed inspection of the joint (ISO 19902 §16.12 / NORSOK N-006). ${CONFIRM}` },
-    { key: 'history', label: 'Measured hot-spot stress history (optional)', type: 'series', default: { x: [], y: [] }, xLabel: 'Time', xUnit: 's', yLabel: 'Hot-spot stress', yUnit: 'MPa', group: 'Fatigue and cracks', role: 'ic', help: 'Strain-gauge record from structural monitoring. When given, it is rainflow counted and extrapolated to a year to replace the calculated fatigue life.' },
+    { key: 'history', label: 'Measured hot-spot stress history (optional)', type: 'series', default: { x: [], y: [] }, xLabel: 'Time', xUnit: 's', yLabel: 'Hot-spot stress', yUnit: 'MPa', group: 'Fatigue and cracks', role: 'ic', help: 'Strain-gauge record from structural monitoring. When given, it is rainflow counted against the ISO 19902 tubular-joint curve TJ in seawater with cathodic protection (the same constants as DNV-RP-C203 T from the 2016 edition) and extrapolated to a year to replace the calculated fatigue life.' },
     { key: 'crackA', label: 'Depth of the crack found (0 = none)', unit: 'mm', type: 'number', default: 1.5, min: 0, max: 100, group: 'Fatigue and cracks', role: 'ic', help: 'Sized by eddy current or ACFM at the weld toe of the governing joint.' },
     { key: 'crackL', label: 'Surface length of the crack', unit: 'mm', type: 'number', default: 15, min: 0, max: 2000, group: 'Fatigue and cracks', role: 'ic' },
     { key: 'tCrack', label: 'Wall thickness at the crack', unit: 'mm', type: 'number', default: 55, min: 5, max: 200, group: 'Fatigue and cracks', role: 'geometry' },
@@ -70,7 +70,7 @@ export default {
     const hx = inp.history?.x || [], hy = (inp.history?.y || []).map((v) => Number(v) * 1e6);
     if (hx.length >= 20) {
       const dur = Number(hx[hx.length - 1]) - Number(hx[0]); need(dur > 0, 'The stress history needs increasing times.');
-      const cyc = rainflowFourPoint(hy, { residue: 'repeat' }).cycles, dM = minerSumCycles(cyc, snConstants(snCurve('T', 'seawater-cp'), { thickness: inp.tCrack / 1e3 })), dYear = dM * 31557600 / dur;
+      const cyc = rainflowFourPoint(hy, { residue: 'repeat' }).cycles, dM = minerSumCycles(cyc, snConstants(snCurve('ISO-TJ', 'seawater-cp'), { thickness: inp.tCrack / 1e3 })), dYear = dM * 31557600 / dur;
       if (dYear > 0) { Lf = Math.min(1 / dYear, 1e6); measNote = `Measured history: ${cyc.length} rainflow cycles in ${fmt(dur / 3600)} h give ${dYear.toExponential(2)} damage per year, a life of ${fmt(Lf)} years against ${fmt(inp.fatLife)} calculated.`; }
     }
     const lifeFat = Math.max(Math.min(Lf / inp.dff - inp.age, 999), 0), dNow = inp.age / Lf, dEnd = horizon / Lf;

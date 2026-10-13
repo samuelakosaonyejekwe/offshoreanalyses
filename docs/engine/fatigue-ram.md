@@ -9,14 +9,17 @@ S–N constants travel between modules in the neutral form `{ m1, a1, m2, a2, sK
 
 | Export | Computes | Units (arguments → result) | Reference |
 | --- | --- | --- | --- |
-| `SN_CURVE_NAMES` | Names of the DNV-RP-C203 curves available from `snCurve`. | — | — |
+| `SN_CURVE_NAMES` | Names of the DNV-RP-C203 curves available from `snCurve`: B1 … W3 and T. | — | — |
+| `SN_JOINT_CURVE_NAMES` | Names of the API RP 2A-WSD and ISO 19902 joint curves available from `snCurve`: API-WJ, API-CJ, ISO-TJ, ISO-CJ. | — | — |
+| `SN_EDITIONS` | DNV-RP-C203 editions accepted by `snCurve`: '2011', '2014', '2016' (the last is the default). | — | — |
+| `snCurveLabel(name)` | Display label of a curve name: 'DNV-RP-C203 D', 'API RP 2A-WSD WJ', 'ISO 19902 TJ'. | → string | — |
 | `SN_ENVIRONMENTS` | Environments accepted by `snCurve`. | — | — |
-| `snCurve(name, environment = 'air')` | DNV-RP-C203 S–N curve record. | → kneeStress and fatigueLimitTabulated in Pa, tRef in m, kneeCycles in cycles; logA values refer to stress in MPa. kneeStress is the exact intersection of the two branches (the tabulated fatigue limit agrees with it to the rounding of the table). | DNV-RP-C203 (2016–2021 edition family) Tables 2-1 (air), 2-2 (seawater with cathodic protection) and 2-4 (free corrosion). log N = log a − m·log(Δσ·(t/tRef)^k), Δσ in MPa. |
+| `snCurve(name, environment = 'air', { edition = '2016' } = {})` | S–N curve record of DNV-RP-C203 (B1 … W3, T), API RP 2A-WSD (API-WJ, API-CJ) or ISO 19902 (ISO-TJ, ISO-CJ). Fields: name, standard, edition (null for API and ISO), environment, m1, logA1, m2, logA2, kneeStress, kneeCycles, fatigueLimitTabulated, k, kScfAbove10, tRef, scfRelativeToD. | → kneeStress and fatigueLimitTabulated in Pa, tRef in m, kneeCycles in cycles; logA values refer to stress in MPa. kneeStress is the exact intersection of the two branches (the tabulated fatigue limit agrees with it to the rounding of the table). kScfAbove10 replaces k when the SCF passed to `snConstants` exceeds 10. | See "Curve provenance" below. log N = log a − m·log(Δσ·(t/tRef)^k), Δσ in MPa. |
 | `snCurveFromDetailCategory({ category, m1 = 3, m2 = 5, kneeCycles = 1e7, k = 0, tRef = 0.025, name = 'custom' })` | Build a bilinear S–N curve from a detail category (stress range at 2·10⁶ cycles), the relationship used by DNV-RP-C203 (the curve letter corresponds to the stress range at 2e6 cycles), EN 1993-1-9 and the IIW FAT classes. | category [Pa], m1 [-], m2 [-], kneeCycles [cycles], k [-], tRef [m] → curve record with the same fields as `snCurve` | — |
-| `thicknessFactor(thickness, tRef, k)` | Thickness correction factor on stress, (t/tRef)^k for t > tRef, 1 otherwise. | thickness [m], tRef [m], k [-] → factor on stress range [-], >= 1 | DNV-RP-C203 §2.4.3. |
+| `thicknessFactor(thickness, tRef, k)` | Thickness correction factor on stress, (t/tRef)^k for t > tRef, 1 otherwise. | thickness [m], tRef [m], k [-] → factor on stress range [-], >= 1 | DNV-RP-C203 §2.4.3; API RP 2A-WSD §5.5.2; ISO 19902 §16.11.4. |
 | `meanStressFactor({ stressMax, stressMin, detail = 'base' })` | Mean-stress reduction factor on the stress range for details without significant residual stress. | stressMax [Pa], stressMin [Pa] → reduction factor on stress range [-], between c and 1 | DNV-RP-C203 §2.5. Not applicable to as-welded details (use 1.0). |
 | `stressRatio(stressMax, stressMin)` | Stress ratio R = σmin/σmax of a cycle. | stressMax [Pa], stressMin [Pa] → R [-] | — |
-| `snConstants(curve, o = {})` | S–N constants expressed for the nominal stress range in Pa, with stress concentration, mean-stress factor and thickness correction folded in. | thickness [m], scf [-], meanStressFactor [-], k [-] → a in Pa^m·cycles, sKnee in Pa (0 for single-slope curves) | — |
+| `snConstants(curve, o = {})` | S–N constants expressed for the nominal stress range in Pa, with stress concentration, mean-stress factor and thickness correction folded in. The exponent is `o.k` when given, else the curve's kScfAbove10 for scf > 10 (DNV T curve before 2016), else its k. | thickness [m], scf [-], meanStressFactor [-], k [-] → a in Pa^m·cycles, sKnee in Pa (0 for single-slope curves) | — |
 | `cyclesFromConstants(sn, stressRange)` | Cycles to failure from constants in the neutral form of `snConstants`. | stressRange [Pa] → cycles to failure; Infinity for a zero range | — |
 | `cyclesToFailure({ curve, stressRange, thickness, scf, meanStressFactor: fm, k })` | Characteristic (mean minus two standard deviations) cycles to failure N(Δσ). | stressRange [Pa], thickness [m], scf [-], meanStressFactor [-], k [-] → cycles to failure [cycles] | DNV-RP-C203 Eq. (2.4.1) and (2.4.3). |
 | `stressRangeAtCycles({ curve, cycles, thickness, scf, meanStressFactor: fm, k })` | Stress range that gives a stated number of cycles to failure (inverse of `cyclesToFailure`). | cycles [cycles], thickness [m], scf [-], meanStressFactor [-], k [-] → nominal stress range [Pa] | — |
@@ -31,6 +34,36 @@ S–N constants travel between modules in the neutral form `{ m1, a1, m2, a2, sK
 | `mooringCyclesDnv({ type, tensionRange, diameter, corrosionAllowance = 0 })` | Cycles to failure of a mooring component by the DNV-OS-E301 nominal-stress convention. | tensionRange [N], diameter [m], corrosionAllowance [m] → cycles to failure [cycles] and nominal stress range [Pa] | — |
 | `mooringSnConstants(type)` | Neutral S–N constants (stress in Pa) for a DNV-OS-E301 mooring curve, for use with the damage/spectral engines. | → {m1:number, a1:number, m2:null, a2:null, sKnee:number} | — |
 | `chainBreakingLoad({ diameter, grade = 'R3', coefficient })` | Catalogue break load of offshore mooring chain, BL = c·d²·(44 − 0.08·d) with d in mm and BL in kN. | diameter [m], coefficient [kN/mm² scale as in the formula] → minimum breaking load [N] | IACS UR W22 / DNV-OS-E302 break-load formula; grade coefficients c: ORQ 0.0211, R3 0.0223, R3S 0.0249, R4 0.0274, R4S 0.0304, R5 0.0320. Pass `coefficient` to override. |
+
+
+### Curve provenance
+
+Every curve carries the constants of the standard and edition it is named after; quotes and links are in
+`src/library/factor-evidence.json` (entries `c203-*`, `iso19902-tj`, `api2a-wj`, `api-iso-cast-joints`).
+
+| curve | edition | air: log a1 / log a2 (limit) | cathodic protection | free corrosion | tRef | k |
+| --- | --- | --- | --- | --- | --- | --- |
+| DNV B1 … W3 | all read (2011, 2014, 2016, 2019) | Table 2-1 | Table 2-2, slope change at 1e6 | Table 2-3 (to 2014) / 2-4 (from 2016), m = 3 | 25 mm | B1, B2 0; D, E 0.20; F … W3 0.25 |
+| DNV C, C1, C2 | '2016' (default), '2014' | Table 2-1 | Table 2-2 | as above | 25 mm | 0.05 / 0.10 / 0.15; free corrosion 0.15 / 0.15 / 0.15 |
+| DNV C, C1, C2 | '2011' | Table 2-1 | Table 2-2 | as above | 25 mm | 0.15 / 0.15 / 0.15 |
+| DNV T | '2016' (default): April 2016, September 2019 | 12.48 / 16.13 (67.09 MPa) | 12.18 / 16.13, slope change at 1.8e6 | 12.03, m = 3 | 16 mm | 0.25 |
+| DNV T | '2011', '2014': to June 2014 | 12.164 / 15.606 (52.63 MPa), equal to D | 11.764 / 15.606 | 11.687, m = 3 | 32 mm | 0.25; 0.30 for SCF > 10 |
+| API-WJ | RP 2A-WSD 21st ed. Supplement 3 (2007) | 12.48 / 16.13 | factor 2 on the m = 3 life: 12.179 / 16.13 | factor 3 on N, m = 3: 12.003 | 16 mm | 0.25 as-welded (0.20 profile control, 0.15 ground or peened: pass `k`) |
+| ISO-TJ | ISO 19902:2007 | 12.48 / 16.13 | 12.18 / 16.13 | factor 3 on N, m = 3: 12.003 | 16 mm | 0.25 |
+| API-CJ | RP 2A-WSD 21st ed. Supplement 3 | 15.17 (m = 4) / 17.21 (m = 5) | not tabulated: RangeError | not tabulated: RangeError | 38 mm | 0.15 |
+| ISO-CJ | ISO 19902:2007 | 15.17 (m = 4), single slope | not tabulated: RangeError | not tabulated: RangeError | 38 mm | 0.15 |
+
+- The April 2016 edition of DNV-RP-C203 replaced its T curve by the ISO 19902 / API tubular-joint curve ("New S-N curve
+  for simple tubular joint for harmonisation with ISO 19902"). In air and with cathodic protection DNV T ('2016'),
+  ISO-TJ and API-WJ are therefore the same curve; they differ in free corrosion (DNV 12.03, ISO and API 12.003).
+- The two DNV T curves are not equivalent: the 2016 curve gives 10^0.316 = 2.07 times the life of the 2011 curve at
+  16 mm and 2.07/2^0.75 = 1.23 times at 32 mm and above.
+- The 2019 edition limits the 16 mm reference thickness to simple tubular joints assessed with the T curve; a tubular
+  joint assessed with another curve keeps 25 mm (which is what those curves return).
+- Not read, so not built in: the September 2021 amendment and the October 2024 edition of DNV-RP-C203 (the 2024
+  edition is reported to revise the B1–C2 curves), API RP 2A-WSD 22nd edition, ISO 19902:2020. The edition option
+  exists so that a later table can be added beside the confirmed ones rather than over them.
+- The ISO 19902 curves for other joints (OJ: B, C, D, E, F, F2, G, W1) are not included.
 
 ## fatigue/rainflow.js — Cycle counting
 
