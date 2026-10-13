@@ -49,6 +49,8 @@ export const SOURCES = [
   { id: 'climate', name: 'Open-Meteo Climate', provider: 'Open-Meteo (CMIP6 HighResMIP)', home: 'https://open-meteo.com/en/docs/climate-api', gives: 'Downscaled climate-model projections to 2050 for wind, temperature and radiation', ttl: 30 * DAY, licence: 'CC BY 4.0', suites: [7, 16, 17] },
   { id: 'bathy', name: 'NOAA NCEI global DEM mosaic', provider: 'NOAA National Centers for Environmental Information', home: 'https://www.ncei.noaa.gov/maps/bathymetry/', gives: 'Seabed elevation / water depth anywhere (best available of ETOPO, GEBCO-class and regional surveys), point and grid sampling', ttl: 90 * DAY, licence: 'Public domain', suites: [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] },
   { id: 'emodnet', name: 'EMODnet Bathymetry', provider: 'European Marine Observation and Data Network', home: 'https://emodnet.ec.europa.eu/en/bathymetry', gives: 'High-resolution depth for European seas', ttl: 90 * DAY, licence: 'CC BY 4.0', suites: [3, 7, 8, 13, 16] },
+  { id: 'substrate', name: 'EMODnet Geology seabed substrate', provider: 'European Marine Observation and Data Network (geological surveys of Europe)', home: 'https://emodnet.ec.europa.eu/en/geology', gives: 'Mapped seabed sediment class (Folk) for European seas — screening of seabed type and grain size', ttl: 180 * DAY, licence: 'CC BY 4.0', suites: [4, 5, 7, 8, 12, 15] },
+  { id: 'seabedsamples', name: 'NOAA NOS seabed samples', provider: 'NOAA National Centers for Environmental Information', home: 'https://www.ncei.noaa.gov/maps/bathymetry/', gives: 'About 240,000 described bottom samples from hydrographic surveys (United States waters) — screening of seabed type', ttl: 180 * DAY, licence: 'Public domain', suites: [4, 5, 7, 8, 12, 15] },
   { id: 'elevation', name: 'Open-Meteo Elevation', provider: 'Open-Meteo (Copernicus GLO-90 DEM)', home: 'https://open-meteo.com/en/docs/elevation-api', gives: 'Land elevation for landfalls, quays and coastal works', ttl: 365 * DAY, licence: 'CC BY 4.0', suites: [5, 6, 7, 13] },
   { id: 'quakes', name: 'USGS Earthquake Catalog', provider: 'U.S. Geological Survey', home: 'https://earthquake.usgs.gov/fdsnws/event/1/', gives: 'Global earthquake catalogue (real time) for seismicity screening', ttl: 6 * HOUR, licence: 'Public domain', suites: [1, 2, 3, 5, 6, 7] },
   { id: 'tidegauge', name: 'NOAA CO-OPS tide gauges', provider: 'NOAA Center for Operational Oceanographic Products and Services', home: 'https://tidesandcurrents.noaa.gov', gives: 'Measured hourly water levels at about 300 gauges (United States coasts and territories) — used to check the modelled sea level against field measurements', ttl: 6 * HOUR, licence: 'Public domain', suites: [5, 6, 7, 15] },
@@ -164,6 +166,34 @@ export async function bathyGrid(lat, lon, { halfKm = 10, n = 25, force } = {}) {
 
 export const emodnetDepth = (lat, lon, o) => cached(`emodnet:${r4(lat)},${r4(lon)}`, 90 * DAY, () =>
   getJson(`https://rest.emodnet-bathymetry.eu/depth_sample?geom=${encodeURIComponent(`POINT(${lon} ${lat})`)}`), o);
+
+// ---- seabed sediment -------------------------------------------------------------------------------------------
+// Two open sources with usable point queries: the EMODnet Geology substrate map (European seas, polygons classed
+// on the Folk scheme) and the bottom samples described during NOAA hydrographic surveys (United States waters).
+// Both describe the seabed SURFACE only.
+const SUBSTRATE = 'https://drive.emodnet-geology.eu/geoserver/gtk/wms';
+export const seabedSubstrate = (lat, lon, o) => cached(`substrate:${r4(lat)},${r4(lon)}`, 180 * DAY, async () => {
+  const e = 0.0005; // about 50 m: a wider box makes the server return neighbouring polygons too
+  for (const layer of ['seabed_substrate_250k', 'seabed_substrate_1m']) {
+    const j = await getJson(`${SUBSTRATE}?${q({ service: 'WMS', version: '1.1.1', request: 'GetFeatureInfo', layers: `gtk:${layer}`, query_layers: `gtk:${layer}`, info_format: 'application/json', srs: 'EPSG:4326',
+      bbox: `${lon - e},${lat - e},${lon + e},${lat + e}`, width: 3, height: 3, x: 1, y: 1, feature_count: 1 })}`, { timeout: 45000 });
+    const p = j.features?.[0]?.properties;
+    if (!p) continue;
+    const txt = [p.folk_16cl_txt, p.folk_7cl_txt, p.folk_5cl_txt].map((t) => String(t || '').replace(/^\d+\.\s*/, '')).find((t) => t && !/no data/i.test(t));
+    if (!txt) continue;
+    return { text: txt, original: String(p.original_substrate || '').trim(), scale: p.scale, holder: String(p.data_holder || '').trim(), country: String(p.country || '').trim(), comments: String(p.comments || '').trim() };
+  }
+  return null;
+}, o);
+
+const NOS_SEABED = 'https://gis.ngdc.noaa.gov/arcgis/rest/services/web_mercator/nos_seabed_dynamic/MapServer/0/query';
+export const seabedSamples = (lat, lon, { halfDeg = 0.25, force } = {}) => cached(`seabedsamples:${r4(lat)},${r4(lon)}:${halfDeg}`, 180 * DAY, async () => {
+  const j = await getJson(`${NOS_SEABED}?${q({ geometry: `${lon - halfDeg},${lat - halfDeg},${lon + halfDeg},${lat + halfDeg}`, geometryType: 'esriGeometryEnvelope', inSR: 4326, spatialRel: 'esriSpatialRelIntersects',
+    outFields: 'SURVEY,LAT,LON,BEGIN_OBSTIM,DESCRP,NATSUR,NATQUA', returnGeometry: false, resultRecordCount: 1000, f: 'json' })}`, { timeout: 45000 });
+  if (j.error) throw new Error(j.error.message || 'seabed sample service error');
+  return (j.features || []).map((f) => f.attributes).filter((a) => Number.isFinite(a.LAT) && Number.isFinite(a.LON) && (a.DESCRP || a.NATSUR))
+    .map((a) => ({ lat: a.LAT, lon: a.LON, survey: a.SURVEY, year: a.BEGIN_OBSTIM ? new Date(a.BEGIN_OBSTIM).getUTCFullYear() : null, text: String(a.DESCRP || a.NATSUR), qualifier: a.NATQUA || '' }));
+}, { force });
 
 export const landElevation = (lat, lon, o) => cached(`elevation:${r4(lat)},${r4(lon)}`, 365 * DAY, () =>
   getJson(`https://api.open-meteo.com/v1/elevation?${q({ latitude: lat, longitude: lon })}`), o);
@@ -317,7 +347,7 @@ export const glossary = (term) => cached(`wiki:${term.toLowerCase()}`, 30 * DAY,
 /** Probe every source once so the Live data page can show which are reachable right now. */
 export async function health() {
   const probes = {
-    marine: () => marineNow(57, 2, { force: true }), bathy: () => depthAt(57, 2, { force: true }), quakes: () => earthquakes(36, 140, { radiusKm: 100, minMag: 6, force: true }),
+    marine: () => marineNow(57, 2, { force: true }), bathy: () => depthAt(57, 2, { force: true }), quakes: () => earthquakes(36, 140, { radiusKm: 100, minMag: 6, force: true }), substrate: () => seabedSubstrate(54, 3, { force: true }), seabedsamples: () => seabedSamples(31.8, -80.65, { halfDeg: 0.1, force: true }),
     fx: () => fxRates('USD', { force: true }), worldbank: () => worldBank('GB', WB_INDICATORS.inflation, { force: true }), commodities: () => commodity('brent', { force: true }),
     literature: () => literature('offshore structure', { n: 1, force: true }), forecast: () => weatherForecast(57, 2, { force: true }), carbon: () => gridCarbon({ force: true }),
     turbines: () => turbineList({ force: true }), treasury: () => treasuryRates({ force: true }), power: () => solarClimatology(4, 6, { force: true }),

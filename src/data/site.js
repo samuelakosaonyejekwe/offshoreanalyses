@@ -79,6 +79,55 @@ function seismicScreen(fc, lat, lon) {
 }
 
 /**
+ * Seabed-surface classes with a representative median grain size (Wentworth scale mid-points) and what each
+ * usually means for foundations, scour and burial. Grain size is a property of the class; strength is not —
+ * no strength is ever derived from a surface description.
+ */
+export const SEABED_CLASSES = {
+  rock: { label: 'Rock or boulders', d50: null, means: 'Driven piles may refuse and trenching is slow: expect drilled or rock-socketed foundations and surface-laid, protected cables or pipelines.' },
+  gravel: { label: 'Gravel or coarse-grained sediment', d50: 8e-3, means: 'Free-draining and resistant to scour; hard on ploughs and jetting tools, and suction installation may not seal.' },
+  mixed: { label: 'Mixed sediment', d50: 1e-3, means: 'Variable over short distances: expect both granular and cohesive behaviour and plan the site investigation to map the boundaries.' },
+  sand: { label: 'Sand', d50: 2.5e-4, means: 'Drained behaviour and good bearing, but mobile under waves and current: scour protection and burial depth need attention.' },
+  muddySand: { label: 'Muddy sand', d50: 1.2e-4, means: 'Mostly granular with fines: partly drained response, moderate scour potential.' },
+  sandyMud: { label: 'Sandy mud', d50: 4e-5, means: 'Mostly cohesive: undrained strength governs and consolidation settlement should be expected.' },
+  mud: { label: 'Mud (silt and clay)', d50: 1.5e-5, means: 'Soft cohesive seabed: low bearing capacity near the surface, large embedment of pipelines and mudmats, favourable for suction and drag anchors.' },
+  biogenic: { label: 'Shell, coral or other biogenic material', d50: 2e-3, means: 'Carbonate material crushes under load: pile shaft friction can be far below that of silica sand, and coral is usually an environmental constraint.' },
+};
+const SEABED_WORDS = [
+  ['rock', /\b(rock|rk|r|rky|boulders?|blds?|bo|bedrock|ledge|lava|hard)\b/], ['biogenic', /\b(coral|co|crl|shells?|sh|oysters?|oys|maerl|sponge|weed|grass|kelp)\b/],
+  ['gravel', /\b(gravel|gravelly|g|grv|pebbles?|p|cobbles?|cb|stones?|st|shingle|coarse-grained)\b/], ['mixed', /\bmixed\b/],
+  ['sand', /\b(sand|sandy|sd|s)\b/], ['mud', /\b(mud|muddy|md|m|clay|cy|cl|silt|si|ooze|oz|marl|mrl)\b/],
+];
+/** Class of one seabed description: a Folk class name ("muddy Sand"), chart abbreviations ("SD,BRN,CRS") or plain words. */
+export function classifySeabed(text) {
+  const t = String(text || '').toLowerCase().replace(/[;/]/g, ',').trim();
+  if (!t || /no data|unknown/.test(t)) return null;
+  // Folk names: the noun (last word) is the main fraction, an adjective before it the secondary one
+  if (/\bmud to muddy sand\b/.test(t)) return 'sandyMud';
+  if (/\b(sandy|gravelly sandy) mud\b/.test(t)) return 'sandyMud';
+  if (/\b(muddy|gravelly muddy) sand\b/.test(t)) return 'muddySand';
+  if (/\b(sandy|muddy sandy|muddy) gravel\b/.test(t)) return 'gravel';
+  if (/\bgravelly sand\b/.test(t)) return 'sand';
+  if (/\bgravelly mud\b/.test(t)) return 'sandyMud';
+  // otherwise the first recognised term of the description is the main constituent (chart convention)
+  for (const part of t.split(',').map((x) => x.trim()).filter(Boolean)) {
+    for (const [k, re] of SEABED_WORDS) if (re.test(part)) return k;
+  }
+  return null;
+}
+/** Reduce nearby described samples to a class: the commonest class among the nearest few, with distances. */
+export function reduceSeabedSamples(samples, lat, lon, { maxKm = 15, take = 7 } = {}) {
+  const R = Math.PI / 180;
+  const near = samples.map((sm) => ({ ...sm, cls: classifySeabed(sm.text), km: 6371 * Math.hypot((sm.lon - lon) * R * Math.cos(lat * R), (sm.lat - lat) * R) }))
+    .filter((sm) => sm.cls && sm.km <= maxKm).sort((a, b) => a.km - b.km).slice(0, take);
+  if (!near.length) return null;
+  const votes = {};
+  for (const sm of near) votes[sm.cls] = (votes[sm.cls] || 0) + 1 / (1 + sm.km);
+  const cls = Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0];
+  return { cls, n: near.length, nearestKm: near[0].km, farthestKm: near[near.length - 1].km, agree: near.filter((sm) => sm.cls === cls).length, years: [Math.min(...near.map((sm) => sm.year || 9999)), Math.max(...near.map((sm) => sm.year || 0))], samples: near };
+}
+
+/**
  * Pull and reduce everything for the project site. Every step is independent: one source failing leaves the
  * rest intact and is listed in `issues`.
  */
@@ -179,6 +228,25 @@ export async function pullSite(lat, lon, { years = 20, onProgress, force = false
     bus['site.pga475'] = s.pga475 * 9.80665;
     data.provenance.seismic = { source: 'USGS earthquake catalogue, M ≥ 4.5 within 300 km since 1970', at: r.at, method: s.note };
   });
+  if (bus['site.depth'] != null) await step('Seabed sediment', 0.9, async () => {
+    // mapped substrate where a geological survey has published one (European seas), otherwise described samples
+    const got = await Promise.allSettled([C.seabedSubstrate(lat, lon, { force }), C.seabedSamples(lat, lon, { force })]);
+    const map = got[0].status === 'fulfilled' ? got[0].value.data : null;
+    const red = got[1].status === 'fulfilled' ? reduceSeabedSamples(got[1].value.data, lat, lon) : null;
+    const mapCls = map && classifySeabed(map.original && classifySeabed(map.original) ? map.original : map.text);
+    if (mapCls) {
+      data.seabed = { cls: mapCls, ...SEABED_CLASSES[mapCls], basis: 'map', described: map.original || map.text, scale: map.scale, holder: [map.holder, map.country].filter(Boolean).join(', ') };
+      data.provenance.seabed = { source: `EMODnet Geology seabed substrate map, 1:${Number(map.scale).toLocaleString('en')}${map.holder ? ` (${map.holder})` : ''}`, at: got[0].value.at, method: 'Folk class of the mapped polygon at the site; median grain size is the mid-point of the class. Surface sediment only.' };
+    } else if (red) {
+      data.seabed = { cls: red.cls, ...SEABED_CLASSES[red.cls], basis: 'samples', n: red.n, agree: red.agree, nearestKm: red.nearestKm, farthestKm: red.farthestKm, years: red.years, described: red.samples.slice(0, 3).map((x) => x.text).join(' · ') };
+      data.provenance.seabed = { source: `NOAA NOS seabed samples (${red.n} within ${red.farthestKm.toFixed(1)} km, surveyed ${red.years[0]}–${red.years[1]})`, at: got[1].value.at, method: 'Commonest class among the nearest described bottom samples, weighted by distance; median grain size is the mid-point of the class. Surface sediment only.' };
+    } else {
+      if (got.every((g) => g.status === 'rejected')) throw new Error(got[0].reason.message);
+      data.seabed = { cls: null, basis: 'none' };
+      return;
+    }
+    if (data.seabed.d50) bus['site.d50'] = data.seabed.d50;
+  });
   await step('Solar resource', 0.93, async () => {
     const r = await C.solarClimatology(lat, lon, { force });
     const p = r.data.properties?.parameter || {};
@@ -196,6 +264,8 @@ export async function pullSite(lat, lon, { years = 20, onProgress, force = false
   const p = getProject();
   p.site = { ...p.site, lat, lon, name: p.site.name || data.place?.name || `${lat.toFixed(3)}, ${lon.toFixed(3)}`, pulled: data.pulledAt, data };
   save();
+  // values the user entered by hand (measurements, site investigation) outrank any pulled estimate
+  for (const k of Object.keys(bus)) if (p.bus[k]?.from === 'user') { data.kept = [...(data.kept || []), k]; delete bus[k]; }
   publish(bus, 'site');
   emit('site', p.site);
   return { data, bus };

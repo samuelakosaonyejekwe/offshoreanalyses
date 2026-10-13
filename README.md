@@ -15,8 +15,11 @@ https://raw.githack.com/samuelakosaonyejekwe/offshoreanalyses/main/index.html
 * **17 connected suites, 292 analysis modules.** Every analysis in the 17-suite specification (261 of 261) is
   covered by a working module. What one analysis computes (loads, motions, reactions, stiffnesses, quantities,
   energy) becomes the default input of the analyses that depend on it.
-* **Any site on Earth.** Waves, wind, currents, tide, water depth, seismicity and solar resource are pulled live
-  by the browser from public sources and reduced to design values; measured data overrides them.
+* **Any site on Earth.** Waves, wind, currents, tide, water depth, seismicity, solar resource and — where an open
+  map or described samples exist — the seabed sediment class are pulled live by the browser from public sources
+  and reduced to design values. Values you enter from measurements override them and survive a new pull.
+* **Checked against instruments.** The modelled waves, wind, sea temperature and sea level at a site can be
+  compared with what the nearest buoy and tide gauge measured over the last weeks.
 * **Your geometry and data.** 68 CAD, mesh, structural, centreline, bathymetry, point-cloud and tabular formats
   are recognised; geometry is checked, repaired, refined or coarsened, and viewed in 3-D. The compatibility table
   in the app states exactly what is read natively, what loads an adapter on first use, and the few proprietary
@@ -47,9 +50,18 @@ npm run build        # pack each suite into one file (dist/), refresh the catalo
 
 ## Host it anywhere
 
-The repository root is the website. Publish the folder as-is on any static host (GitHub Pages, Cloudflare Pages,
-Netlify, GitLab Pages, an S3 bucket, an intranet server). Add the address to `mirrors.json` so installed copies
-can fall back to it when another host is unreachable.
+The app is a folder of static files. A second copy on a host that does not depend on GitHub takes one command
+(the first run opens that host's sign-in page in your browser):
+
+```
+node tools/mirror.mjs cloudflare          # Cloudflare Pages
+node tools/mirror.mjs netlify             # Netlify
+node tools/mirror.mjs gitlab <remote>     # GitLab Pages (published by .gitlab-ci.yml)
+node tools/mirror.mjs stage <folder>      # just write the publishable folder, for an S3 bucket or intranet server
+node tools/mirror.mjs add https://…/      # record the new address in mirrors.json
+```
+
+Installed copies read `mirrors.json` and fetch from the listed addresses whenever the primary host is unreachable.
 
 ## Layout
 

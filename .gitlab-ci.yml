@@ -1,0 +1,11 @@
+# Publishes the app on GitLab Pages when this repository is pushed to GitLab (a mirror independent of GitHub).
+# Only copies files into the folder GitLab serves; it makes no commits.
+pages:
+  image: node:22-alpine
+  script:
+    - node tools/mirror.mjs stage public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
