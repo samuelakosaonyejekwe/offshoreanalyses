@@ -19,6 +19,8 @@ draft = depth of the body origin below the waterline). Tests: `tests/engine/hydr
 - `marineGrowth({ D, thickness, rhoGrowth = 1325, rhoWater, g }) -> { De, massPerLength, submergedWeightPerLength }` — m, kg/m, N/m; geometry, density is an input.
 - `maccamyFuchs({ H, T, depth, D, rho, g }) -> { F, M, CmEff, phaseLagDeg, ka, A, k, forcePerLength(z) }` — N, N·m (mudline), –, deg; linear diffraction on a vertical cylinder. MacCamy & Fuchs (1954).
 - `rectangleAddedMassCoefficient(aOverB) -> Ca` — DNV-RP-C205 App. D Table D-1 (log-linear interpolation between tabulated ratios).
+- `rectangleRollInertiaCoefficient(ratio) -> beta` — rectangle rotating about its centre, I_a = β ρ π a⁴ per unit length on the longer half-side; ratio of the sides 1, 2, 5, 10, ∞ → 0.234, 0.15, 0.15, 0.147, 0.125. DNV-RP-C205 App. D Table D-1. Half of it is the roll added inertia of a floating rectangular section about its waterline centre (high-frequency limit).
+- `finiteCylinderAddedMassCoefficient(lengthOverDiameter) -> Ca` — circular cylinder of finite length moving normal to its axis, on its own volume; l/D 1.2, 2.5, 5, 9, ∞ → 0.62, 0.78, 0.90, 0.96, 1.0, linear between, 1 − 0.36/(l/D) beyond 9. DNV-RP-C205 App. D Table D-2.
 - `addedMass2D({ shape: 'circle'|'ellipse'|'plate'|'square'|'rectangle', a, b?, rho }) -> { Ca, referenceArea, addedMassPerLength }` — –, m², kg/m. DNV-RP-C205 App. D Table D-1.
 - `addedMass3D({ shape: 'sphere'|'disc', a, rho }) -> { addedMass, Ca, referenceVolume }` — kg; sphere ½ρ(4/3)πa³, disc (8/3)ρa³. DNV-RP-C205 App. D Table D-2.
 - `memberBuoyancy({ p1, p2, D, t?, flooded, waterline, rho, g }) -> { volume, force, centre, submergedLength }` — m³, N, m. Archimedes.
@@ -51,17 +53,31 @@ draft = depth of the body origin below the waterline). Tests: `tests/engine/hydr
 - `incliningTest({ displacement, shifts: [{ mass, distance, deflection, pendulumLength }], KM? }) -> { GM, KG, perShift, spread }` — m. IMO 2008 IS Code Part B Annex 1.
 
 ## floater.js
-- `buildFloater({ members, mass?, cog, gyradii, rho, g, depth, Kext?, nStrips }) -> model { strips, waterplanes, M, A, C, Kext, mass, volume, cob, waterplaneArea, maxDimension, validOmegaMax, … }` — member types `cylinder`, `rect`, `plate`; 6×6 matrices about the still-water origin. Faltinsen (1990) ch. 3; DNV-RP-C205 App. D. Valid for D/λ < 0.2, no diffraction.
+- `buildFloater({ members, mass?, cog, gyradii, rho, g, depth, Kext?, nStrips }) -> model { strips, waterplanes, M, A, C, Kext, mass, volume, cob, waterplaneArea, maxDimension, extent, validOmegaMax, … }` — member types `cylinder`, `rect`, `plate`; 6×6 matrices about the still-water origin. Cylinder ends: `end1`/`end2` = `'none'`, `'half-disc'` (4/3 ρa³), `'hemisphere'` (2/3 πρa³), `'disc'` or kg for the axial added mass; `free1`/`free2` = true takes the transverse added mass lost around a free end, (1 − C_A(2l/D)) ρ Ca πD²/4 · l (DNV-RP-C205 Table D-2), off at that end. Faltinsen (1990) ch. 3; DNV-RP-C205 App. D. Valid for D/λ < 0.2, no diffraction.
 - `naturalPeriods(model) -> { uncoupled: [6], coupled }` — s.
 - `waveSpectrum(omega, { Hs, Tp, gamma }) -> Float64Array` — JONSWAP, m²·s/rad. DNV-RP-C205 §3.5.5.
-- `floaterRAO({ model, omega, headingDeg, seaState?, radiationDampingRatio = 0.02, extraDamping?, viscous, maxIter, tol }) -> { omega, period, headingDeg, depth, g, re, im, amp, phase, force: { re, im }, viscousDamping, iterations, converged, validOmegaMax }` — m/m, rad/m, rad, N/m; long-wave Froude–Krylov + inertia excitation, stochastically linearised drag (Borgman 1967), radiation damping as a user fraction of critical.
+- `radiationDamping({ model, omega, nHeadings? }) -> number[][][]` — 6×6 per frequency, N·s/m …; Haskind relation B_ij = k/(8πρg c_g) ∫ Re{X_i X_j*} dβ with the model's own excitation in waves from all directions (deep water: ω³/(4πρg³) ∫ …). Newman (1962).
+- `floaterRAO({ model, omega, headingDeg, seaState?, radiation = 'haskind', extraDampingRatio = 0, extraDamping?, viscous, maxIter, tol }) -> { omega, period, headingDeg, depth, g, re, im, amp, phase, force: { re, im }, radiationDamping, viscousDamping, iterations, converged, validOmegaMax }` — m/m, rad/m, rad, N/m; long-wave Froude–Krylov + inertia excitation with the wave kinematics integrated exactly along each strip, radiation damping from the Haskind relation (`radiation: 'none'` to leave it out), `extraDampingRatio` (former name `radiationDampingRatio`) as an added fraction of critical for damping that is not modelled, stochastically linearised drag (Borgman 1967).
 - `pointMotion({ rao, point }) -> { omega, re, im, amp, velAmp, accAmp }` — [x, y, z] arrays, m/m, (m/s)/m, (m/s²)/m.
 - `responseStatistics({ omega, amp, S, duration }) -> { m0, m2, sigma, significant, Tz, nCycles, mpm, spectrum }` — response units; MPM = √(2 m0 ln N).
 - `relativeMotion({ rao, point, waveFactor }) -> { omega, re, im, amp }` — m/m, wave minus vertical point motion.
 - `airGap({ rao, point, staticAirGap, S, duration, waveFactor }) -> { sigma, mpmRelative, minAirGap, exceedancePerCycle, Tz }` — m. DNV-RP-C205 §8.2 (undisturbed wave).
 - `operability({ seaStates: [{ Hs, Tp, prob }], evaluate(Hs, Tp), limits }) -> { operability, downtime, perState, governingCounts }` — fractions.
 - `limitingHs({ omega, amp, limit, Tp, gamma, statistic, duration }) -> { Tp, HsLimit }` — s, m; linear responses only.
-- `boxBargeRAO({ L, B, T, omega, headingDeg, speed, Cb, GMt?, kxx?, rollDampingRatio, rho, g }) -> { omega, heave, pitch, roll, rollPhase, heaveNaturalPeriod, rollNaturalPeriod }` — m/m, rad/m; heave and pitch by Jensen, Mansour & Olsen (2004); roll by a 1-DOF Froude–Krylov model (not from the paper).
+- `boxBargeRAO({ L, B, T, omega, headingDeg, speed, Cb, GMt?, kxx?, kxxDry?, rollDampingRatio, rollRadiation, rho, g }) -> { omega, heave, pitch, roll, rollPhase, heaveNaturalPeriod, rollNaturalPeriod, rollAddedInertia, rollRadiationDamping, validPeriodMin: { heave, roll } }` — m/m, rad/m; heave and pitch by Jensen, Mansour & Olsen (2004) with the bottom-pressure factors exp(−kT) and sin(½k_yB)/(½k_yB) at every heading (the paper's exp(−|k cos β|T) is exact in head seas only); roll by a 1-DOF model (not from the paper): Froude–Krylov moment, relative-motion diffraction −ω²A44·(wave slope at the keel), strip added inertia A44 from DNV-RP-C205 Table D-1 (used for the inertia when `kxxDry` is given; `kxx` includes added inertia), Haskind radiation damping, `rollDampingRatio` as damping in addition to it.
+
+Validity of the closed-form floater models, from the comparison with Capytaine (`src/spec/cross-solver.json`, `docs/interop.md` §1.4):
+
+| Model | Within 5 % of the panel solution | Outside |
+| --- | --- | --- |
+| `boxBargeRAO` heave, head and beam seas | wave periods ≥ 2 × the heave natural period 2π√(2T/g) (`validPeriodMin.heave`) | low: −15 % at 1.5 ×, −30 … −40 % near it (added mass taken equal to the displacement, two-dimensional sectional damping) |
+| `boxBargeRAO` pitch, head seas | periods ≥ 1.5 × the heave natural period | −19 % at 1.25 ×, −63 % at 1.0 × (wavelength ≈ L) |
+| `boxBargeRAO` roll, beam seas | periods ≥ 1.3 × the roll natural period (`validPeriodMin.roll`) | within 15 % below; near resonance the response follows the natural period (strip added inertia 6–10 % above the panel value for L/B = 2.5: +1.3 % in period) and the added damping; no sway–roll coupling |
+| `floaterRAO` forces, single column | D/λ < 0.2 (`validOmegaMax`): surge and heave force from 5–6 s for D = 8 m | surge force +6 % at D/λ = 0.2, +47 % at 0.32 (diffraction) |
+| `floaterRAO` motions, single column | heave at all periods above the limit, resonance included, with `end1: 'hemisphere'`; surge and pitch outside 0.9–1.4 × the pitch natural period | within 25 % near the pitch resonance: the peak has radiation damping only and follows the natural period (1.2 % high with `free1`, 3 % without) |
+
+The one hull of each kind that was compared: barge 20 × 8 × 2 m (L/B = 2.5, B/T = 4), column D = 8 m with 40 m draught.
+
 
 ## hydrodb.js
 - `createHydroDb({ omega, A, B, headingsDeg, Fre, Fim, Ainf?, A0?, rho, g, depth }) -> db` — SI container, sorted.

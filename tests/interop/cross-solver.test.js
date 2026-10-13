@@ -174,32 +174,44 @@ test('closed-form barge RAOs stay within the recorded differences from Capytaine
   const db = capDb('barge');
   const m = RHO * 320; const z6 = () => Array.from({ length: 6 }, () => [0, 0, 0, 0, 0, 0]);
   const GMt = 1 + 64 / 24 - 2; const GMl = 1 + 400 / 24 - 2;
+  const head = boxBargeRAO({ L: 20, B: 8, T: 2, omega: OM, headingDeg: 180, rho: RHO, g: G });
+  // roll with the dry gyradius of the reference; the model adds its own strip added inertia
+  const beam = boxBargeRAO({ L: 20, B: 8, T: 2, omega: OM, headingDeg: 90, GMt, kxxDry: 0.35 * 8, rho: RHO, g: G });
   const M = z6(); const C = z6(); const Bext = z6();
   [m, m, m, m * (0.35 * 8) ** 2, m * 5 ** 2, m * 5 ** 2].forEach((v, i) => { M[i][i] = v; });
   C[2][2] = RHO * G * 160; C[3][3] = m * G * GMt; C[4][4] = m * G * GMl;
-  Bext[3][3] = 2 * 0.05 * Math.sqrt(m * (0.4 * 8) ** 2 * C[3][3]);
+  // the added roll damping of the model (5 % of critical of its own oscillator) goes into the reference as well
+  Bext[3][3] = 2 * 0.05 * Math.sqrt((M[3][3] + beam.rollAddedInertia) * C[3][3]);
   const refHead = raoSolve({ db, M, C, Bext, omega: OM, headingDeg: 180 }); const refBeam = raoSolve({ db, M, C, Bext, omega: OM, headingDeg: 90 });
-  const head = boxBargeRAO({ L: 20, B: 8, T: 2, omega: OM, headingDeg: 180, rho: RHO, g: G });
-  const beam = boxBargeRAO({ L: 20, B: 8, T: 2, omega: OM, headingDeg: 90, GMt, rho: RHO, g: G });
   PERIODS.forEach((T, i) => {
     within('barge-rao-heave', `T = ${T} s`, head.heave[i], refHead.amp[2][i]);
     within('barge-rao-pitch', `T = ${T} s`, head.pitch[i], refHead.amp[4][i]);
     within('barge-rao-heaveBeam', `T = ${T} s`, beam.heave[i], refBeam.amp[2][i]);
     within('barge-rao-roll', `T = ${T} s`, beam.roll[i], refBeam.amp[3][i]);
   });
-  // the validity range in numbers: heave within 5 % from 8 s (wavelength 100 m = 5 L), pitch from 6 s
-  for (const k of comparison('barge-rao-heave').cases) assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= 8, k.label);
+  // the validity range in numbers: heave within 5 % from 8 s in head and in beam seas (twice the heave natural period
+  // of the model, which is the limit boxBargeRAO returns), pitch from 6 s, roll from 7 s (1.3 roll natural periods)
+  for (const id of ['barge-rao-heave', 'barge-rao-heaveBeam']) for (const k of comparison(id).cases) assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= 8, `${id} ${k.label}`);
   for (const k of comparison('barge-rao-pitch').cases) assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= 6, k.label);
+  for (const k of comparison('barge-rao-roll').cases) { assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= 7, k.label); assert.ok(Math.abs(k.relDiff) < 0.16, k.label); }
+  assert.ok(beam.validPeriodMin.heave > 7 && beam.validPeriodMin.heave <= 8.03 && beam.validPeriodMin.roll > 6 && beam.validPeriodMin.roll <= 7);
+  // beam-sea heave tends to 1 with the solver (it was 1 + kT: +8 % at 10 s)
+  for (const k of comparison('barge-rao-heaveBeam').cases) if (Number(/\d+/.exec(k.label)[0]) >= 10) assert.ok(Math.abs(k.relDiff) < 0.01, k.label);
+  // the parts of the roll model against the solver's own coefficients: strip added inertia (no end effect) 6–11 %
+  // above A44, Haskind radiation damping within 12 % of B44 from 5 s
+  for (const w of OM) { const d = beam.rollAddedInertia / hydroAt(db, w, 90).A[3][3] - 1; assert.ok(d > 0.05 && d < 0.11, `A44 at ${w} rad/s: ${d}`); }
+  PERIODS.forEach((T, i) => { if (T >= 5) assert.ok(rel(beam.rollRadiationDamping[i], hydroAt(db, OM[i], 90).B[3][3]) < 0.12, `B44 at T = ${T} s`); });
 });
 
 test('slender-member spar model stays within the recorded differences from Capytaine; excitation phases agree in sign', () => {
   const db = capDb('cylinder');
-  const model = buildFloater({ members: [{ type: 'cylinder', p1: [0, 0, -40], p2: [0, 0, 4], D: 8, Ca: 1, end1: 'half-disc' }], cog: [0, 0, -25], gyradii: [12, 12, 3], rho: RHO, g: G });
+  const model = buildFloater({ members: [{ type: 'cylinder', p1: [0, 0, -40], p2: [0, 0, 4], D: 8, Ca: 1, end1: 'hemisphere', free1: true }], cog: [0, 0, -25], gyradii: [12, 12, 3], rho: RHO, g: G });
+  // radiation damping from the Haskind relation, nothing added: the same physics as the reference
   const r = floaterRAO({ model, omega: OM.slice().reverse(), headingDeg: 0, viscous: false });
   const ref = raoSolve({ db, M: model.M, C: model.C, omega: OM, headingDeg: 0 });
   PERIODS.forEach((T, i) => {
     const q = OM.length - 1 - i; // floaterRAO was given ascending frequencies
-    const F = hydroAt(db, OM[i], 0).F;
+    const h = hydroAt(db, OM[i], 0); const F = h.F;
     within('spar-force-surge', `T = ${T} s`, Math.hypot(r.force.re[0][q], r.force.im[0][q]), Math.hypot(F.re[0], F.im[0]));
     within('spar-force-heave', `T = ${T} s`, Math.hypot(r.force.re[2][q], r.force.im[2][q]), Math.hypot(F.re[2], F.im[2]));
     within('spar-rao-surge', `T = ${T} s`, r.amp[0][q], ref.amp[0][i]);
@@ -209,7 +221,25 @@ test('slender-member spar model stays within the recorded differences from Capyt
     // has the same sign of phase at every period and tends to +90° in long waves
     assert.ok(r.force.im[0][q] > 0 && F.im[0] > 0, `surge force phase at T = ${T} s`);
     if (T >= 12) assert.ok(Math.abs(Math.atan2(F.im[0], F.re[0]) - Math.PI / 2) < 0.01);
+    // the solver's own coefficients satisfy the Haskind relation of a body of revolution in deep water,
+    // B11 = omega³ |X1|² / (4 rho g³) (also pitch) and B33 = omega³ |X3|² / (2 rho g³), to the accuracy of its mesh:
+    // 2–3 % in surge and pitch, 6 % in heave (9 % at 7 s) …
+    const c = OM[i] ** 3 / (RHO * G ** 3);
+    for (const d of [0, 4]) assert.ok(rel(c * (F.re[d] ** 2 + F.im[d] ** 2) / 4, h.B[d][d]) < 0.03, `Haskind, mode ${d + 1}, T = ${T} s`);
+    if (T >= 7) assert.ok(rel(c * (F.re[2] ** 2 + F.im[2] ** 2) / 2, h.B[2][2]) < 0.1, `Haskind, heave, T = ${T} s`);
+    // … and the damping the model derives from its own excitation is within 12 % of them from 6 s, 8 % from 10 s
+    if (T >= 6) for (const d of [0, 2, 4]) assert.ok(rel(r.radiationDamping[q][d][d], h.B[d][d]) < (T >= 10 ? 0.08 : 0.12), `B${d + 1}${d + 1} at T = ${T} s`);
   });
+  // heave within 5 % at every period from 5 s, the resonance (13.1 s) included; surge and pitch within 5 % outside
+  // 14–20 s, where the narrow pitch resonance (14.8 s against 14.6 s) decides
+  for (const k of comparison('spar-rao-heave').cases) assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= 5, k.label);
+  for (const k of comparison('spar-force-heave').cases) assert.equal(Math.abs(k.relDiff) <= 0.05, Number(/\d+/.exec(k.label)[0]) >= 5, k.label);
+  for (const id of ['spar-rao-surge', 'spar-rao-pitch']) for (const k of comparison(id).cases) { const T = Number(/\d+/.exec(k.label)[0]); if (T >= 5 && (T <= 12 || T >= 25)) assert.ok(Math.abs(k.relDiff) <= 0.05, `${id} ${k.label}`); assert.ok(Math.abs(k.relDiff) < 0.25, `${id} ${k.label}`); }
+  // strip added mass against the solver at 14 s: surge within 4 %, pitch within 3 % with the free-end loss (15 % without)
+  const h14 = hydroAt(db, OM[PERIODS.indexOf(14)], 0);
+  assert.ok(rel(model.A[0][0], h14.A[0][0]) < 0.04 && rel(model.A[4][4], h14.A[4][4]) < 0.03 && rel(model.A[2][2], h14.A[2][2]) < 0.03);
+  const plain = buildFloater({ members: [{ type: 'cylinder', p1: [0, 0, -40], p2: [0, 0, 4], D: 8, Ca: 1 }], cog: [0, 0, -25], gyradii: [12, 12, 3], rho: RHO, g: G });
+  assert.ok(plain.A[4][4] / h14.A[4][4] > 1.13);
 });
 
 test('CalculiX 2.23 output: printed tables and the .frd file of decks written by the application are read back', () => {

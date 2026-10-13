@@ -3,7 +3,7 @@
 // extreme accelerations against survival limits.
 import { pointMotion, relativeMotion, airGap } from '../../engine/hydro/floater.js';
 import { waveInDeckForce } from '../../engine/hydro/impact.js';
-import { hullInputs, hullFrom, motionInputs, motionFrom, seaInputs, seaFrom, spectrum, omegaGrid, stats, pointInputs, dofScale,
+import { hullInputs, hullFrom, motionInputs, motionFrom, motionRangeAdvice, seaInputs, seaFrom, spectrum, omegaGrid, stats, pointInputs, dofScale,
   G, DEG, LIMIT_HYDRO, LIMIT_CFD, need, run, round, rnd, fmt, adv, check, sev, worst, linspace, steelCo2Text } from './_common.js';
 
 export default {
@@ -125,6 +125,7 @@ export default {
         `Drag damping linearised at the design sea is used for the whole contour. Governing: ${gov.name} (utilisation ${fmt(gov.uc)}).`,
       ],
       advice: [
+        ...motionRangeAdvice(mot, Math.min(inp.Tp, inp.TpLow), inp.headingDeg),
         adv('engineering', sev(gov.uc), `${gov.name} governs at utilisation ${fmt(gov.uc)}; minimum air gap ${fmt(wGap.gap)} m, probability of deck contact ${fmt(pEx)}.`,
           wGap.gap < inp.airGapMin ? `Recover ${fmt(drise)} m of air gap: deballast to a shallower survival draft by that amount (check stability at the new draft), raise the deck, or design the exposed deck for the ${fmt(wid.force / 1e6)} MN wave-in-deck load and local slamming.`
             : `Clearance margin is ${fmt(wGap.gap - inp.airGapMin)} m. Confirm the asymmetry factor and run-up at columns by model test or diffraction analysis: they can add 20–30 % to the relative elevation.`,

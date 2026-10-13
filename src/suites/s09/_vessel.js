@@ -2,7 +2,24 @@
 // potential-flow (diffraction/radiation) database, which is outside this suite; a user RAO table overrides them.
 import { boxBargeRAO } from '../../engine/hydro/floater.js';
 import { makeLinear } from '../../engine/math/interp.js';
-import { G, run } from './_common.js';
+import { G, run, adv, fmt } from './_common.js';
+
+/** Limit of the closed-form vessel model, appended to the `limits` of the modules that use it. */
+export const LIMIT_VESSEL = ' The closed-form vessel heave is within 5 % of a panel solution only for wave periods above twice the heave natural period 2π√(2T/g) of the box hull (about 15 % low at 1.5 times, 30–40 % low near it) and pitch above 1.5 times; a run with wave periods below that limit carries a warning unless a hang-off RAO table is given.';
+
+/**
+ * Warning (advice items of severity 'warn', or none) when the wave period T [s] that carries the response lies
+ * below the range in which the closed-form vessel model was checked against a panel solution.
+ */
+export function vesselRangeAdvice(inp, T) {
+  if ((inp.raoTable || []).filter((r) => Number.isFinite(r.T) && r.T > 0).length >= 2 || !(T > 0)) return [];
+  const Tn = 2 * Math.PI * Math.sqrt(2 * inp.vesT / G);
+  if (T >= 2 * Tn) return [];
+  return [adv('engineering', 'warn',
+    `Wave period ${fmt(T)} s is below twice the heave natural period of the closed-form vessel model (${fmt(Tn)} s for a ${fmt(inp.vesT)} m draft, limit ${fmt(2 * Tn)} s). There its heave is low against a panel solution, about 15 % at 1.5 times the natural period and 30–40 % near it, and pitch is 20–60 % low near it: the hang-off motion, and the riser response that follows from it, are under-predicted.`,
+    `Enter the hang-off RAOs of the vessel motion analysis (table of surge and heave at the porch) for periods below ${fmt(2 * Tn)} s, or raise the hang-off heave by those margins for screening.`,
+    'DNV-RP-C205 (2019) §7.3 (range of strip and closed-form motion estimates); comparison of the closed-form box model with Capytaine 3.0.0 on a 20 × 8 × 2 m barge (cross-solver verification of this application).')];
+}
 
 export function vesselInputs({ group = 'Host vessel motion' } = {}) {
   return [

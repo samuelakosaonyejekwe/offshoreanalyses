@@ -7,7 +7,7 @@ import {
   YEAR_S, need, fmt, round, thin, adv, check, kpi, plot, meshInput, finish, snInputs, snFrom, currentInputs, steelTonnes, steelCo2Text, vesselCo2Text, LIMIT_2D, CONFIRM,
 } from './_common.js';
 import { scrInputs, buildScr, currentOf, tdpNode } from './_scr.js';
-import { vesselInputs } from './_vessel.js';
+import { vesselInputs, vesselRangeAdvice, LIMIT_VESSEL } from './_vessel.js';
 import { dynInputs, stressAmp, sweep, interpAt } from './_dyn.js';
 
 export default {
@@ -16,7 +16,7 @@ export default {
   covers: [6], fidelity: 'reduced-order',
   standards: ['DNV-RP-C203 (2021) §2.4 S–N curves, §5 simplified and spectral fatigue', 'DNV-ST-F201 (2018) Sec. 5 fatigue limit state', 'DNV-RP-F204 (2019) riser fatigue', 'API RP 2RD (1998, R2013) §5.6'],
   models: ['Spectral fatigue (stress transfer function × JONSWAP spectrum)', "Dirlik's rainflow-range distribution", 'Narrow-band (Rayleigh) damage', 'S–N curves with thickness correction and SCF', 'Palmgren–Miner summation', 'Response amplitude operators', 'Linearised Morison drag'],
-  limits: `${LIMIT_2D} Stress transfer functions are linearised once, at a damage-weighted wave amplitude, and applied to every sea state; tension and bending stress are added in phase (conservative). Mean current enters only through the static shape; wave directionality, second-order (slow-drift) motion, VIV and installation damage are not included here — combine them in the fatigue-life and integrity module. Rainflow counting of nonlinear time histories is outside this module.`,
+  limits: `${LIMIT_2D} Stress transfer functions are linearised once, at a damage-weighted wave amplitude, and applied to every sea state; tension and bending stress are added in phase (conservative). Mean current enters only through the static shape; wave directionality, second-order (slow-drift) motion, VIV and installation damage are not included here — combine them in the fatigue-life and integrity module. Rainflow counting of nonlinear time histories is outside this module.` + LIMIT_VESSEL,
   publishes: ['riser.waveDamagePerYear', 'riser.waveFatigueLife', 'riser.fatigueStressRange', 'riser.fatigueCyclesPerYear'],
   searchTerms: 'steel catenary riser wave fatigue spectral touchdown Dirlik',
   inputs: [
@@ -103,6 +103,7 @@ export default {
     // stress reduction needed: damage ∝ S^m, so S must fall by uc^(1/m); for bending-dominated stress σ ∝ D/(2I) ~ 1/t
     const sFac = uc ** (1 / sn.m1), tNew = pp.t * sFac, dSteel = steelTonnes(pp.D, tNew - pp.t, 0.3 * sT, pp.mat.rho);
     const advice = [
+      ...vesselRangeAdvice(inp, crit.per.reduce((a, r) => (r.d > a.d ? r : a), crit.per[0]).Tp),
       adv('engineering', uc > 1 ? 'fail' : uc > 0.7 ? 'warn' : 'ok',
         `Unfactored life ${fmt(life)} yr at s = ${fmt(base.s[kCrit])} m (${kCrit === kTdz ? 'touchdown zone' : 'hang-off region'}); required ${fmt(need_)} yr (DFF ${inp.dff} × ${inp.designLife} yr). ${label}, SCF ${inp.scf}.`,
         uc > 1 ? `Stress ranges must fall by ${fmt((1 - 1 / sFac) * 100)} % (damage ∝ Δσ^${sn.m1}). Options: a better weld class or flush-ground welds in the critical zone, an SCF reduced from ${inp.scf} by tighter fit-up, a wall of about ${fmt(tNew * 1e3)} mm locally, a larger hang-off angle, or a porch nearer the vessel pitch centre.`

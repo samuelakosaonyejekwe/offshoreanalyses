@@ -4,7 +4,7 @@
 // periods.
 import { relativeMotion } from '../../engine/hydro/floater.js';
 import { wedgeWaterEntry, slammingPressureCoefficient, slammingProbability, deckWetnessProbability, damBreakDeckFlow, sloshingPeriods, sloshingResonanceCheck } from '../../engine/hydro/impact.js';
-import { hullInputs, hullFrom, motionInputs, motionFrom, seaInputs, seaFrom, spectrum, omegaGrid, trapz,
+import { hullInputs, hullFrom, motionInputs, motionFrom, motionRangeAdvice, seaInputs, seaFrom, spectrum, omegaGrid, trapz,
   G, DEG, LIMIT_HYDRO, LIMIT_CFD, need, run, round, rnd, fmt, adv, check, checkMin, sev, worst, linspace, steelCo2Text } from './_common.js';
 
 // DNV-RP-C205 §8 gives the space-average coefficient for deadrise < 4° (2π) and ≥ 15° (2.5/tan^1.1 β) only; the gap is
@@ -157,6 +157,7 @@ export default {
         `Sloshing: T₁ = ${fmt(slosh.periods[0])} s against a ${inp.tankDir} natural period of ${fmt(Tmot)} s (ratio ${fmt(res.ratios[0])})${res.resonant[1] ? '; the wave peak period is also inside the resonance band' : ''}. Governing: ${gov.name} (utilisation ${fmt(gov.uc)}).`,
       ],
       advice: [
+        ...motionRangeAdvice(mot, inp.Tp, inp.headingDeg),
         adv('engineering', sev(gov.uc), `${gov.name} governs at utilisation ${fmt(gov.uc)}: slamming probability ${fmt(sl.probability)}, deck-wetness probability ${fmt(wet.probability)}, green-water pressure ${fmt(gw.pWall / 1e3)} kPa.`,
           wet.probability > inp.pWetMax || gw.pWall / 1e3 > inp.pDeckAllow ? `Raise the effective freeboard to about ${fmt(fbNeed)} m (${fmt(Math.max(fbNeed - freeboard, 0))} m more by bulwark, forecastle or a lighter draft) to bring wetness to ${fmt(inp.pWetMax)}, or protect the structure with a breakwater designed for ${fmt(gw.pWall / 1e3)} kPa.`
             : sl.probability > inp.pSlamMax ? `Increase the forward draft to about ${fmt(Math.sqrt(Math.max(-2 * m0r * Math.log(inp.pSlamMax), 0)))} m in this sea state, or change heading; verify the panel for ${fmt(pAvg / 1e3)} kPa.`

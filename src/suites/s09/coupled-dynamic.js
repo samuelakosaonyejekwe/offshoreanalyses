@@ -7,7 +7,7 @@ import {
   DEG, need, run, fmt, round, thin, scaled, adv, check, kpi, plot, meshInput, finish, handWeight, currentInputs, currentFn, steelTonnes, steelCo2Text, CONFIRM,
 } from './_common.js';
 import { scrInputs, criteriaInputs, buildScr, currentOf, stressOf, tdpNode } from './_scr.js';
-import { vesselInputs, hangoffRao } from './_vessel.js';
+import { vesselInputs, hangoffRao, vesselRangeAdvice, LIMIT_VESSEL } from './_vessel.js';
 import { dynInputs, stressAmp, sweep, seaGrid, responseStats, interpAt, mpm } from './_dyn.js';
 
 const lm = { key: 'method', in: ['lumped'] }, hy = { key: 'method', in: ['hybrid'] };
@@ -18,7 +18,7 @@ export default {
   covers: [2], fidelity: 'reduced-order',
   standards: ['API RP 2RD (1998, R2013) §5.5', 'DNV-ST-F201 (2018) Sec. 4, App. A', 'DNV-RP-C205 (2019) §3.3, §6.2', 'DNV-RP-F205 (2019) coupled analysis'],
   models: ['Hybrid frequency-domain / time-domain response synthesis', 'Rod dynamics with consistent mass and added mass', 'Linearised Morison drag (hybrid) and full quadratic drag (lumped mass)', 'Vessel response amplitude operators', 'JONSWAP spectrum and random-phase wave synthesis', 'Lumped-mass cable dynamics with seabed contact and Airy wave kinematics (option)'],
-  limits: 'Hybrid method: linear about the static shape (frozen seabed contact, equivalent-linear drag, in-plane motion, vessel motion one-way coupled to the riser, no direct wave load on the riser); response phases are not resolved, so combined quantities are statistical. Lumped-mass option: 3-D nonlinear cable dynamics with seabed contact, quadratic drag and Airy kinematics, regular waves only and explicit integration (slow). Fully coupled vessel–mooring–riser simulation with a diffraction database is outside this module.',
+  limits: 'Hybrid method: linear about the static shape (frozen seabed contact, equivalent-linear drag, in-plane motion, vessel motion one-way coupled to the riser, no direct wave load on the riser); response phases are not resolved, so combined quantities are statistical. Lumped-mass option: 3-D nonlinear cable dynamics with seabed contact, quadratic drag and Airy kinematics, regular waves only and explicit integration (slow). Fully coupled vessel–mooring–riser simulation with a diffraction database is outside this module.' + LIMIT_VESSEL,
   publishes: ['riser.dynTensionSigma', 'riser.dynTensionMpm'],
   searchTerms: 'coupled dynamic riser analysis time domain irregular sea',
   inputs: [
@@ -154,6 +154,7 @@ export default {
     const ucMax = Math.max(...checks.map((c) => c.uc));
     const cyclesYr = stT.Tz > 0 ? 31557600 / stT.Tz : 0;
     const advice = [
+      ...vesselRangeAdvice(inp, inp.Tp),
       adv('engineering', ucMax > 1 ? 'fail' : ucMax > 0.85 ? 'warn' : 'ok',
         `In Hs = ${inp.Hs} m the top tension varies with σ = ${fmt(stT.sigma / 1e3)} kN; 3-hour extreme ${fmt((Ts + mpmT) / 1e3)} kN (${fmt((Ts + mpmT) / Ts)} × static). Touchdown stress σ = ${fmt(stS.sigma / 1e6)} MPa; minimum touchdown tension ${fmt((base.Te[kT] - mpmTd) / 1e3)} kN.`,
         checks[1].uc > 1 ? 'Compression at touchdown is predicted in this sea state. Run the nonlinear lumped-mass option (or a full time-domain FE model) to confirm, and raise the hang-off angle or reduce porch motion if it persists.'

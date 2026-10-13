@@ -129,3 +129,18 @@ test('Member buoyancy, marine growth, slam force and shedding frequency (hand ca
   close(mo.vortexSheddingFrequency({ U: 2, D: 0.5 }), 0.8, 1e-12);
   close(mo.keuleganCarpenter(2, 10, 1), 20, 1e-12);
 });
+
+test('DNV-RP-C205 Table D-1 (rotation) and D-2 (finite cylinder): tabulated points, limits and the rules between them', () => {
+  // rectangle 2a × 2b rotating about its centre, I_a = beta rho pi a⁴ on the longer half-side
+  for (const [r, beta] of [[1, 0.234], [2, 0.15], [5, 0.15], [10, 0.147]]) close(mo.rectangleRollInertiaCoefficient(r), beta, 1e-12, `ratio ${r}`);
+  close(mo.rectangleRollInertiaCoefficient(1e9), 0.125, 1e-8, 'flat plate: rho pi a⁴ / 8');
+  close(mo.rectangleRollInertiaCoefficient(20), 0.125 + 0.5 * 0.022, 1e-12);
+  close(mo.rectangleRollInertiaCoefficient(Math.sqrt(2)), 0.5 * (0.234 + 0.15), 1e-12, 'log-linear between 1 and 2');
+  assert.throws(() => mo.rectangleRollInertiaCoefficient(0.5), RangeError);
+  // circular cylinder of finite length moving normal to its axis, C_A on its own volume
+  for (const [r, ca] of [[1.2, 0.62], [2.5, 0.78], [5, 0.90], [9, 0.96]]) close(mo.finiteCylinderAddedMassCoefficient(r), ca, 1e-12, `l/D ${r}`);
+  close(mo.finiteCylinderAddedMassCoefficient(7), 0.93, 1e-12);
+  // beyond the table the loss per end stays 0.18 diameters of strip added mass: (1 - C_A) l/D = 0.36
+  for (const r of [9, 18, 90]) close((1 - mo.finiteCylinderAddedMassCoefficient(r)) * r, 0.36, 1e-12);
+  assert.throws(() => mo.finiteCylinderAddedMassCoefficient(1), RangeError);
+});

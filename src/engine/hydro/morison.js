@@ -384,6 +384,36 @@ export function rectangleAddedMassCoefficient(aOverB) {
   return 1.14;
 }
 
+// DNV-RP-C205 Appendix D, Table D-1: rectangle 2a × 2b rotating about its centre, I_a = beta rho pi a⁴ with a the
+// longer half-side (the table lists beta_1 on a⁴ for a/b >= 1 and beta_2 on b⁴ for a/b <= 1; they mirror).
+const RECT_ROT_RATIO = [1, 2, 5, 10];
+const RECT_ROT_BETA = [0.234, 0.15, 0.15, 0.147];
+
+/**
+ * Added moment of inertia coefficient of a rectangular section rotating about its centre in unbounded fluid:
+ * I_a = beta rho pi a⁴ per unit length, a = the longer half-side. Tabulated ratios of the longer to the shorter
+ * side 1, 2, 5, 10 → 0.234, 0.15, 0.15, 0.147 and 0.125 for a flat plate; intermediate ratios are interpolated
+ * linearly in log10 of the ratio (interpolation rule is this library's choice), beyond 10 linearly in its inverse.
+ * Half of it is the roll added inertia about the waterline centre of a floating section whose wetted part is
+ * the lower half of the rectangle, in the high-frequency limit (the rigidly rotating double body satisfies
+ * phi = 0 on the free surface).
+ * Reference: DNV-RP-C205 Appendix D, Table D-1 (values after Wendel; checked against the October 2010 edition).
+ * @param {number} ratio longer side / shorter side, - (>= 1)
+ * @returns {number} beta, -
+ */
+export function rectangleRollInertiaCoefficient(ratio) {
+  if (!(ratio >= 1)) throw new RangeError('ratio must be >= 1');
+  if (ratio >= 10) return 0.125 + (0.147 - 0.125) * (10 / ratio);
+  const x = Math.log10(ratio);
+  for (let i = 1; i < RECT_ROT_RATIO.length; i++) {
+    if (ratio <= RECT_ROT_RATIO[i]) {
+      const x0 = Math.log10(RECT_ROT_RATIO[i - 1]); const x1 = Math.log10(RECT_ROT_RATIO[i]);
+      return RECT_ROT_BETA[i - 1] + ((RECT_ROT_BETA[i] - RECT_ROT_BETA[i - 1]) * (x - x0)) / (x1 - x0);
+    }
+  }
+  return 0.147;
+}
+
 /**
  * Added mass per unit length of standard two-dimensional sections, m_a = rho C_A A_R:
  *   'circle' (radius a): C_A = 1.0, A_R = pi a²;  'ellipse' (semi-axis a normal to motion): 1.0, pi a²;
@@ -417,6 +447,33 @@ export function addedMass3D({ shape, a, rho = 1025 }) {
   if (shape === 'sphere') return { addedMass: 0.5 * rho * referenceVolume, Ca: 0.5, referenceVolume };
   if (shape === 'disc') return { addedMass: (8 / 3) * rho * a ** 3, Ca: 2 / Math.PI, referenceVolume };
   throw new RangeError("shape must be 'sphere' or 'disc'");
+}
+
+// DNV-RP-C205 Appendix D, Table D-2: circular cylinder of length b and radius a moving normal to its axis,
+// C_A referred to the volume pi a² b.
+const CYL_RATIO = [1.2, 2.5, 5, 9];
+const CYL_CA = [0.62, 0.78, 0.90, 0.96];
+
+/**
+ * Added-mass coefficient of a circular cylinder of finite length moving normal to its axis in unbounded fluid,
+ * referred to its own volume: the flow around the two free ends lowers the strip value 1.0. Tabulated
+ * length/diameter 1.2, 2.5, 5, 9 → 0.62, 0.78, 0.90, 0.96 and 1.0 for an infinitely long cylinder; intermediate
+ * ratios are interpolated linearly, and beyond 9 the loss is kept at that of the last tabulated ratio,
+ * C_A = 1 - 0.36 / (length/diameter), i.e. 0.18 diameters of strip added mass per end (both this library's
+ * choice: the end flow of a long cylinder does not depend on its length).
+ * Reference: DNV-RP-C205 (2019) Appendix D, Table D-2. Valid for length/diameter >= 1.2.
+ * @param {number} lengthOverDiameter b / (2a), -
+ * @returns {number} C_A, -
+ */
+export function finiteCylinderAddedMassCoefficient(lengthOverDiameter) {
+  if (!(lengthOverDiameter >= 1.2)) throw new RangeError('lengthOverDiameter must be >= 1.2');
+  if (lengthOverDiameter >= 9) return 1 - (9 * (1 - 0.96)) / lengthOverDiameter;
+  for (let i = 1; i < CYL_RATIO.length; i++) {
+    if (lengthOverDiameter <= CYL_RATIO[i]) {
+      return CYL_CA[i - 1] + ((CYL_CA[i] - CYL_CA[i - 1]) * (lengthOverDiameter - CYL_RATIO[i - 1])) / (CYL_RATIO[i] - CYL_RATIO[i - 1]);
+    }
+  }
+  return 0.96;
 }
 
 /**

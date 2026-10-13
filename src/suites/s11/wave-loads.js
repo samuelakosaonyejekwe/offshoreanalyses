@@ -3,7 +3,7 @@
 import { maccamyFuchs } from '../../engine/hydro/morison.js';
 import { meanDriftForce } from '../../engine/hydro/drift.js';
 import { responseStatistics } from '../../engine/hydro/floater.js';
-import { hullInputs, hullFrom, motionInputs, motionFrom, seaInputs, seaFrom, spectrum, omegaGrid, driftCoefficient, windCurrentInputs,
+import { hullInputs, hullFrom, motionInputs, motionFrom, motionRangeAdvice, seaInputs, seaFrom, spectrum, omegaGrid, driftCoefficient, windCurrentInputs,
   G, DEG, LIMIT_HYDRO, LIMIT_CFD, need, round, rnd, fmt, adv, check, sev, steelCo2Text } from './_common.js';
 
 const sinc = (u) => (Math.abs(u) < 1e-8 ? 1 : Math.sin(u) / u);
@@ -124,6 +124,7 @@ export default {
         mot.kind === 'slender' ? `Loads are valid for periods above ${fmt(2 * Math.PI / mot.validOmegaMax)} s.` : 'Diffraction and radiation forces on the box are not included: values are the undisturbed-wave pressure integrals.',
       ],
       advice: [
+        ...motionRangeAdvice(mot, Math.min(inp.Tp, inp.Tdes), inp.headingDeg),
         adv('engineering', gov.uc > 1 ? 'warn' : 'ok', `Design-wave loads: surge ${fmt(Fd[0] / 1e6)} MN, heave ${fmt(Fd[2] / 1e6)} MN, pitch moment ${fmt(Fd[4] / 1e6)} MN·m; D/λ = ${fmt(dl)} against the slender-body limit ${inp.dOverLambdaMax}.`,
           gov.uc > 1 ? 'The hull is in the diffraction regime for this sea: use these loads for sizing only and obtain excitation from a panel analysis, imported through the RAO module.'
             : `Scan the design-wave period between ${fmt(Math.sqrt(inp.Hdes * 7 * 2 * Math.PI / G))} s (steepness limit) and ${fmt(inp.Tp * 1.3)} s and the heading in 15° steps: split forces and racking moments on column-stabilised units peak at specific period–heading pairs.`,
@@ -136,13 +137,16 @@ export default {
     };
   },
   verify: [
-    { // Spar D = 30 m, T = 90 m, ω = 0.4 rad/s (T = 15.708 s), unit amplitude (H = 2 m): k = ω²/g = 0.016315, e^(−kT) = 0.23032.
-      // Heave: (ρ g Aw − (4/3) ρ r³ ω²)·e^(−kT) = (7.1052e6 − 0.7380e6)·0.23032 = 1.4665 MN.
-      // Surge: (1 + Ca)·ρ·A·g·(1 − e^(−kT)) = 2·1025·706.858·9.80665·0.76968 = 10.937 MN.
+    { // Spar D = 30 m, T = 90 m, ω = 0.4 rad/s (T = 15.708 s), unit amplitude (H = 2 m): k = ω²/g = 0.016315, e^(−kT) = 0.23030.
+      // Heave: (ρ g Aw − (2/3) π ρ r³ ω²)·e^(−kT) = (7.1052e6 − 7.2453e6·0.16)·0.23030 = (7.1052e6 − 1.1592e6)·0.23030 = 1.3693 MN.
+      // Surge: (1 + Ca)·ρ·A·g·(1 − e^(−kT)) = 2·1025·706.858·9.80665·0.76970 = 10.938 MN, less the added mass lost around the
+      // free keel end at e^(−kT): the column and its image are 180 m long, l/D = 6, C_A = 0.90 + 0.06·(6 − 5)/(9 − 5) = 0.915
+      // (DNV-RP-C205 Table D-2), loss = 0.085·ρ·A·T = 0.085·65.208e6 = 5.5427e6 kg, ω²·loss·e^(−kT) = 0.16·5.5427e6·0.23030
+      // = 0.2042 MN → 10.734 MN.
       name: 'Spar: heave and surge excitation of a deep vertical cylinder in long waves',
       source: 'Faltinsen (1990) Sea Loads on Ships and Offshore Structures ch. 3 — long-wave force on a vertical cylinder, hand calculation',
       inputs: { hullType: 'spar', Dspar: 30, Hspar: 105, draft: 90, KG: 38, Hdes: 2, Tdes: 15.70796, headingDeg: 0, depth: 4000 },
-      expect: [{ kpi: 'FzDes', value: 1.4665, tol: 0.005 }, { kpi: 'FxDes', value: 10.937, tol: 0.01 }] },
+      expect: [{ kpi: 'FzDes', value: 1.3693, tol: 0.005 }, { kpi: 'FxDes', value: 10.734, tol: 0.01 }] },
     { // Box 100 × 20 × 5 m draft, beam... head sea, ω = 0.5: k = 0.025493, kL/2 = 1.27466, sinc = 0.75034, e^(−kT) = 0.88033.
       // Fz = ρ g L B e^(−kT) sinc(kL/2) = 1025·9.80665·2000·0.88033·0.75034 = 13.279 MN per metre amplitude.
       name: 'Box barge: Froude–Krylov heave force in a head sea',

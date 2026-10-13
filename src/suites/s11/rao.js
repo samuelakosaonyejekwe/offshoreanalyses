@@ -2,7 +2,7 @@
 // acceleration RAOs at a point, from the built-in models or from an imported hydrodynamic database.
 import { pointMotion } from '../../engine/hydro/floater.js';
 import { parseHydroJson, parseHydroCsv, raoSolve, checkHydroDb } from '../../engine/hydro/hydrodb.js';
-import { hullInputs, hullFrom, motionInputs, motionFrom, seaInputs, seaFrom, omegaGrid, pointInputs, massMatrix, DOF, DOF_UNIT, dofScale,
+import { hullInputs, hullFrom, motionInputs, motionFrom, motionRangeAdvice, seaInputs, seaFrom, omegaGrid, pointInputs, massMatrix, DOF, DOF_UNIT, dofScale,
   G, DEG, LIMIT_HYDRO, LIMIT_CFD, need, run, round, rnd, fmt, adv, check, steelCo2Text } from './_common.js';
 
 const at = (xs, ys, x) => { if (x <= xs[0]) return ys[0]; for (let i = 1; i < xs.length; i++) if (x <= xs[i]) return ys[i - 1] + (ys[i] - ys[i - 1]) * (x - xs[i - 1]) / (xs[i] - xs[i - 1]); return ys[ys.length - 1]; };
@@ -111,12 +111,13 @@ export default {
       notes: [
         `RAOs from the ${src} for heading ${fmt(inp.headingDeg)}°${inp.source !== 'imported' && inp.dragSea && mot.kind === 'slender' ? `, drag linearised for Hs ${fmt(inp.Hs)} m / Tp ${fmt(inp.Tp)} s (${r.converged ? 'converged' : 'not converged'})` : ''}.`,
         `Heave peaks at ${fmt(pk[2].period)} s with ${fmt(pk[2].value)} m/m; pitch peaks at ${fmt(pk[4].period)} s.`,
-        dbInfo ? `Database check: ${dbInfo.ok ? 'damping non-negative and matrices symmetric' : `problems found (negative damping entries: ${dbInfo.neg ? 'yes' : 'no'}, asymmetry ${fmt(dbInfo.asym)})`}.` : `Governing member dimension ${fmt(dOL)} m; radiation damping ${fmt(100 * inp.zetaRad)} % of critical is an assumption to calibrate.`,
+        dbInfo ? `Database check: ${dbInfo.ok ? 'damping non-negative and matrices symmetric' : `problems found (negative damping entries: ${dbInfo.neg ? 'yes' : 'no'}, asymmetry ${fmt(dbInfo.asym)})`}.` : `Governing member dimension ${fmt(dOL)} m; the added damping of ${fmt(100 * inp.zetaRad)} % of critical is an assumption to calibrate.`,
       ],
       advice: [
+        ...(inp.source === 'imported' ? [] : motionRangeAdvice(mot, inp.Tp, inp.headingDeg)),
         adv('engineering', chk.some((c) => c.uc > 1) ? 'warn' : 'ok', `Heave RAO peaks at ${fmt(pk[2].value)} m/m at ${fmt(pk[2].period)} s; at the sea-state peak period it is ${fmt(at(w, r.amp[2], wp))} m/m. The long-period heave asymptote is ${fmt(r.amp[2][0])}.`,
           inp.source === 'imported' ? 'Keep the reference point, units and phase convention of the database consistent with this suite (SI, exp(+iωt), origin at the waterline above the keel origin) and add viscous damping from a decay test.'
-            : `Treat these as concept-level RAOs: resonant peaks scale with 1/damping (${fmt(100 * inp.zetaRad)} % assumed). Run a radiation–diffraction analysis, import its coefficients here and compare before design decisions.`,
+            : `Treat these as concept-level RAOs: resonant peaks scale with 1/damping (${fmt(100 * inp.zetaRad)} % of critical added to the computed wave radiation and drag). Run a radiation–diffraction analysis, import its coefficients here and compare before design decisions.`,
           'DNV-RP-C205 (2019) §7.1–7.3; ITTC 7.5-02-07-03.1 for model-test calibration of damping.'),
         adv('economic', 'info', `Moving the heave natural period (now ${fmt(pk[2].period)} s) by a few seconds changes the response in every sea state of the scatter diagram, and with it operability and fatigue.`,
           'Settle natural periods at concept stage, when it costs only draft and pontoon proportions; correcting motions later means added steel or heave plates on a built hull.',

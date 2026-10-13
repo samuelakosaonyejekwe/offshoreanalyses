@@ -1,7 +1,7 @@
 // Six-degree-of-freedom rigid-body motions: natural periods, regular-wave response, irregular-sea statistics for
 // every degree of freedom and for a point on the unit, and the variation with wave heading.
 import { pointMotion } from '../../engine/hydro/floater.js';
-import { hullInputs, hullFrom, motionInputs, motionFrom, seaInputs, seaFrom, spectrum, omegaGrid, stats, pointInputs, DOF, DOF_UNIT, dofScale,
+import { hullInputs, hullFrom, motionInputs, motionFrom, motionRangeAdvice, seaInputs, seaFrom, spectrum, omegaGrid, stats, pointInputs, DOF, DOF_UNIT, dofScale,
   G, LIMIT_HYDRO, LIMIT_CFD, round, rnd, fmt, adv, check, sev, worst, fuelCo2Text } from './_common.js';
 
 const at = (xs, ys, x) => { for (let i = 1; i < xs.length; i++) if (x <= xs[i]) return ys[i - 1] + (ys[i] - ys[i - 1]) * (x - xs[i - 1]) / (xs[i] - xs[i - 1]); return ys[ys.length - 1]; };
@@ -101,6 +101,7 @@ export default {
         `Worst headings: heave at ${worstHead(0)}°, roll at ${worstHead(1)}°, pitch at ${worstHead(2)}°. Governing criterion: ${gov.name} (utilisation ${fmt(gov.uc)}).`,
       ],
       advice: [
+        ...motionRangeAdvice(mot, Math.min(inp.Tp, inp.Treg), inp.headingDeg),
         adv('engineering', sev(gov.uc), `${gov.name} is ${fmt(gov.demand)} against ${fmt(gov.capacity)} ${gov.unit} (utilisation ${fmt(gov.uc)}) in Hs ${fmt(inp.Hs)} m, Tp ${fmt(inp.Tp)} s.`,
           gov.uc > 1 ? `Reduce the response at source: move the natural period away from ${fmt(inp.Tp)} s (heave ${fmt(Tn[2])} s, roll ${fmt(Tn[3])} s), turn the unit towards the best heading in the rosette, or lower the operating sea-state limit to about Hs ${fmt(inp.Hs / gov.uc)} m.`
             : `The limit is reached at about Hs ${fmt(inp.Hs / Math.max(gov.uc, 1e-6))} m for this period. Confirm the damping fraction with a decay test or diffraction analysis: resonant response scales with 1/damping.`,
@@ -114,12 +115,12 @@ export default {
     };
   },
   verify: [
-    { // Spar D = 30 m, T = 90 m: m = ρ·A·T, heave added mass = (4/3)·ρ·r³ (one face of a disc), C33 = ρ·g·A.
-      // Tn = 2π·sqrt((T + (4/3)·r³/A)/g) = 2π·sqrt((90 + 4500/706.858)/9.80665) = 2π·sqrt(9.8266) = 19.696 s.
+    { // Spar D = 30 m, T = 90 m: m = ρ·A·T, heave added mass = (2/3)·π·ρ·r³ (hemisphere of water below the keel), C33 = ρ·g·A.
+      // Added mass over ρ·A = (2/3)·r = 10 m, so Tn = 2π·sqrt((T + 2r/3)/g) = 2π·sqrt(100/9.80665) = 2π·sqrt(10.1972) = 20.064 s.
       name: 'Spar heave natural period T = 2π √((m + a33)/(ρ g Aw))',
-      source: 'Faltinsen (1990) ch. 3; DNV-RP-C205 (2019) App. D Table D-2 (disc added mass) — hand calculation',
+      source: 'Faltinsen (1990) ch. 3; hemisphere end added mass (2/3)πρr³ of a deep column — hand calculation',
       inputs: { hullType: 'spar', Dspar: 30, Hspar: 105, draft: 90, KG: 38 },
-      expect: [{ kpi: 'Tn3', value: 19.696, tol: 0.003 }] },
+      expect: [{ kpi: 'Tn3', value: 20.064, tol: 0.003 }] },
     { // A 30 × 10 × 1 m barge in a 20 s wave (λ = 624 m ≫ L) follows the surface: heave amplitude = H/2 = 1.0 m.
       name: 'Small barge in a long regular wave follows the water surface',
       source: 'Long-wave limit of linear seakeeping (heave RAO → 1), Newman (1977) Marine Hydrodynamics ch. 6',

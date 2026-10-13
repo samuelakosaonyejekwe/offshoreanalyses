@@ -1,21 +1,24 @@
 // Frequency-domain rigid-body response of floaters.
 //  (a) Slender-member floaters (semi-submersibles, spars, TLP hulls, floating wind platforms) assembled from
 //      cylinders, rectangular pontoons and heave plates: strip added mass, long-wave Froude–Krylov + inertia
-//      excitation, stochastically linearised Morison drag, hydrostatic and external stiffness.
+//      excitation, radiation damping from the Haskind relation, stochastically linearised Morison drag,
+//      hydrostatic and external stiffness.
 //  (b) Box-shaped ships and barges: closed-form heave/pitch of Jensen, Mansour & Olsen (2004) and a one-degree
-//      of freedom Froude–Krylov roll model.
+//      of freedom roll model (Froude–Krylov moment, relative-motion diffraction, Haskind radiation damping).
 // Axes: origin on the still-water plane, x forward, y to port, z up. Motions (surge, sway, heave, roll, pitch,
 // yaw) are about the origin. Heading is the direction the waves travel towards, measured from +x towards +y
 // (0° following sea, 90° waves travelling to port, 180° head sea). Complex convention exp(+i omega t), unit
 // wave amplitude, phases are leads relative to the crest at the origin (see _wavehelp.js).
 //
 // Validity of (a): members slender compared with the wavelength (D/lambda < 0.2), so diffraction is neglected
-// and the pressure gradient is taken as uniform over each cross-section; radiation damping is not computed but
-// supplied as a fraction of critical damping; member-to-member hydrodynamic interaction is neglected.
+// and the pressure gradient is taken as uniform over each cross-section; added mass is the frequency-independent
+// strip value, with an end effect only where a cylinder end is marked free (without it the pitch added inertia
+// of a single deep column is about 15 % above a panel solution, which moves its pitch natural period by 3 %);
+// member-to-member hydrodynamic interaction is neglected. Validity of (b): see boxBargeRAO.
 
 import { eigGenSym } from '../math/eigen.js';
-import { G, dispersion, depthRatios, jonswap, spectrumMoments, csolve, needPos, needVec3 } from './_wavehelp.js';
-import { rectangleAddedMassCoefficient } from './morison.js';
+import { G, dispersion, jonswap, spectrumMoments, csolve, needPos, needVec3 } from './_wavehelp.js';
+import { rectangleAddedMassCoefficient, rectangleRollInertiaCoefficient, finiteCylinderAddedMassCoefficient } from './morison.js';
 
 const DEG = Math.PI / 180;
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -31,10 +34,18 @@ function addDir(strip, n, ma, kd) {
  * matrix, strip added-mass matrix and hydrostatic stiffness about the origin (on the still-water plane).
  *
  * Member types (all coordinates in the floating position, m):
- *  - { type: 'cylinder', p1, p2, D, Ca = 1.0, Cd = 1.0, end1, end2, CdAxial = 0 }
+ *  - { type: 'cylinder', p1, p2, D, Ca = 1.0, Cd = 1.0, end1, end2, free1 = false, free2 = false, CdAxial = 0 }
  *      transverse added mass rho Ca pi D²/4 per unit length. end1/end2 give the axial added mass of a wet end:
  *      'none' (default), 'half-disc' = ½·(8/3) rho a³ (one face of a disc, the usual estimate for a column
- *      base), 'disc' = (8/3) rho a³, or a number in kg. CdAxial is the drag coefficient on the end area.
+ *      base), 'hemisphere' = (2/3) pi rho a³ (the water in a hemisphere on the end face, the reference volume
+ *      of member ends in strip-theory codes; within 3 % of a panel solution for the free end of a column five
+ *      diameters deep), 'disc' = (8/3) rho a³, or a number in kg. CdAxial is the drag coefficient on the end area.
+ *      free1/free2 mark a wet end that the water can flow around (the keel of a spar or of a column without a
+ *      pontoon or footing). The transverse strip added mass is then reduced at that end by the loss of a finite
+ *      cylinder, (1 - C_A(2 l/D)) rho Ca pi D²/4 · l with l the wetted length and C_A from DNV-RP-C205 Table D-2
+ *      (finiteCylinderAddedMassCoefficient; the member and its image in the still-water plane form the finite
+ *      cylinder). It is applied as a negative point mass at the end, which is where the loss occurs; without
+ *      it the pitch added inertia of a column five diameters deep is 15 % above a panel solution, with it 2 %.
  *  - { type: 'rect', p1, p2, b, h, Ca?, Cd = 2.0, endMass1 = 0, endMass2 = 0 }
  *      rectangular section, h measured along the transverse direction closest to vertical (for a vertical
  *      member: along x), b along the other. Added mass per DNV-RP-C205 Appendix D Table D-1 unless Ca = [Ca_b,
@@ -45,7 +56,8 @@ function addDir(strip, n, ma, kd) {
  * depend strongly on KC and should come from model tests. See DNV-RP-C205 §6.7.
  *
  * Reference: Faltinsen (1990) Sea Loads on Ships and Offshore Structures ch. 3 (long-wave approximation for
- * semi-submersibles); DNV-RP-C205 (2019) §6.2, §7 and Appendix D (added mass).
+ * semi-submersibles); DNV-RP-C205 (2019) §6.2, §7 and Appendix D (added mass); Jonkman, Robertson & Hayman,
+ * HydroDyn User's Guide and Theory Manual, NREL (hemisphere reference volume of member ends).
  * @param {object} o
  * @param {object[]} o.members see above
  * @param {number} [o.mass] kg (default: displaced mass rho·V)
@@ -57,8 +69,9 @@ function addDir(strip, n, ma, kd) {
  * @param {number[][]} [o.Kext] external (mooring/tendon/riser) stiffness about the origin, 6×6, N/m, N, N·m
  * @param {number} [o.nStrips=12] strips per member
  * @returns {object} model: { rho, g, depth, strips, waterplanes, M, A, C, Kext (number[6][6], SI), mass kg,
- *   volume m³, cob [x,y,z] m, cog, waterplaneArea m², maxDimension m, validOmegaMax rad/s (deep-water frequency
- *   at which the largest section reaches D/lambda = 0.2) }
+ *   volume m³, cob [x,y,z] m, cog, waterplaneArea m², maxDimension m, extent m (largest horizontal distance of
+ *   a strip from the origin), validOmegaMax rad/s (deep-water frequency at which the largest section reaches
+ *   D/lambda = 0.2) }
  */
 export function buildFloater({ members, mass, cog, gyradii, rho = 1025, g = G, depth = Infinity, Kext, nStrips = 12 }) {
   if (!Array.isArray(members) || members.length === 0) throw new RangeError('members must be a non-empty array');
@@ -125,7 +138,8 @@ export function buildFloater({ members, mass, cog, gyradii, rho = 1025, g = G, d
     const at = (s) => [mb.p1[0] + s * d[0], mb.p1[1] + s * d[1], mb.p1[2] + s * d[2]];
     const dl = ((s1 - s0) * L) / nStrips;
     for (let i = 0; i < nStrips; i++) {
-      const s = { r: at(s0 + ((i + 0.5) * (s1 - s0)) / nStrips), dV: area * dl, dirs: [] };
+      // t and len let the wave kinematics be averaged exactly over the strip (see stripKinematics)
+      const s = { r: at(s0 + ((i + 0.5) * (s1 - s0)) / nStrips), dV: area * dl, dirs: [], t, len: dl };
       addDir(s, n1, ma1 * dl, 0.5 * rho * cd1 * w1 * dl);
       addDir(s, n2, ma2 * dl, 0.5 * rho * cd2 * w2 * dl);
       strips.push(s);
@@ -137,11 +151,22 @@ export function buildFloater({ members, mass, cog, gyradii, rho = 1025, g = G, d
       let me;
       if (typeof spec === 'number') me = spec;
       else if (mb.type === 'cylinder' && spec === 'half-disc') me = (4 / 3) * rho * (mb.D / 2) ** 3;
+      else if (mb.type === 'cylinder' && spec === 'hemisphere') me = (2 / 3) * Math.PI * rho * (mb.D / 2) ** 3;
       else if (mb.type === 'cylinder' && spec === 'disc') me = (8 / 3) * rho * (mb.D / 2) ** 3;
-      else throw new RangeError("member end added mass must be 'none', 'half-disc', 'disc' (cylinders) or a number in kg");
+      else throw new RangeError("member end added mass must be 'none', 'half-disc', 'hemisphere', 'disc' (cylinders) or a number in kg");
       const s = { r: at(sEnd), dV: 0, dirs: [] };
       addDir(s, t, me, 0.5 * rho * (mb.CdAxial || 0) * area);
       strips.push(s);
+    }
+    if (mb.type === 'cylinder') {
+      for (const [sEnd, free] of [[0, mb.free1], [1, mb.free2]]) {
+        if (!free || sEnd < s0 || sEnd > s1) continue;
+        const lw = (s1 - s0) * L;
+        const loss = (1 - finiteCylinderAddedMassCoefficient(Math.max((2 * lw) / mb.D, 1.2))) * ma1 * lw;
+        const s = { r: at(sEnd), dV: 0, dirs: [] };
+        addDir(s, n1, -loss, 0); addDir(s, n2, -loss, 0);
+        strips.push(s);
+      }
     }
     if ((z1 < 0) !== (z2 < 0) && Math.abs(t[2]) > 1e-6) {
       const p = at(z1 / (z1 - z2));
@@ -155,10 +180,11 @@ export function buildFloater({ members, mass, cog, gyradii, rho = 1025, g = G, d
       });
     }
   }
-  let V = 0; let Mx = 0; let My = 0; let Mz = 0;
+  let V = 0; let Mx = 0; let My = 0; let Mz = 0; let extent = 0;
   const A = mat6();
   for (const s of strips) {
     V += s.dV; Mx += s.dV * s.r[0]; My += s.dV * s.r[1]; Mz += s.dV * s.r[2];
+    extent = Math.max(extent, Math.hypot(s.r[0], s.r[1]) + 0.5 * (s.len || 0));
     for (const dd of s.dirs) {
       if (dd.ma === 0) continue;
       for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) A[i][j] += dd.ma * dd.q[i] * dd.q[j];
@@ -199,7 +225,7 @@ export function buildFloater({ members, mass, cog, gyradii, rho = 1025, g = G, d
   }
   return {
     rho, g, depth, strips, waterplanes, M, A, C, Kext: K, mass: m, volume: V, cob: [Mx / V, My / V, Mz / V], cog: cog.slice(),
-    waterplaneArea: Aw, maxDimension: maxDim, validOmegaMax: maxDim > 0 ? Math.sqrt((g * 2 * Math.PI) / (5 * maxDim)) : Infinity,
+    waterplaneArea: Aw, maxDimension: maxDim, extent, validOmegaMax: maxDim > 0 ? Math.sqrt((g * 2 * Math.PI) / (5 * maxDim)) : Infinity,
   };
 }
 
@@ -243,42 +269,193 @@ export function waveSpectrum(omega, sea) {
   return S;
 }
 
+// sinh(z)/z for complex z = a + i b: the mean of exp(z s) over -1 <= s <= 1
+function csinhc(a, b, out) {
+  const m2 = a * a + b * b;
+  if (m2 < 1e-6) { out.re = 1 + (a * a - b * b) / 6; out.im = (a * b) / 3; return out; }
+  const sr = Math.sinh(a) * Math.cos(b); const si = Math.cosh(a) * Math.sin(b);
+  out.re = (sr * a + si * b) / m2; out.im = (si * a - sr * b) / m2;
+  return out;
+}
+
+const _sp = { re: 1, im: 0 }; const _sm = { re: 1, im: 0 }; const _kin = { chR: 0, chI: 0, shR: 0, shI: 0 };
+
+// Complex depth-and-phase factors of the undisturbed wave averaged over the length of a strip:
+// ch = <cosh k(z+d)/sinh kd · exp(-i k·x)>, sh = <sinh k(z+d)/sinh kd · exp(-i k·x)> (both exp(kz - i k·x) in deep
+// water). Along a straight strip the integrand is a sum of exponentials, so the mean is the centre value times
+// sinh(q)/q, q = ½ len (± k t_z - i k t_h). Sampling at the centre instead leaves an error of (k len)²/24, which
+// for a deep vertical column is of the size of the heave force itself (that force is the small difference
+// rho g A_wp (1 - k ∫ e^{kz} dz) = rho g A_wp e^{-kT}).
+function stripKinematics(s, k, cb, sb, depth, out) {
+  const ph = k * (s.r[0] * cb + s.r[1] * sb);
+  const c = Math.cos(ph); const sn = Math.sin(ph);
+  const half = 0.5 * (s.len || 0);
+  let pr = 1; let pi = 0; let mr = 1; let mi = 0;
+  if (half > 0) {
+    const bh = -k * (s.t[0] * cb + s.t[1] * sb) * half; const az = k * s.t[2] * half;
+    csinhc(az, bh, _sp); pr = _sp.re; pi = _sp.im;
+    if (Number.isFinite(depth)) { csinhc(-az, bh, _sm); mr = _sm.re; mi = _sm.im; }
+  }
+  const e1 = Math.exp(k * s.r[2]);
+  let chR; let chI; let shR; let shI;
+  if (!Number.isFinite(depth)) { chR = shR = e1 * pr; chI = shI = e1 * pi; } else {
+    const e2 = Math.exp(-k * (s.r[2] + 2 * depth)); const d = 1 - Math.exp(-2 * k * depth);
+    chR = (e1 * pr + e2 * mr) / d; chI = (e1 * pi + e2 * mi) / d;
+    shR = (e1 * pr - e2 * mr) / d; shI = (e1 * pi - e2 * mi) / d;
+  }
+  // times exp(-i ph)
+  out.chR = chR * c + chI * sn; out.chI = chI * c - chR * sn;
+  out.shR = shR * c + shI * sn; out.shI = shI * c - shR * sn;
+  return out;
+}
+
+// Potential-flow excitation of the strip model per unit wave amplitude, added to F (re in 0..5, im in 6..11).
+// When u is given it receives the strip velocities (re, im; 3 per strip) for the drag linearisation.
+function waveExcitation(model, w, k, cb, sb, F, u) {
+  const { rho, g, depth, strips } = model;
+  for (let is = 0; is < strips.length; is++) {
+    const s = strips[is];
+    stripKinematics(s, k, cb, sb, depth, _kin);
+    // velocity u = (w ch cb, w ch sb, i w sh); acceleration a = i w u
+    const uhR = w * _kin.chR; const uhI = w * _kin.chI;
+    const uzR = -w * _kin.shI; const uzI = w * _kin.shR;
+    if (u) {
+      u.re[3 * is] = uhR * cb; u.re[3 * is + 1] = uhR * sb; u.re[3 * is + 2] = uzR;
+      u.im[3 * is] = uhI * cb; u.im[3 * is + 1] = uhI * sb; u.im[3 * is + 2] = uzI;
+    }
+    const aR = [-w * uhI * cb, -w * uhI * sb, -w * uzI];
+    const aI = [w * uhR * cb, w * uhR * sb, w * uzR];
+    if (s.dV > 0) {
+      const m0 = rho * s.dV;
+      const cR = cross(s.r, aR); const cI = cross(s.r, aI);
+      for (let i = 0; i < 3; i++) {
+        F[i] += m0 * aR[i]; F[6 + i] += m0 * aI[i];
+        F[3 + i] += m0 * cR[i]; F[9 + i] += m0 * cI[i];
+      }
+    }
+    for (const d of s.dirs) {
+      if (d.ma === 0) continue;
+      const pR = d.ma * (aR[0] * d.n[0] + aR[1] * d.n[1] + aR[2] * d.n[2]);
+      const pI = d.ma * (aI[0] * d.n[0] + aI[1] * d.n[1] + aI[2] * d.n[2]);
+      for (let i = 0; i < 6; i++) { F[i] += pR * d.q[i]; F[6 + i] += pI * d.q[i]; }
+    }
+  }
+  for (const wp of model.waterplanes) {
+    const ph = k * (wp.x * cb + wp.y * sb);
+    const fR = rho * g * wp.A * Math.cos(ph); const fI = -rho * g * wp.A * Math.sin(ph);
+    F[2] += fR; F[8] += fI;
+    F[3] += wp.y * fR; F[9] += wp.y * fI;
+    F[4] -= wp.x * fR; F[10] -= wp.x * fI;
+  }
+  return F;
+}
+
+const _radCache = new WeakMap();
+
+/**
+ * Wave-radiation damping of a slender-member floater from the Haskind relation: the damping follows from the
+ * excitation of the same body in waves from all directions,
+ *   B_ij(omega) = k / (8 pi rho g c_g) ∫₀^{2π} Re{ X_i(beta) X_j*(beta) } d beta,
+ * with X the excitation per unit wave amplitude, k the wave number and c_g = (omega / 2k)(1 + 2kd / sinh 2kd) the
+ * group velocity (deep water: B_ij = omega³ / (4 pi rho g³) ∫ …). X is the model's own long-wave excitation
+ * (floaterRAO without drag), so the damping is as accurate as that excitation: valid for D/lambda < 0.2. The
+ * matrix is symmetric and positive semi-definite by construction. The heading integral is a periodic
+ * trapezoidal sum with enough points for the phase differences across the model (2 k extent + 16).
+ * Checks: a vertical column in heave, B_33 = omega³ |X_3|² / (2 rho g³); in surge, B_11 = omega³ |X_1|² / (4 rho g³).
+ * Reference: Newman (1962) The exciting forces on fixed bodies in waves, J. Ship Research 6(3), 10–17; Newman
+ * (1977) Marine Hydrodynamics ch. 6 (Haskind relations); Falnes (2002) Ocean Waves and Oscillating Systems ch. 5.
+ * @param {object} o
+ * @param {object} o.model from buildFloater
+ * @param {ArrayLike<number>} o.omega rad/s
+ * @param {number} [o.nHeadings] number of wave directions (default: chosen per frequency as above)
+ * @returns {number[][][]} per frequency a 6×6 matrix, N·s/m, N·s, N·m·s
+ */
+export function radiationDamping({ model, omega, nHeadings }) {
+  if (!model || !model.strips) throw new RangeError('model must come from buildFloater');
+  if (!omega || omega.length < 1) throw new RangeError('omega must be a non-empty array');
+  const { rho, g, depth } = model;
+  let cache = _radCache.get(model);
+  if (!cache) { cache = new Map(); _radCache.set(model, cache); }
+  let extent = model.extent;
+  if (extent === undefined) { extent = 0; for (const s of model.strips) extent = Math.max(extent, Math.hypot(s.r[0], s.r[1]) + 0.5 * (s.len || 0)); }
+  const F = new Float64Array(12);
+  const out = [];
+  for (let iw = 0; iw < omega.length; iw++) {
+    const w = omega[iw];
+    if (!(w > 0)) throw new RangeError('omega must be > 0');
+    const key = nHeadings === undefined ? w : `${w}/${nHeadings}`;
+    let B = cache.get(key);
+    if (!B) {
+      const k = dispersion(w, depth, g);
+      const kd = k * depth;
+      const cg = (w / (2 * k)) * (Number.isFinite(depth) && kd < 350 ? 1 + (2 * kd) / Math.sinh(2 * kd) : 1);
+      const n = nHeadings === undefined ? Math.min(720, Math.ceil(2 * k * extent) + 16) : nHeadings;
+      if (!(n >= 4)) throw new RangeError('nHeadings must be >= 4');
+      B = mat6();
+      for (let ih = 0; ih < n; ih++) {
+        const beta = (2 * Math.PI * ih) / n;
+        F.fill(0);
+        waveExcitation(model, w, k, Math.cos(beta), Math.sin(beta), F);
+        for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) B[i][j] += F[i] * F[j] + F[6 + i] * F[6 + j];
+      }
+      const c = (k / (8 * Math.PI * rho * g * cg)) * ((2 * Math.PI) / n);
+      for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) B[i][j] *= c;
+      cache.set(key, B);
+    }
+    out.push(B.map((r) => r.slice()));
+  }
+  return out;
+}
+
 /**
  * Six-degree-of-freedom response amplitude operators of a slender-member floater.
  * Excitation per unit wave amplitude: F = sum over strips of (rho dV a + m_a,n (a·n) n) with the undisturbed
- * fluid acceleration a at the strip centre (phase by position), plus rho g A_wp eta at each waterplane
- * crossing (the Gauss-theorem closure of the Froude–Krylov pressure integral); moments by r × F.
+ * fluid acceleration a averaged exactly over the length of each strip (phase by position), plus rho g A_wp eta
+ * at each waterplane crossing (the Gauss-theorem closure of the Froude–Krylov pressure integral); moments by
+ * r × F with the lever of the strip centre.
+ * Radiation damping: from the Haskind relation with this excitation (radiationDamping above), a full 6×6 matrix
+ * per frequency; it is the damping a potential-flow solution has. `extraDampingRatio` adds a fraction of critical
+ * damping per degree of freedom, B_ii = 2 zeta_i sqrt((M+A)_ii (C+Kext)_ii), for damping that is not modelled
+ * (viscous damping when drag is off, mooring lines, risers).
  * Viscous drag is linearised stochastically for the given sea state (Borgman): f = ½ rho Cd D sqrt(8/pi)
  * sigma_vr v_r per unit length, with sigma_vr the standard deviation of the relative normal velocity; it
- * contributes damping and excitation and is iterated to convergence. Radiation damping is a user fraction of
- * critical damping per degree of freedom, B_ii = 2 zeta_i sqrt((M+A)_ii (C+Kext)_ii).
- * Reference: Faltinsen (1990) ch. 3 and ch. 7 (viscous damping); Borgman (1967) spectral analysis of ocean wave
- * forces on piling; DNV-RP-C205 (2019) §6.2, §7.
- * Valid for D/lambda < 0.2 (omega < model.validOmegaMax); no diffraction, no frequency-dependent added mass,
- * no second-order effects.
+ * contributes damping and excitation and is iterated to convergence.
+ * Reference: Faltinsen (1990) ch. 3 and ch. 7 (viscous damping); Newman (1962) (Haskind relation); Borgman (1967)
+ * spectral analysis of ocean wave forces on piling; DNV-RP-C205 (2019) §6.2, §7.
+ * Valid for D/lambda < 0.2 (omega < model.validOmegaMax); no diffraction, no frequency-dependent added mass, no
+ * second-order effects. Against a panel solution (Capytaine) of a single column D = 8 m, draught 40 m, hemisphere
+ * end mass and free keel end (D/lambda = 0.2 at 5.1 s; src/spec/cross-solver.json): heave force within 5 % from
+ * 5 s, surge force from 6 s (+6 % at 5 s, +47 % at 4 s); heave motion within 5 % from 5 s, the resonance included;
+ * surge and pitch motion within 5 % outside 0.9–1.4 times the pitch natural period and within 25 % inside, where
+ * the peak has radiation damping only and follows the natural period (1.2 % above the panel solution).
  * @param {object} o
  * @param {object} o.model from buildFloater
  * @param {ArrayLike<number>} o.omega rad/s, ascending
  * @param {number} [o.headingDeg=0] wave propagation heading, deg
  * @param {{Hs:number, Tp:number, gamma?:number} | {S:ArrayLike<number>}} [o.seaState] sea state for the drag
  *   linearisation (JONSWAP parameters or a spectrum on `omega`, m²·s/rad); without it drag is omitted
- * @param {number|number[]} [o.radiationDampingRatio=0.02] fraction of critical per DOF (typical 0.01–0.10;
- *   calibrate against model tests or a diffraction analysis)
+ * @param {string} [o.radiation='haskind'] 'haskind' (computed radiation damping) or 'none'
+ * @param {number|number[]} [o.extraDampingRatio=0] additional damping, fraction of critical per DOF (typical
+ *   0.01–0.05 when drag is not modelled; calibrate against model tests)
+ * @param {number|number[]} [o.radiationDampingRatio] former name of extraDampingRatio, still accepted
  * @param {number[][]} [o.extraDamping] additional linear damping 6×6, N·s/m …
  * @param {boolean} [o.viscous=true]
  * @param {number} [o.maxIter=60]
  * @param {number} [o.tol=1e-4] relative convergence of the velocity standard deviations
  * @returns {{omega:Float64Array, period:Float64Array, headingDeg:number, depth:number, g:number, re:Float64Array[],
  *   im:Float64Array[], amp:Float64Array[], phase:Float64Array[], force:{re:Float64Array[], im:Float64Array[]},
- *   viscousDamping:number[][], iterations:number, converged:boolean, validOmegaMax:number}} per DOF arrays over
- *   omega: m/m (translations) and rad/m (rotations); phase rad; force N/m and N·m/m (incl. linearised drag
- *   excitation); viscousDamping N·s/m …
+ *   radiationDamping:number[][][]|null, viscousDamping:number[][], iterations:number, converged:boolean,
+ *   validOmegaMax:number}} per DOF arrays over omega: m/m (translations) and rad/m (rotations); phase rad; force
+ *   N/m and N·m/m (incl. linearised drag excitation); radiationDamping per frequency and viscousDamping N·s/m …
  */
-export function floaterRAO({ model, omega, headingDeg = 0, seaState, radiationDampingRatio = 0.02, extraDamping, viscous = true, maxIter = 60, tol = 1e-4 }) {
+export function floaterRAO({ model, omega, headingDeg = 0, seaState, radiation = 'haskind', extraDampingRatio, radiationDampingRatio, extraDamping, viscous = true, maxIter = 60, tol = 1e-4 }) {
   if (!model || !model.strips) throw new RangeError('model must come from buildFloater');
   if (!omega || omega.length < 1) throw new RangeError('omega must be a non-empty array');
+  if (radiation !== 'haskind' && radiation !== 'none') throw new RangeError("radiation must be 'haskind' or 'none'");
+  if (extraDampingRatio !== undefined && radiationDampingRatio !== undefined) throw new RangeError('give extraDampingRatio or its former name radiationDampingRatio, not both');
+  const zeta = extraDampingRatio !== undefined ? extraDampingRatio : radiationDampingRatio !== undefined ? radiationDampingRatio : 0;
   const nw = omega.length;
-  const { rho, g, depth } = model;
+  const { depth, g } = model;
   const cb = Math.cos(headingDeg * DEG); const sb = Math.sin(headingDeg * DEG);
   const Mt = mat6(); const K = mat6(); const B0 = mat6();
   for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) {
@@ -287,8 +464,8 @@ export function floaterRAO({ model, omega, headingDeg = 0, seaState, radiationDa
     if (extraDamping) B0[i][j] = extraDamping[i][j];
   }
   for (let i = 0; i < 6; i++) {
-    const z = Array.isArray(radiationDampingRatio) ? radiationDampingRatio[i] : radiationDampingRatio;
-    if (!(z >= 0)) throw new RangeError('radiationDampingRatio must be >= 0');
+    const z = Array.isArray(zeta) ? zeta[i] : zeta;
+    if (!(z >= 0)) throw new RangeError('extraDampingRatio must be >= 0');
     if (K[i][i] > 0) B0[i][i] += 2 * z * Math.sqrt(Mt[i][i] * K[i][i]);
   }
   const useDrag = viscous && !!seaState;
@@ -305,51 +482,20 @@ export function floaterRAO({ model, omega, headingDeg = 0, seaState, radiationDa
   const unR = new Float64Array(nd * nw); const unI = new Float64Array(nd * nw);
   const Fr = Array.from({ length: 6 }, () => new Float64Array(nw));
   const Fi = Array.from({ length: 6 }, () => new Float64Array(nw));
-  const rat = { chsh: 0, shsh: 0, chch: 0 };
   const stripIndex = new Map();
   model.strips.forEach((s, i) => stripIndex.set(s, i));
   const ns = model.strips.length;
-  const uR = new Float64Array(3 * ns); const uI = new Float64Array(3 * ns);
+  const u = { re: new Float64Array(3 * ns), im: new Float64Array(3 * ns) };
+  const uR = u.re; const uI = u.im;
+  const F = new Float64Array(12);
   for (let iw = 0; iw < nw; iw++) {
     const w = omega[iw];
     if (!(w > 0)) throw new RangeError('omega must be > 0');
     if (iw > 0 && !(w > omega[iw - 1])) throw new RangeError('omega must be ascending');
     const k = dispersion(w, depth, g);
-    const w2 = w * w;
-    for (let is = 0; is < ns; is++) {
-      const s = model.strips[is];
-      const ph = k * (s.r[0] * cb + s.r[1] * sb);
-      const c = Math.cos(ph); const sn = Math.sin(ph);
-      depthRatios(k, s.r[2], depth, rat);
-      // velocity u = (w chsh cb E, w chsh sb E, i w shsh E), E = exp(-i ph); acceleration a = i w u
-      const uhR = w * rat.chsh * c; const uhI = -w * rat.chsh * sn;
-      const uzR = w * rat.shsh * sn; const uzI = w * rat.shsh * c;
-      uR[3 * is] = uhR * cb; uR[3 * is + 1] = uhR * sb; uR[3 * is + 2] = uzR;
-      uI[3 * is] = uhI * cb; uI[3 * is + 1] = uhI * sb; uI[3 * is + 2] = uzI;
-      const aR = [-w * uhI * cb, -w * uhI * sb, -w * uzI];
-      const aI = [w * uhR * cb, w * uhR * sb, w * uzR];
-      if (s.dV > 0) {
-        const m0 = rho * s.dV;
-        const cR = cross(s.r, aR); const cI = cross(s.r, aI);
-        for (let i = 0; i < 3; i++) {
-          Fr[i][iw] += m0 * aR[i]; Fi[i][iw] += m0 * aI[i];
-          Fr[3 + i][iw] += m0 * cR[i]; Fi[3 + i][iw] += m0 * cI[i];
-        }
-      }
-      for (const d of s.dirs) {
-        if (d.ma === 0) continue;
-        const pR = d.ma * (aR[0] * d.n[0] + aR[1] * d.n[1] + aR[2] * d.n[2]);
-        const pI = d.ma * (aI[0] * d.n[0] + aI[1] * d.n[1] + aI[2] * d.n[2]);
-        for (let i = 0; i < 6; i++) { Fr[i][iw] += pR * d.q[i]; Fi[i][iw] += pI * d.q[i]; }
-      }
-    }
-    for (const wp of model.waterplanes) {
-      const ph = k * (wp.x * cb + wp.y * sb);
-      const fR = rho * g * wp.A * Math.cos(ph); const fI = -rho * g * wp.A * Math.sin(ph);
-      Fr[2][iw] += fR; Fi[2][iw] += fI;
-      Fr[3][iw] += wp.y * fR; Fi[3][iw] += wp.y * fI;
-      Fr[4][iw] -= wp.x * fR; Fi[4][iw] -= wp.x * fI;
-    }
+    F.fill(0);
+    waveExcitation(model, w, k, cb, sb, F, u);
+    for (let i = 0; i < 6; i++) { Fr[i][iw] = F[i]; Fi[i][iw] = F[6 + i]; }
     for (let id = 0; id < nd; id++) {
       const is = stripIndex.get(dirs[id].s);
       const n = dirs[id].d.n;
@@ -357,6 +503,7 @@ export function floaterRAO({ model, omega, headingDeg = 0, seaState, radiationDa
       unI[id * nw + iw] = uI[3 * is] * n[0] + uI[3 * is + 1] * n[1] + uI[3 * is + 2] * n[2];
     }
   }
+  const Brad = radiation === 'haskind' ? radiationDamping({ model, omega }) : null;
   const xr = Array.from({ length: 6 }, () => new Float64Array(nw));
   const xi = Array.from({ length: 6 }, () => new Float64Array(nw));
   const FtR = Array.from({ length: 6 }, () => new Float64Array(nw));
@@ -386,7 +533,7 @@ export function floaterRAO({ model, omega, headingDeg = 0, seaState, radiationDa
         br[i] = Fr[i][iw]; bi[i] = Fi[i][iw];
         for (let j = 0; j < 6; j++) {
           Ar[i][j] = K[i][j] - w * w * Mt[i][j];
-          Ai[i][j] = w * (B0[i][j] + Bv[i][j]);
+          Ai[i][j] = w * (B0[i][j] + Bv[i][j] + (Brad ? Brad[iw][i][j] : 0));
         }
       }
       for (let id = 0; id < nd; id++) {
@@ -431,7 +578,7 @@ export function floaterRAO({ model, omega, headingDeg = 0, seaState, radiationDa
   for (let iw = 0; iw < nw; iw++) period[iw] = (2 * Math.PI) / omega[iw];
   return {
     omega: Float64Array.from(omega), period, headingDeg, depth, g, re: xr, im: xi, amp, phase, force: { re: FtR, im: FtI },
-    viscousDamping: Bv.map((r) => r.slice()), iterations, converged, validOmegaMax: model.validOmegaMax,
+    radiationDamping: Brad, viscousDamping: Bv.map((r) => r.slice()), iterations, converged, validOmegaMax: model.validOmegaMax,
   };
 }
 
@@ -588,25 +735,53 @@ export function limitingHs({ omega, amp, limit, Tp, gamma = 3.3, statistic = 'si
   return { Tp: Tp.slice(), HsLimit };
 }
 
+// sin(x)/x
+const sinc = (x) => (Math.abs(x) < 1e-4 ? 1 - (x * x) / 6 : Math.sin(x) / x);
+
 /**
  * Wave-induced motions of a box-shaped ship or barge.
  * Heave and pitch: closed-form expressions of Jensen, Mansour & Olsen (2004) for a homogeneously loaded box
  * L × B × T (deep water, optional forward speed):
- *   alpha = 1 - Fn sqrt(kL) cos(beta), k_e = |k cos(beta)|, kappa = exp(-k_e T),
+ *   alpha = 1 - Fn sqrt(kL) cos(beta), k_e = |k cos(beta)|, k_y = k sin(beta),
  *   A = 2 sin(½ k B alpha²) exp(-k T alpha²)  (sectional damping),
  *   f = sqrt((1 - kT)² + (A²/(k B alpha³))²),
- *   F = kappa f (2/(k_e L)) sin(k_e L/2),
- *   G = kappa f (24/((k_e L)² L)) [sin(k_e L/2) - (k_e L/2) cos(k_e L/2)],
+ *   F = kappa f s_B (2/(k_e L)) sin(k_e L/2),
+ *   G = kappa f s_B (24/((k_e L)² L)) [sin(k_e L/2) - (k_e L/2) cos(k_e L/2)],
  *   eta = 1/sqrt((1 - 2 k T alpha²)² + (A²/(k B alpha²))²),  heave = eta F [m/m], pitch = eta G [rad/m],
  * with B replaced by B·Cb for other block coefficients, as in the paper. These give amplitudes only.
- * Roll: NOT taken from the paper. A one-degree-of-freedom model about the centre of gravity is used,
- *   (Δ kxx²) phi'' + 2 zeta sqrt(Δ kxx² · Δ g GMt) phi' + Δ g GMt phi = M_FK,
- * with the Froude–Krylov roll moment integrated exactly over the box in the undisturbed deep-water wave;
- * kxx (roll gyradius including added inertia) and the damping ratio zeta are inputs (typical kxx 0.35–0.45 B;
- * zeta 0.02–0.10 of critical for barges with bilge keels or sharp bilges). Sway–roll coupling and diffraction
- * are neglected.
+ * Two factors differ from the paper, which approximates the Smith factor by exp(-k_e T) and has no breadth
+ * factor: kappa = exp(-k T) and s_B = sin(½ k_y B)/(½ k_y B). Both follow from integrating the undisturbed
+ * pressure rho g exp(-k T) exp(-i (k_x x + k_y y)) over the flat bottom L × B, which gives rho g L B exp(-k T)
+ * sinc(½ k_x L) sinc(½ k_y B): the depth decay goes with the full wave number whatever the heading. In head and
+ * following seas the result is that of the paper; in beam seas the paper's form tends to 1 + kT in long waves
+ * (8 % at kT = 0.08) where the heave of a floating body tends to 1 + O((kT)²).
+ * Roll: NOT taken from the paper. One degree of freedom about the centre of gravity,
+ *   I44 phi'' + (B_rad + 2 zeta sqrt(I44 C44)) phi' + C44 phi = M_FK + M_D,   C44 = Δ g GMt,
+ *   I44 = Δ kxx² (kxx including added inertia) or Δ kxxDry² + A44,
+ * - M_FK: Froude–Krylov roll moment integrated exactly over the box in the undisturbed deep-water wave;
+ * - A44 = ½ beta rho pi a⁴ L: strip roll added inertia of the rectangular section about the waterline centre
+ *   (a = the larger of B/2 and T, beta from rectangleRollInertiaCoefficient: DNV-RP-C205 Table D-1 for the
+ *   double body, i.e. the high-frequency limit; 6–10 % above a panel solution for L/B = 2.5, B/T = 4, where it
+ *   varies by 4 % over all frequencies);
+ * - M_D = -omega² A44 alpha_b: diffraction by the relative-motion hypothesis, the added inertia reacting to
+ *   the roll relative to the wave slope. alpha_b is the wave slope carried by the pressure on the bottom,
+ *   (bottom-pressure roll moment)/(rho g L B³/12) = k_y exp(-kT) sinc(½ k_x L) 3 (sin x - x cos x)/x³, x = ½ k_y B;
+ * - B_rad: wave-radiation damping from the Haskind relation with this moment in waves from all directions,
+ *   B_rad = omega³/(4 pi rho g³) ∫₀^{2π} |M_FK + M_D|² d beta (deep water);
+ * - zeta: damping in addition to wave radiation (bilge keels, eddies, skin friction), fraction of critical
+ *   (typical 0.02–0.10 for barges with sharp bilges or bilge keels).
+ * Typical kxx 0.35–0.45 B. Sway–roll coupling is neglected (roll about the centre of gravity; A44 is not
+ * transferred from the waterline to the centre of gravity), and the roll model is for zero speed.
+ * Validity, from the comparison with a panel solution (Capytaine) of a barge 20 × 8 × 2 m (src/spec/cross-solver.json):
+ * heave within 5 % for wave periods above twice the heave natural period 2 pi sqrt(2T/g) in head and beam seas
+ * (-15 % at 1.5 times, -30 to -40 % near it: the model takes the added mass equal to the displacement and a
+ * two-dimensional sectional damping); pitch within 5 % above 1.5 times that period; roll within 5 % above 1.3
+ * times the roll natural period and within 15 % below, where the response follows the natural period (strip
+ * added inertia) and the additional damping. `validPeriodMin` returns these two limits.
  * Reference: Jensen, Mansour & Olsen (2004) Estimation of ship motions using closed-form expressions, Ocean
- * Engineering 31, 61–85 (heave, pitch). Valid for deep water, monohull box-like forms, Fn < ~0.3.
+ * Engineering 31, 61–85 (heave, pitch); Korvin-Kroukovsky & Jacobs (1957) Pitching and heaving motions of a ship
+ * in regular waves, Trans. SNAME 65 (relative-motion hypothesis); Newman (1962) J. Ship Research 6(3) (Haskind
+ * relation); DNV-RP-C205 (2019) Appendix D. Valid for deep water, monohull box-like forms, Fn < ~0.3.
  * @param {object} o
  * @param {number} o.L length, m
  * @param {number} o.B beam, m
@@ -616,18 +791,24 @@ export function limitingHs({ omega, amp, limit, Tp, gamma = 3.3, statistic = 'si
  * @param {number} [o.speed=0] forward speed, m/s
  * @param {number} [o.Cb=1] block coefficient
  * @param {number} [o.GMt] transverse metacentric height, m (roll omitted when absent)
- * @param {number} [o.kxx] roll radius of gyration including added inertia, m (default 0.4 B)
- * @param {number} [o.rollDampingRatio=0.05] fraction of critical
+ * @param {number} [o.kxx] roll radius of gyration including added inertia, m (default 0.4 B unless kxxDry is given)
+ * @param {number} [o.kxxDry] roll radius of gyration of the mass alone, m; the strip added inertia A44 is added
+ * @param {number} [o.rollDampingRatio=0.05] damping in addition to wave radiation, fraction of critical
+ * @param {boolean} [o.rollRadiation=true] include the Haskind radiation damping of roll
  * @param {number} [o.rho=1025] kg/m³
  * @param {number} [o.g=9.80665] m/s²
  * @returns {{omega:Float64Array, heave:Float64Array, pitch:Float64Array, roll:Float64Array|null,
- *   rollPhase:Float64Array|null, heaveNaturalPeriod:number, rollNaturalPeriod:number|null}} m/m, rad/m, rad/m, rad,
- *   s (heave: 2 pi sqrt(2T/g) from the same equation of motion), s
+ *   rollPhase:Float64Array|null, heaveNaturalPeriod:number, rollNaturalPeriod:number|null,
+ *   rollAddedInertia:number|null, rollRadiationDamping:Float64Array|null,
+ *   validPeriodMin:{heave:number, roll:number|null}}} m/m, rad/m, rad/m, rad, s (heave: 2 pi sqrt(2T/g) from the
+ *   same equation of motion), s, kg·m², N·m·s, s
  */
-export function boxBargeRAO({ L, B, T, omega, headingDeg = 180, speed = 0, Cb = 1, GMt, kxx, rollDampingRatio = 0.05, rho = 1025, g = G }) {
+export function boxBargeRAO({ L, B, T, omega, headingDeg = 180, speed = 0, Cb = 1, GMt, kxx, kxxDry, rollDampingRatio = 0.05, rollRadiation = true, rho = 1025, g = G }) {
   needPos(L, 'L'); needPos(B, 'B'); needPos(T, 'T');
   if (!(Cb > 0 && Cb <= 1)) throw new RangeError('Cb must be within (0, 1]');
   if (!(speed >= 0)) throw new RangeError('speed must be >= 0');
+  if (kxx !== undefined && kxxDry !== undefined) throw new RangeError('give kxx (including added inertia) or kxxDry, not both');
+  if (!(rollDampingRatio >= 0)) throw new RangeError('rollDampingRatio must be >= 0');
   const nw = omega.length;
   const beta = headingDeg * DEG;
   const cbt = Math.cos(beta); const sbt = Math.sin(beta);
@@ -638,54 +819,83 @@ export function boxBargeRAO({ L, B, T, omega, headingDeg = 180, speed = 0, Cb = 
   if (hasRoll) needPos(GMt, 'GMt');
   const roll = hasRoll ? new Float64Array(nw) : null;
   const rollPhase = hasRoll ? new Float64Array(nw) : null;
+  const rollRad = hasRoll ? new Float64Array(nw) : null;
   const disp = rho * L * B * T * Cb;
-  const kx = kxx === undefined ? 0.4 * B : kxx;
-  const I44 = disp * kx * kx; const C44 = hasRoll ? disp * g * GMt : 0;
+  const b = B / 2;
+  const A44 = 0.5 * rectangleRollInertiaCoefficient(Math.max(b / T, T / b)) * rho * Math.PI * Math.max(b, T) ** 4 * L;
+  let I44;
+  if (kxxDry !== undefined) { needPos(kxxDry, 'kxxDry'); I44 = disp * kxxDry * kxxDry + A44; } else {
+    const kx = kxx === undefined ? 0.4 * B : kxx;
+    needPos(kx, 'kxx');
+    I44 = disp * kx * kx;
+  }
+  const C44 = hasRoll ? disp * g * GMt : 0;
   const B44 = 2 * rollDampingRatio * Math.sqrt(I44 * C44);
   // centre of gravity height relative to the waterline for a box: KG = T/2 + B²/(12 T) - GMt
   const zG = hasRoll ? T / 2 + (B * B) / (12 * T) - GMt - T : 0;
-  const b = B / 2;
+  // Imaginary part of the roll moment about G per unit wave amplitude (the moment is i·M) for the wave
+  // exp(kz) exp(-i(kx x + ky y)) travelling towards (c, s):
+  // Froude–Krylov  M_O = rho (∫∫∫ (y a_z - z a_y) dV) + rho g ∫∫ y eta dA,  M_G = M_O + z_G F_y,
+  // plus the relative-motion diffraction moment -omega² A44 alpha_b.
+  const rollMoment = (w, k, c, s) => {
+    const kxw = k * c; const ky = k * s;
+    const Lx = L * sinc(0.5 * kxw * L);
+    let Iy0; let Iy1i; // Iy0 = ∫ exp(-i ky y) dy (real); ∫ y exp(-i ky y) dy = i·Iy1i (purely imaginary)
+    if (Math.abs(ky) * b < 1e-6) { Iy0 = 2 * b; Iy1i = (-2 * ky * b ** 3) / 3; } else {
+      Iy0 = (2 * Math.sin(ky * b)) / ky;
+      Iy1i = (2 * (ky * b * Math.cos(ky * b) - Math.sin(ky * b))) / (ky * ky);
+    }
+    const e = Math.exp(-k * T);
+    const Iz0 = (1 - e) / k;
+    const Iz1 = (-1 + e + k * T * e) / (k * k);
+    // a_z = -w² e^{kz} E, a_y = i w² sin(beta) e^{kz} E
+    const mIm = rho * Lx * (-w * w * Iy1i * Iz0 - w * w * s * Iy0 * Iz1) + rho * g * Lx * Iy1i;
+    const fyIm = rho * w * w * s * Lx * Iy0 * Iz0;
+    // bottom pressure rho g e^{-kT} E gives the moment i rho g e^{-kT} Lx Iy1i = -i rho g (L B³/12) alpha_b
+    const slopeIm = (e * Lx * Iy1i) / ((L * B ** 3) / 12);
+    return mIm + zG * fyIm - w * w * A44 * slopeIm;
+  };
   for (let i = 0; i < nw; i++) {
     const w = omega[i];
     if (!(w > 0)) throw new RangeError('omega must be > 0');
     const k = (w * w) / g;
     const alpha = 1 - Fn * Math.sqrt(k * L) * cbt;
     const ke = Math.abs(k * cbt);
-    const kappa = Math.exp(-ke * T);
+    const kappa = Math.exp(-k * T) * sinc(0.5 * k * sbt * B0);
     const Asec = 2 * Math.sin(0.5 * k * B0 * alpha * alpha) * Math.exp(-k * T * alpha * alpha);
     const f = Math.hypot(1 - k * T, (Asec * Asec) / (k * B0 * alpha ** 3));
     const x = 0.5 * ke * L;
     const F = x < 1e-6 ? kappa * f : (kappa * f * Math.sin(x)) / x;
     const Gp = x < 1e-4 ? (kappa * f * 2 * x) / L : (kappa * f * 24 * (Math.sin(x) - x * Math.cos(x))) / ((ke * L) ** 2 * L);
     const eta = 1 / Math.hypot(1 - 2 * k * T * alpha * alpha, (Asec * Asec) / (k * B0 * alpha * alpha));
-    // amplitudes only: the sin(x)/x force factor changes sign beyond its first zero, which is a phase flip, not a negative amplitude
+    // amplitudes only: the sin(x)/x force factors change sign beyond their first zero, which is a phase flip, not a negative amplitude
     heave[i] = Math.abs(eta * F); pitch[i] = Math.abs(eta * Gp);
     if (hasRoll) {
-      // Froude–Krylov roll moment about G of the box in exp(kz) exp(-i(kx x + ky y)), per unit amplitude:
-      // M_O = rho (∫∫∫ (y a_z - z a_y) dV) + rho g ∫∫ y eta dA,  M_G = M_O + z_G F_y
-      const kxw = k * cbt; const ky = k * sbt;
-      const Lx = Math.abs(kxw) * L < 1e-9 ? L : (2 * Math.sin(0.5 * kxw * L)) / kxw;
-      let Iy0; let Iy1i; // Iy0 = ∫ exp(-i ky y) dy (real); ∫ y exp(-i ky y) dy = i·Iy1i (purely imaginary)
-      if (Math.abs(ky) * b < 1e-6) { Iy0 = 2 * b; Iy1i = (-2 * ky * b ** 3) / 3; } else {
-        Iy0 = (2 * Math.sin(ky * b)) / ky;
-        Iy1i = (2 * (ky * b * Math.cos(ky * b) - Math.sin(ky * b))) / (ky * ky);
+      const Mim = rollMoment(w, k, cbt, sbt);
+      let brad = 0;
+      if (rollRadiation) {
+        // |M|² is even in both wave-number components: midpoint rule over one quadrant, enough points for the
+        // phase variation along the longer side
+        const nq = Math.min(2000, Math.max(16, Math.ceil(0.5 * k * Math.max(L, B)) + 8));
+        let sum = 0;
+        for (let j = 0; j < nq; j++) {
+          const th = ((j + 0.5) * Math.PI) / (2 * nq);
+          sum += rollMoment(w, k, Math.cos(th), Math.sin(th)) ** 2;
+        }
+        brad = ((w ** 3) / (4 * Math.PI * rho * g ** 3)) * ((4 * sum * Math.PI) / (2 * nq));
+        rollRad[i] = brad;
       }
-      const e = Math.exp(-k * T);
-      const Iz0 = (1 - e) / k;
-      const Iz1 = (-1 + e + k * T * e) / (k * k);
-      // a_z = -w² e^{kz} E, a_y = i w² sin(beta) e^{kz} E
-      const mIm = rho * Lx * (-w * w * Iy1i * Iz0 - w * w * sbt * Iy0 * Iz1) + rho * g * Lx * Iy1i;
-      const fyIm = rho * w * w * sbt * Lx * Iy0 * Iz0;
-      const Mim = mIm + zG * fyIm;
-      const dr = C44 - w * w * I44; const di = w * B44;
+      const dr = C44 - w * w * I44; const di = w * (B44 + brad);
       const den = dr * dr + di * di;
       const re = (Mim * di) / den; const im = (Mim * dr) / den;
       roll[i] = Math.hypot(re, im); rollPhase[i] = Math.atan2(im, re);
     }
   }
+  const heaveNaturalPeriod = 2 * Math.PI * Math.sqrt((2 * T) / g);
+  const rollNaturalPeriod = hasRoll ? 2 * Math.PI * Math.sqrt(I44 / C44) : null;
   return {
-    omega: Float64Array.from(omega), heave, pitch, roll, rollPhase,
-    heaveNaturalPeriod: 2 * Math.PI * Math.sqrt((2 * T) / g),
-    rollNaturalPeriod: hasRoll ? 2 * Math.PI * Math.sqrt(I44 / C44) : null,
+    omega: Float64Array.from(omega), heave, pitch, roll, rollPhase, heaveNaturalPeriod, rollNaturalPeriod,
+    rollAddedInertia: hasRoll ? A44 : null, rollRadiationDamping: rollRad,
+    validPeriodMin: { heave: 2 * heaveNaturalPeriod, roll: hasRoll ? 1.3 * rollNaturalPeriod : null },
   };
 }

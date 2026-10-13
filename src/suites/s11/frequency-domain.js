@@ -1,7 +1,7 @@
 // Frequency-domain spectral analysis: response spectra and statistics in the design sea, motion-induced loads,
 // limiting sea states and operability over a wave scatter diagram.
 import { pointMotion, operability, limitingHs } from '../../engine/hydro/floater.js';
-import { hullInputs, hullFrom, motionInputs, motionFrom, seaInputs, seaFrom, spectrum, omegaGrid, stats, pointInputs, dofScale,
+import { hullInputs, hullFrom, motionInputs, motionFrom, motionRangeAdvice, seaInputs, seaFrom, spectrum, omegaGrid, stats, pointInputs, dofScale,
   G, LIMIT_HYDRO, LIMIT_CFD, need, round, rnd, fmt, adv, checkMin, check, sev, worst, fuelCo2Text } from './_common.js';
 
 export const SCATTER = [
@@ -112,6 +112,7 @@ export default {
         'The scatter evaluation reuses the drag damping of the design sea; set the design sea near the limiting sea state for the best accuracy.',
       ],
       advice: [
+        ...motionRangeAdvice(mot, inp.Tp, inp.headingDeg),
         adv('engineering', sev(gov.uc), `${gov.name}: utilisation ${fmt(gov.uc)}. Limiting Hs at Tp ${fmt(inp.Tp)} s is ${fmt(HsLimAtTp)} m.`,
           gov.uc > 1 ? `Raise workability by relaxing the governing limit with better equipment (heave compensation, motion-compensated gangway), by choosing a heading from the 6-DOF module rosette, or by moving the natural period out of the ${fmt(Tps[env.indexOf(Math.min(...env))])} s band where the envelope is lowest.`
             : `Write the limiting-Hs envelope into the operating procedure as a function of Tp rather than a single Hs: the limit varies from ${fmt(Math.min(...env))} m to ${fmt(Math.min(Math.max(...env), 30))} m over 5–19 s.`,

@@ -5,7 +5,7 @@ import {
   DEG, need, run, fmt, round, thin, scaled, adv, check, kpi, plot, meshInput, finish, handWeight, steelTonnes, steelCo2Text, LIMIT_2D, CONFIRM,
 } from './_common.js';
 import { scrInputs, criteriaInputs, buildScr, stressOf, tdpNode } from './_scr.js';
-import { vesselInputs, hangoffRao } from './_vessel.js';
+import { vesselInputs, hangoffRao, vesselRangeAdvice, LIMIT_VESSEL } from './_vessel.js';
 import { dynInputs, harmonic, stressAmp, sweep, seaGrid, responseStats, mpm, mvOf, tdpTravel } from './_dyn.js';
 
 export default {
@@ -14,7 +14,7 @@ export default {
   covers: [4], fidelity: 'reduced-order',
   standards: ['API RP 2RD (1998, R2013) §5.5 dynamic analysis', 'DNV-ST-F201 (2018) Sec. 4, App. A', 'DNV-RP-C205 (2019) §3.5, §6.2, §7'],
   models: ['Response amplitude operators (closed-form box vessel or user table)', 'Frequency-domain rod dynamics with consistent mass and added mass', 'Harmonically linearised Morison drag', 'JONSWAP spectrum', 'Rayleigh extreme-value statistics', 'Quasi-static offset method'],
-  limits: `${LIMIT_2D} Dynamics are linearised about the static shape: drag damping is equivalent-linear, seabed contact status is frozen, and wave loads act only through vessel motion (no direct wave kinematics on the riser). The vessel transfer functions are closed-form estimates, not a diffraction analysis; six-degree-of-freedom motions reduce to in-plane surge and vertical motion at the porch. A nonlinear time-domain run is needed where compression or snap loading is predicted.`,
+  limits: `${LIMIT_2D} Dynamics are linearised about the static shape: drag damping is equivalent-linear, seabed contact status is frozen, and wave loads act only through vessel motion (no direct wave kinematics on the riser). The vessel transfer functions are closed-form estimates, not a diffraction analysis; six-degree-of-freedom motions reduce to in-plane surge and vertical motion at the porch. A nonlinear time-domain run is needed where compression or snap loading is predicted.` + LIMIT_VESSEL,
   publishes: ['riser.dynTensionAmp', 'riser.daf', 'riser.hangoffHeaveAmp'],
   searchTerms: 'steel catenary riser vessel motion heave dynamic response touchdown',
   inputs: [
@@ -119,6 +119,7 @@ export default {
     const ucMax = Math.max(...checks.map((c) => c.uc));
     const dAng = 2;
     const advice = [
+      ...vesselRangeAdvice(inp, Math.min(inp.Twave, inp.Tp)),
       adv('engineering', ucMax > 1 ? 'fail' : ucMax > 0.85 ? 'warn' : 'ok',
         `Design wave: dynamic tension ±${fmt(dT / 1e3)} kN on ${fmt(Ts / 1e3)} kN static (amplification ${fmt(daf)}); dynamic/quasi-static ratio ${fmt(dafDyn)}; minimum effective tension ${fmt(minTe / 1e3)} kN at s = ${fmt(base.s[kMin])} m; touchdown stress amplitude ${fmt(sTdz / 1e6)} MPa.`,
         checks[1].uc > 1 ? `Dynamic compression is predicted at touchdown. Move the porch closer to the pitch centre (lever arm now ${inp.hangArm} m), increase the hang-off angle by about ${dAng}° to raise bottom tension, or consider a lazy-wave configuration that decouples vessel heave; confirm with a nonlinear time-domain analysis.`

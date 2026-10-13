@@ -2,7 +2,7 @@
 // convolution (memory) radiation damping, linearised viscous damping, nonlinear station-keeping restoring and a
 // numerical free-decay test, with a consistency check against the frequency-domain standard deviations.
 import { retardationKernel, waveComponents, waveExcitationForce, simulateCummins, freeDecay, decayAnalysis } from '../../engine/hydro/timedomain.js';
-import { hullInputs, hullFrom, motionInputs, motionFrom, seaInputs, seaFrom, spectrum, stats, geomspace, DOF, DOF_UNIT, dofScale,
+import { hullInputs, hullFrom, motionInputs, motionFrom, motionRangeAdvice, seaInputs, seaFrom, spectrum, stats, geomspace, DOF, DOF_UNIT, dofScale,
   G, DEG, LIMIT_HYDRO, LIMIT_CFD, need, run, round, rnd, thin, fmt, adv, check, sev, worst, fuelCo2Text } from './_common.js';
 
 const sub = (A, ids) => ids.map((i) => ids.map((j) => A[i][j]));
@@ -161,6 +161,7 @@ export default {
         `Decay test: period ${fmt(da.period)} s, damping ${fmt(100 * da.dampingRatio)} % of critical. Governing: ${gov.name} (utilisation ${fmt(gov.uc)}).`,
       ],
       advice: [
+        ...(inp.Hs > 0 ? motionRangeAdvice(mot, inp.Tp, inp.headingDeg) : []),
         adv('engineering', sev(gov.uc), `${gov.name}: ${fmt(gov.demand)} against ${fmt(gov.capacity)} ${gov.unit} in this ${fmt(inp.duration / 60)}-minute realisation.`,
           gov.uc > 1 ? 'Reduce the excursion with more station-keeping stiffness or pretension (offset), a longer natural period (heave, pitch) or added damping; then confirm with 3-hour runs.'
             : `A single ${fmt(inp.duration / 60)}-minute record under-samples the extreme: run at least 10 seeds of 3 hours and fit the maxima (Gumbel) before using them as design values; refine dt until heave σ changes by less than 2 %.`,
@@ -173,12 +174,12 @@ export default {
     };
   },
   verify: [
-    { // Spar D = 30 m, T = 90 m: Tn = 2π√((90 + 4500/706.858)/9.80665) = 19.696 s (hand, see the 6-DOF module); damping set to 4 %
-      // of critical → log decrement 2πζ/√(1−ζ²) and measured ratio 0.04; damped period 19.696/√(1−0.0016) = 19.712 s.
+    { // Spar D = 30 m, T = 90 m: Tn = 2π√((90 + 2·15/3)/9.80665) = 20.064 s (hand, see the 6-DOF module); damping set to 4 %
+      // of critical → log decrement 2πζ/√(1−ζ²) and measured ratio 0.04; damped period 20.064/√(1−0.0016) = 20.080 s.
       name: 'Heave free decay of a spar: period and damping ratio recovered',
       source: 'Single-degree-of-freedom free vibration (logarithmic decrement); Faltinsen (1990) ch. 3 for the natural period',
       inputs: { hullType: 'spar', Dspar: 30, Hspar: 105, draft: 90, KG: 38, Hs: 0, zetaRad: 0.04, Fmean: 0, duration: 200 },
-      expect: [{ kpi: 'decayPeriod', value: 19.712, tol: 0.005 }, { kpi: 'decayZeta', value: 0.04, tol: 0.03 }, { kpi: 'heaveStd', value: 0, abs: 1e-9 }] },
+      expect: [{ kpi: 'decayPeriod', value: 20.080, tol: 0.005 }, { kpi: 'decayZeta', value: 0.04, tol: 0.03 }, { kpi: 'heaveStd', value: 0, abs: 1e-9 }] },
     { // Calm water, linear mooring 250 kN/m, steady 1500 kN: mean offset = F/K = 6.0 m.
       name: 'Static offset under a steady force on a linear mooring: x = F/K',
       source: 'Hooke\'s law; force balance of the time integration',

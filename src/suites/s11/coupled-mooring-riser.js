@@ -4,7 +4,7 @@
 import { chainProperties } from '../../engine/lines/lineprops.js';
 import { spreadLayout, equilibrium, stiffnessMatrix, restoringCurve, quasiDynamicTension, lineForces } from '../../engine/lines/mooringsystem.js';
 import { meanDriftForce, newmanDriftSpectrum, slowDriftResponse } from '../../engine/hydro/drift.js';
-import { hullInputs, hullFrom, motionInputs, motionFrom, seaInputs, seaFrom, spectrum, omegaGrid, stats, windCurrentInputs, windCurrentForce, driftCoefficient,
+import { hullInputs, hullFrom, motionInputs, motionFrom, motionRangeAdvice, seaInputs, seaFrom, spectrum, omegaGrid, stats, windCurrentInputs, windCurrentForce, driftCoefficient,
   G, DEG, LIMIT_HYDRO, need, run, round, rnd, fmt, adv, check, sev, worst, linspace, geomspace, steelCo2Text } from './_common.js';
 import { boxFroudeKrylov } from './wave-loads.js';
 
@@ -160,6 +160,7 @@ export default {
         mot.kind === 'box' ? 'Wave-frequency surge and sway of the box hull are mass-controlled estimates from the Froude–Krylov force.' : `Wave-frequency motion from the slender-member RAOs with the solved stiffness.`,
       ],
       advice: [
+        ...motionRangeAdvice(mot, inp.Tp, inp.headingDeg),
         adv('engineering', sev(gov.uc), `${gov.name} governs at utilisation ${fmt(gov.uc)}: Tmax ${fmt(Tmax / 1e3)} kN (factor ${fmt(ch.MBL / Tmax)} on MBL), offset ${fmt(offMax)} m against ${fmt(offLim)} m.`,
           gov.uc > 1 ? (gov === checks[0] ? `Increase the chain to about ${fmt(Math.ceil(dReq))} mm or add lines; also check whether a lower pretension (larger anchor radius margin) reduces the peak tension without breaching the offset limit.` : `Stiffen the system: shorten the lines or move the anchors out to raise pretension (now ${fmt(100 * pret / ch.MBL)} % MBL), add lines on the weather side, or use taut polyester in deep water.`)
             : `Margins: tension ${fmt(100 * (1 - checks[0].uc))} %, offset ${fmt(100 * (1 - checks[1].uc))} %. Repeat for the one-line-broken condition (factor 1.25) and for 45° and 90° environments, and confirm the low-frequency damping (${fmt(inp.lfDamping)}), which controls the slow-drift part.`,

@@ -83,15 +83,28 @@ built-in value from the reference):
 | Built-in model | Reference | Result |
 | --- | --- | --- |
 | `addedMassBem`, ω → ∞ and ω → 0, barge / cylinder / hemisphere, six diagonal terms | Capytaine at ω = inf and 0, same meshes | translations within 3.5 % (largest: cylinder surge), rotations within 5.7 % (barge roll). Hemisphere heave at ω → ∞: built-in −0.13 %, Capytaine +1.5 % from the exact ρπa³/3 |
-| `boxBargeRAO`, head sea | Capytaine + `raoSolve` | heave within 5 % for T ≥ 8 s (wavelength ≥ 5 L), −16 % at 6 s, −31 % at 5 s; pitch within 4 % for T ≥ 6 s, −19 % at 5 s, −63 % at 4 s |
-| `boxBargeRAO`, beam sea | same | heave tends to 1 + kT instead of 1 (+1.3 % at 25 s, +8 % at 10 s, up to +14 % at 4 s); roll 3–12 % high from 6 s, two to three times too high at 4–5 s (natural period 4.97 s against about 5.2 s) |
-| `floaterRAO`, spar D = 8 m, draught 40 m | same | surge force within 5 % for T ≥ 6 s (5.1 % at 5 s), +43 % at 4 s; heave force within 5 % for T ≥ 12 s, +7 % at 10 s, +24 % at 7 s and wrong below (the force nearly cancels there); surge RAO within 5 % at 6–10 s and 25 s, heave RAO within 2 % for T ≥ 16 s, pitch RAO within 5 % at 5–10 s; near the heave (≈ 13 s) and pitch (≈ 15 s) resonances the assumed 2 % damping decides (−48 … +50 %) |
+| `boxBargeRAO`, head sea | Capytaine + `raoSolve` | heave within 5 % for T ≥ 8 s (twice the heave natural period of the model, wavelength ≥ 5 L), −16 % at 6 s, −31 % at 5 s; pitch within 4 % for T ≥ 6 s, −19 % at 5 s, −63 % at 4 s |
+| `boxBargeRAO`, beam sea | same; roll with the dry gyradius of the reference and the same added damping | heave tends to 1 as the solver does (within 1 % for T ≥ 10 s, −3 % at 8 s) and is low below (−6 % at 7 s, −15 % at 6 s, −42 % at 4 s), as in head seas; roll within 5 % for T ≥ 7 s (+1.8 … +4.8 %), +8.6 % at 6 s, −8.6 % at 5 s, −15 % at 4 s (natural period 5.30 s against 5.23 s) |
+| `floaterRAO`, spar D = 8 m, draught 40 m, hemisphere end mass, free-end loss, Haskind damping | same, no added damping in either | surge force within 5 % for T ≥ 6 s (+6.4 % at 5 s, +47 % at 4 s); heave force and heave RAO within 3.1 % for T ≥ 5 s, the heave resonance (13.1 s) included; surge RAO within 5 % at 5–12 s and 25 s, pitch RAO at 5–12 s and 20–25 s; around the pitch resonance (14.80 s against 14.63 s, radiation damping only) −17 … +24 % |
 | `analyzeFrame` | CalculiX `*STATIC` | cantilevers within 1.4 %; portal sway +7.5 % (CalculiX joints are stiff blocks of the tube size) |
 | `modalAnalysis` | CalculiX `*FREQUENCY` | cantilever within 1.9 %, portal within 3.5 % (six modes each) |
 | `bucklingAnalysis` | CalculiX `*BUCKLE` | cantilever within 1.5 %, portal within 5.6 % (four modes each) |
 | `navierPlate` | CalculiX S6 shells | centre deflection within 0.7 % |
 
 The regression tests keep the built-in models within these recorded differences.
+
+What the comparison changed in the closed-form floater models (`src/engine/hydro/floater.js`):
+
+| Difference found | Cause | Now |
+| --- | --- | --- |
+| barge heave in beam seas tended to 1 + kT | the published closed form approximates the depth decay of the bottom pressure by exp(−\|k cos β\| T), which is 1 in beam seas | exp(−kT) and the breadth factor sin(½k_yB)/(½k_yB): the exact integral of the undisturbed pressure over the bottom at any heading; unchanged in head seas |
+| barge roll 3–12 % high from 6 s, two to three times too high at 4–5 s | Froude–Krylov moment alone (the diffraction moment lowers it by 1.5 % at 25 s, 9 % at 10 s, 38 % at 5 s), added inertia only through the gyradius given, no radiation damping; the comparison also gave the model 0.4 B including added inertia against 0.35 B dry plus the solver's added inertia | relative-motion diffraction moment −ω² A44 × (wave slope at the keel); strip added inertia A44 from DNV-RP-C205 Table D-1 (8 % above Capytaine's); radiation damping from the Haskind relation with the model's own moment (within 12 % of Capytaine's B44 from 5 s); `kxxDry` input |
+| spar heave force +7 % at 10 s, +24 % at 7 s | wave kinematics sampled at the strip centres: the heave force of a deep column is a small difference, and the sampling error was of its size (10 points of the 24 % at 7 s); the rest is the half-disc end added mass, 65 % of the solver's | kinematics integrated exactly along each strip; end option `'hemisphere'` (2/3 πρa³, 2 % above Capytaine) |
+| spar surge and heave RAOs ±50 % near resonance | 2 % of critical damping assumed where the solver has radiation damping only; heave natural period 12.96 s against 13.10 s (end added mass); pitch added inertia 14 % high (no end effect on the strip added mass), pitch natural period 15.10 s against 14.63 s | radiation damping from the Haskind relation with the model's own excitation (within 8 % of Capytaine's B11, B33, B55 for T ≥ 10 s, whose own coefficients satisfy the relation to 2 % in surge and pitch and 6 % in heave); `free1`/`free2` take the transverse added mass lost around a free end (DNV-RP-C205 Table D-2) off at that end: pitch added inertia 2 % high, natural period 14.80 s |
+
+One property of the reference itself: on the 768-panel barge the sway–roll added-mass terms of Capytaine are not
+symmetric (A₂₄ = −10 700, A₄₂ = −27 200 kg·m at 25 s). Solving with A₂₄ on both sides raises the reference roll by
+3–5 % at 7–25 s, which is the size of the remaining difference there.
 
 ## 2. Common conventions
 
