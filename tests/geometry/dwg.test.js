@@ -157,3 +157,15 @@ test('DWG separation: the repository holds no copy of the library and no applica
     assert.ok(!/from\s+['"][^'"]*libredwg[^'"]*['"]/i.test(text), `${p} imports the library`);
   }
 });
+
+test('DWG: an extrusion direction of (0, 0, 0) means "not set" and must not flatten the entity', async () => {
+  const { drawingToDxfSections } = await import('../../src/geometry/adapters/dwg.js');
+  const zero = { x: 0, y: 0, z: 0 };
+  const sec = drawingToDxfSections({ entities: [
+    { type: 'LWPOLYLINE', layer: '0', flag: 0, elevation: 0, extrusionDirection: zero, vertices: [{ x: 9, y: 12 }, { x: 17, y: 14 }] },
+    { type: 'CIRCLE', layer: '0', center: { x: 1, y: 2, z: 3 }, radius: 4, extrusionDirection: zero },
+    { type: 'CIRCLE', layer: '0', center: { x: 1, y: 2, z: 3 }, radius: 4, extrusionDirection: { x: 0, y: 1, z: 0 } },
+  ] });
+  const codes = sec.ENTITIES.filter((_, i) => i % 2 === 0);
+  assert.equal(codes.filter((c) => c === 210).length, 1, 'only the entity with a real extrusion carries group 210');
+});

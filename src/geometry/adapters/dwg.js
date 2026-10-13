@@ -63,7 +63,8 @@ export function unavailableReason() {
 
 const S = (v) => String(v);
 const xyz = (out, base, p) => { if (p) out.push(10 + base, S(p.x ?? 0), 20 + base, S(p.y ?? 0), 30 + base, S(p.z ?? 0)); };
-const extrusion = (out, n) => { if (n && (n.x || n.y || n.z !== 1) && Number.isFinite(n.x + n.y + n.z)) out.push(210, S(n.x), 220, S(n.y), 230, S(n.z)); };
+// a zero vector means "not set" (the library reports it for entities without an extrusion): the default +z applies
+const extrusion = (out, n) => { if (n && Number.isFinite(n.x + n.y + n.z) && Math.hypot(n.x, n.y, n.z) > 1e-9 && (n.x || n.y || n.z !== 1)) out.push(210, S(n.x), 220, S(n.y), 230, S(n.z)); };
 const DEG = 180 / Math.PI;
 
 /** Group codes of one entity of the drawing description (flat [code, value, …] starting at group 0), or null. */
